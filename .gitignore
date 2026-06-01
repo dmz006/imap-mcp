@@ -1,5 +1,5 @@
-# Binary
-imap-mcp
+# Binary (match file only, not the cmd/imap-mcp/ directory)
+/imap-mcp
 bin/
 
 # Config (may contain credentials)
