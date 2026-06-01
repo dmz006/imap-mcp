@@ -315,6 +315,19 @@ All tools accept an optional `account` parameter. Omit to use the default accoun
 | `enrichment_status` | `account` | Enrichment pipeline status (pending/done/error counts) |
 | `trigger_enrichment` | `account`, `limit` | Force immediate enrichment run |
 
+### File output (working directory sandbox)
+
+All file writes are enforced to stay inside `working_dir`. These are the **only** tools that write to disk — `os.WriteFile` is never called directly from the MCP layer.
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `write_file` | `filename`*, `content`* | Write content to a file inside `working_dir`. Relative paths only; subdirectories created automatically. Returns the absolute path written. |
+| `read_file` | `filename`* | Read a file from `working_dir` |
+| `list_files` | `subdir` | List files in `working_dir` or a subdirectory; returns `working_dir` root path |
+| `delete_file` | `filename`* | Delete a file from `working_dir` |
+
+Absolute paths and `..` traversal are rejected server-side — the enforcement is structural, not conventional. Configure the output location with `working_dir` in `config.yaml`.
+
 `*` = required parameter
 
 ---

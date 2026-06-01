@@ -175,7 +175,9 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 | `internal/mcp/tools/definitions.go` | All tool definitions (names, params, descriptions) |
 | `internal/mcp/tools/impl_accounts.go` | list_accounts, sync_account ✅ |
 | `internal/mcp/tools/impl_folders.go` | list_folders, create_folder, delete_folder ✅ |
-| `internal/mcp/tools/impl_stubs.go` | All other tools (stub → iteration 2) |
+| `internal/mcp/tools/impl_files.go` | write_file, read_file, list_files, delete_file |
+| `internal/output/writer.go` | Enforced output sandbox (only file writer in MCP layer) |
+| `internal/mcp/tools/impl_stubs.go` | Remaining unimplemented tools |
 | `internal/api/server.go` | REST API router; /api/health, /api/accounts ✅ |
 | `internal/server/server.go` | Combined HTTP server (MCP at /mcp, REST at /api) |
 | `AGENT.md` | Operating rules for Claude sessions |
@@ -199,8 +201,14 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 **Known limitation (iteration 2):**
 `get_message` body is raw MIME (quoted-printable encoded). Needs MIME decoder pass for clean plain text.
 
+**File output tools (v0.4.0):**
+- `write_file` — enforced sandbox write to `working_dir`; rejects absolute paths and `..` traversal
+- `read_file` — read file from `working_dir`
+- `list_files` — list files in `working_dir` or subdirectory; returns root path
+- `delete_file` — delete file from `working_dir`
+
 **Stubbed (iteration 3):**  
-Remaining 15 tools return "iteration 2" error with descriptive message.
+Remaining 15 tools return "not yet implemented" error with descriptive message.
 
 **Deferred (later iteration):**  
 `watch_folder` — IMAP IDLE push notifications

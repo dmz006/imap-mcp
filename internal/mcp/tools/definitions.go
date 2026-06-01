@@ -318,3 +318,10 @@ func ListFilesTool() mcp.Tool {
 		mcp.WithString("subdir", mcp.Description("Subdirectory to list (omit for root of working dir)")),
 	)
 }
+
+func DeleteFileTool() mcp.Tool {
+	return mcp.NewTool("delete_file",
+		mcp.WithDescription("Delete a file from the working directory"),
+		mcp.WithString("filename", mcp.Required(), mcp.Description("Relative filename to delete within the working directory")),
+	)
+}

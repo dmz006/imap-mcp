@@ -40,6 +40,20 @@ func (h *Handlers) ReadFile(_ context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	return mcp.NewToolResultText(content), nil
 }
 
+func (h *Handlers) DeleteFile(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.out == nil {
+		return mcp.NewToolResultError("working_dir is not configured"), nil
+	}
+	filename := req.GetString("filename", "")
+	if filename == "" {
+		return mcp.NewToolResultError("filename is required"), nil
+	}
+	if err := h.out.Delete(filename); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("delete_file: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("deleted: %s", filename)), nil
+}
+
 func (h *Handlers) ListFiles(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if h.out == nil {
 		return mcp.NewToolResultError("working_dir is not configured"), nil

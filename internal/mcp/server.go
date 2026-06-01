@@ -72,6 +72,7 @@ func NewServer(
 	s.AddTool(tools.WriteFileTool(), h.WriteFile)
 	s.AddTool(tools.ReadFileTool(), h.ReadFile)
 	s.AddTool(tools.ListFilesTool(), h.ListFiles)
+	s.AddTool(tools.DeleteFileTool(), h.DeleteFile)
 
 	return s
 }
