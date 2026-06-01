@@ -5,6 +5,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/imap"
+	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/sync"
 )
 
@@ -14,13 +15,15 @@ type Handlers struct {
 	pool   *imap.Pool
 	db     *db.DB
 	syncer *sync.Syncer
+	out    *output.Writer
 }
 
-func NewHandlers(cfg *config.Config, pool *imap.Pool, database *db.DB, syncer *sync.Syncer) *Handlers {
+func NewHandlers(cfg *config.Config, pool *imap.Pool, database *db.DB, syncer *sync.Syncer, out *output.Writer) *Handlers {
 	return &Handlers{
 		cfg:    cfg,
 		pool:   pool,
 		db:     database,
 		syncer: syncer,
+		out:    out,
 	}
 }

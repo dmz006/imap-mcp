@@ -55,6 +55,12 @@ accounts:
       # client_secret: ${IMAP_MCP_WORK_OAUTH_CLIENT_SECRET}
       # token_file: ~/.config/imap-mcp/work.token.json
 
+# working_dir: directory where all MCP file output is written.
+# This is the ONLY location the server writes files to disk.
+# Paths outside this directory are rejected at the server level.
+# Default: ~/workspace/email
+working_dir: ~/workspace/email
+
 server:
   host: 127.0.0.1
   port: 8765

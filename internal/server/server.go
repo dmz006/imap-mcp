@@ -16,6 +16,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	mcpserver "github.com/dmz006/imap-mcp/internal/mcp"
+	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/sync"
 	"github.com/go-chi/chi/v5"
 	mcpgo "github.com/mark3labs/mcp-go/server"
@@ -29,6 +30,7 @@ type Server struct {
 	bus      *bus.Bus
 	syncer   *sync.Syncer
 	pipeline *enrichment.Pipeline
+	out      *output.Writer
 	log      *slog.Logger
 	http     *http.Server
 }
@@ -40,6 +42,7 @@ func New(
 	b *bus.Bus,
 	syncer *sync.Syncer,
 	pipeline *enrichment.Pipeline,
+	out *output.Writer,
 	log *slog.Logger,
 ) *Server {
 	return &Server{
@@ -49,13 +52,14 @@ func New(
 		bus:      b,
 		syncer:   syncer,
 		pipeline: pipeline,
+		out:      out,
 		log:      log,
 	}
 }
 
 func (s *Server) Start(ctx context.Context) error {
 	// Build MCP server
-	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer)
+	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer, s.out)
 	streamable := mcpgo.NewStreamableHTTPServer(mcpSrv)
 
 	// Build REST API router

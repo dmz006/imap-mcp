@@ -6,6 +6,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/mcp/tools"
+	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/sync"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -16,6 +17,7 @@ func NewServer(
 	pool *imap.Pool,
 	database *db.DB,
 	syncer *sync.Syncer,
+	out *output.Writer,
 ) *server.MCPServer {
 	s := server.NewMCPServer(
 		"imap-mcp",
@@ -23,7 +25,7 @@ func NewServer(
 		server.WithToolCapabilities(true),
 	)
 
-	h := tools.NewHandlers(cfg, pool, database, syncer)
+	h := tools.NewHandlers(cfg, pool, database, syncer, out)
 
 	// ── Account & connection ─────────────────────────────────────────────────
 	s.AddTool(tools.ListAccountsTool(), h.ListAccounts)
@@ -65,6 +67,11 @@ func NewServer(
 	s.AddTool(tools.GetAnomaliesTool(), h.GetAnomalies)
 	s.AddTool(tools.EnrichmentStatusTool(), h.EnrichmentStatus)
 	s.AddTool(tools.TriggerEnrichmentTool(), h.TriggerEnrichment)
+
+	// ── Working directory file I/O (enforced output sandbox) ─────────────────
+	s.AddTool(tools.WriteFileTool(), h.WriteFile)
+	s.AddTool(tools.ReadFileTool(), h.ReadFile)
+	s.AddTool(tools.ListFilesTool(), h.ListFiles)
 
 	return s
 }

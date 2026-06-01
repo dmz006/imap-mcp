@@ -292,3 +292,29 @@ func TriggerEnrichmentTool() mcp.Tool {
 		mcp.WithNumber("limit", mcp.Description("Max messages to enrich in this run (default: 50)")),
 	)
 }
+
+// ── Working directory file I/O ────────────────────────────────────────────────
+// All file output must go through these tools. The working_dir config value
+// is the only permitted write destination — paths are enforced server-side.
+
+func WriteFileTool() mcp.Tool {
+	return mcp.NewTool("write_file",
+		mcp.WithDescription("Write content to a file in the configured working directory. This is the ONLY way to save output to disk — all file writes are enforced to stay within working_dir. Use a relative filename; subdirectories are created automatically."),
+		mcp.WithString("filename", mcp.Required(), mcp.Description("Relative filename, e.g. 'subscriptions.md' or 'reports/inbox-summary.txt'. No absolute paths, no '..' traversal.")),
+		mcp.WithString("content", mcp.Required(), mcp.Description("File content to write")),
+	)
+}
+
+func ReadFileTool() mcp.Tool {
+	return mcp.NewTool("read_file",
+		mcp.WithDescription("Read a file from the working directory"),
+		mcp.WithString("filename", mcp.Required(), mcp.Description("Relative filename within the working directory")),
+	)
+}
+
+func ListFilesTool() mcp.Tool {
+	return mcp.NewTool("list_files",
+		mcp.WithDescription("List files in the working directory or a subdirectory within it"),
+		mcp.WithString("subdir", mcp.Description("Subdirectory to list (omit for root of working dir)")),
+	)
+}

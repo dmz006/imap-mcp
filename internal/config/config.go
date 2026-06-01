@@ -19,6 +19,7 @@ type Config struct {
 	Accounts   []AccountConfig   `yaml:"accounts"`
 	Server     ServerConfig      `yaml:"server"`
 	DB         DBConfig          `yaml:"db"`
+	WorkingDir string            `yaml:"working_dir"`
 	Enrichment EnrichmentConfig  `yaml:"enrichment"`
 	Sync       SyncConfig        `yaml:"sync"`
 	Log        LogConfig         `yaml:"log"`
@@ -101,6 +102,7 @@ func Load(path string) (*Config, error) {
 
 func defaults() *Config {
 	return &Config{
+		WorkingDir: "~/workspace/email",
 		Server: ServerConfig{
 			Host: "127.0.0.1",
 			Port: 8765,
@@ -171,6 +173,7 @@ func expandPaths(cfg *Config) {
 		return p
 	}
 	cfg.DB.Path = expand(cfg.DB.Path)
+	cfg.WorkingDir = expand(cfg.WorkingDir)
 	for i := range cfg.Accounts {
 		cfg.Accounts[i].Auth.TokenFile = expand(cfg.Accounts[i].Auth.TokenFile)
 	}
