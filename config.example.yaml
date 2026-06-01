@@ -1,0 +1,83 @@
+# imap-mcp configuration example
+# Copy to config.yaml and edit. Never commit config.yaml.
+# Values like ${ENV_VAR} are resolved from environment variables at startup.
+
+accounts:
+  - name: personal
+    default: true
+    imap:
+      host: imap.example.com
+      port: 993
+      tls: true
+    auth:
+      type: plain
+      username: user@example.com
+      # Use ${ENV_VAR} to pull from environment, or put the value directly here.
+      # Never commit a config file with real passwords to git.
+      password: ${IMAP_MCP_PERSONAL_PASSWORD}
+
+  # ── Gmail ──────────────────────────────────────────────────────────────────
+  # Gmail requires an App Password (NOT your regular Google password).
+  # IMAP is always enabled — no toggle needed since January 2025.
+  #
+  # Setup (5 min):
+  #   1. Enable 2-Step Verification: https://myaccount.google.com/security
+  #   2. Generate an App Password: https://myaccount.google.com/apppasswords
+  #      → Name it "imap-mcp" → copy the 16-char code (no spaces)
+  #   3. Paste the code in the password field below (or use ${ENV_VAR})
+  #
+  # Server settings (fixed — do not change):
+  #   host: imap.gmail.com  port: 993  tls: true
+  - name: gmail
+    imap:
+      host: imap.gmail.com
+      port: 993
+      tls: true
+    auth:
+      type: plain
+      username: user@gmail.com
+      password: ${GMAIL_APP_PASSWORD}
+
+  # ── Outlook / Microsoft 365 ────────────────────────────────────────────────
+  # Option A: App Password (same as Gmail — requires MFA enabled on account)
+  # Option B: OAuth2 (requires Azure AD app registration)
+  - name: work
+    imap:
+      host: outlook.office365.com
+      port: 993
+      tls: true
+    auth:
+      type: plain                       # or: xoauth2
+      username: user@corp.example.com
+      password: ${IMAP_MCP_WORK_PASSWORD}
+      # For xoauth2, replace the above password field with:
+      # client_id: ${IMAP_MCP_WORK_OAUTH_CLIENT_ID}
+      # client_secret: ${IMAP_MCP_WORK_OAUTH_CLIENT_SECRET}
+      # token_file: ~/.config/imap-mcp/work.token.json
+
+server:
+  host: 127.0.0.1
+  port: 8765
+
+db:
+  path: ~/.local/share/imap-mcp/imap.db
+
+enrichment:
+  enabled: true
+  ollama_url: http://localhost:11434
+  embed_model: nomic-embed-text
+  llm_model: qwen3:1.7b
+  batch_size: 20
+  auto_sync: true
+
+sync:
+  interval_minutes: 15
+  full_sync_on_start: true
+  folders:
+    - INBOX
+    - Sent
+    - Archive
+
+log:
+  level: info
+  format: text

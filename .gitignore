@@ -1,0 +1,33 @@
+# Binary
+imap-mcp
+bin/
+
+# Config (may contain credentials)
+config.yaml
+*.yaml
+!config.example.yaml
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# DB
+*.db
+*.db-shm
+*.db-wal
+
+# OAuth tokens
+tokens/
+*.token.json
+
+# Build
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Go
+vendor/

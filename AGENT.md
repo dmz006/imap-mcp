@@ -1,0 +1,235 @@
+# AGENT.md — imap-mcp
+
+Operating rules for Claude when working on this codebase.
+Adapted from `dmz006/datawatch` AGENT.md. Datawatch-specific rules (mobile parity,
+localization, containers, PWA) are intentionally omitted.
+
+---
+
+## Pre-Execution Rule
+
+Before any code changes, new features, or bug fixes:
+
+1. **Load IMAP-MCP-CONTEXT.md** — `Read /home/dmz/workspace/imap-mcp/IMAP-MCP-CONTEXT.md`
+2. **Re-read relevant AGENT.md sections** for the task
+3. **Verify compliance** — ensure planned approach follows all applicable rules
+4. **Flag conflicts** — if a prompt conflicts with a rule, notify user before proceeding
+
+---
+
+## Prime Rule
+
+**The user makes all decisions.** When a design or implementation decision is not covered
+by an existing rule, stop and run the Decision Interview Protocol (DIP) before writing code.
+
+---
+
+## Decision Interview Protocol (DIP)
+
+When any implementation step requires an unresolved design decision:
+
+1. **Context** — one paragraph: what decision is needed and why it matters now
+2. **Options** — numbered list, each with: what it does + trade-offs
+3. **Recommendation** — agent's pick + one-sentence rationale
+4. **One interview question** — phrased as "Which option do you prefer?"
+5. **Wait** for answer before proceeding
+
+Ask **one question at a time**. Never batch multiple questions.
+
+DIP applies to: architectural choices, API shape, data model, UX, scope ambiguity.
+DIP does NOT apply to: bug fixes with a clear answer, cosmetic changes.
+
+After user decides: record the decision as a rule in the relevant AGENT.md section.
+
+---
+
+## Scope Constraints
+
+- Work only within `/home/dmz/workspace/imap-mcp`
+- Do not read, write, or execute files outside this repo unless explicitly instructed
+- Do not modify system files or install packages without user confirmation
+
+---
+
+## Code Quality Rules
+
+- All Go code must compile with `go build ./...` — no exceptions
+- All new packages must have a package-level comment explaining purpose
+- The `Authenticator`, `Bus`, and `Pool` interfaces must remain stable
+- Do not remove existing API endpoints or MCP tools without user approval
+- All new config fields must appear in `config.example.yaml` with comments
+- Target close to 100% test coverage for new/changed logic; tests must be functional, not skeletons
+
+---
+
+## Testing Rules
+
+Two levels required for every feature:
+
+1. **Unit/integration tests** — Go `_test.go` files; run with `go test ./...`
+2. **Live connection tests** — actually connect to a real IMAP server, verify the MCP tool
+   or API endpoint works end-to-end. Document: server tested against, what was observed.
+
+- **Tested=Yes** — Go tests exist and pass
+- **Validated=Yes** — live IMAP connection confirmed the feature works
+
+Do not mark Validated=Yes from unit tests alone.
+
+---
+
+## Git Discipline
+
+- Every logical change gets its own commit with a conventional commit message
+- Format: `type(scope): description` — e.g. `feat(sync): add UID range fetch`
+- Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`
+- Do not squash history. Each commit must be meaningful and reversible
+- Do not force-push to `main`
+- Include version in commit message: `v0.2.0: feat(mcp): implement list_messages`
+
+---
+
+## Versioning
+
+Version lives in **one place**: `cmd/imap-mcp/main.go` `var Version` (also `internal/config/config.go` `var Version`).
+Both must match on every commit.
+
+- **patch** — bug fixes, docs, config changes: `0.1.0` → `0.1.1`
+- **minor** — new features, new MCP tools, new API endpoints: `0.1.0` → `0.2.0`
+- **major** — breaking changes (user must explicitly request): `0.1.0` → `1.0.0`
+
+Never reuse a version. Bump before every push.
+
+---
+
+## Dependency Rules
+
+- Do not add new Go module dependencies without noting them in a commit message
+- Prefer standard library over third-party for simple tasks
+- All new dependencies must be MIT-compatible
+- Run `go mod tidy` after any dependency change
+
+---
+
+## Configuration Rule
+
+**No configuration may ever be hard-coded.** Every value must be:
+1. Settable in `config.yaml`
+2. Overridable via `IMAP_MCP_*` environment variable
+3. Exposed in `GET /api/health` or a dedicated stats endpoint
+4. Referenced in `config.example.yaml` with an explanatory comment
+
+Credentials must always use `${ENV_VAR}` references in YAML, never plaintext values.
+
+---
+
+## Security Rules
+
+- Never log or commit credentials, tokens, OAuth secrets, or email content
+- Never expose raw email bodies in logs — log UIDs and subjects only
+- The `auth.password`, `auth.client_secret`, and `auth.token_file` fields must
+  never appear in log output
+- No local-environment leaks in git: use `example.com`, `user@example.com` in docs/examples
+
+---
+
+## Planning Rules
+
+For any work touching 3+ files or non-trivial architecture:
+
+1. Create `docs/plans/YYYY-MM-DD-<slug>.md` with: date, version, scope, phases, status
+2. Mark phases Planned / In Progress / Done as work proceeds
+3. After implementation, update plan status and note the version it shipped in
+
+---
+
+## Documentation Rules
+
+Every commit adding or changing behavior must update docs:
+
+1. `CHANGELOG.md` under `[Unreleased]`
+2. `config.example.yaml` for any new config fields
+3. `IMAP-MCP-CONTEXT.md` if architecture, tools, or API surface changes significantly
+4. `docs/plans/README.md` for bugs and backlog
+
+---
+
+## Work Tracking
+
+Multi-step requests: show a plan checklist before starting and update as tasks complete:
+
+```
+## Plan
+- [ ] Task 1
+- [~] Task 2 (in progress)
+- [x] Task 3
+```
+
+Single-task requests: skip the checklist, just do the work.
+
+---
+
+## Rate Limit Handling
+
+If Claude hits an API rate limit:
+- Output: `DATAWATCH_RATE_LIMITED: resets at <time>`
+- Write `PAUSED.md` with current context
+- Resume cleanly when limit resets
+
+---
+
+## User Input Tracking During Active Work
+
+1. Note the input immediately — add to task tracking
+2. Do not ignore — acknowledge and note when it will be handled
+3. Update the plan
+4. Design decisions: run DIP before proceeding
+
+---
+
+## Background Shell Cleanup
+
+After every build+test cycle, kill lingering poll-watcher bash processes:
+
+```bash
+pgrep -a -u "$USER" bash | grep 'shell-snapshots/snapshot-bash-'
+# kill each watcher found; keep only interactive login shells
+```
+
+---
+
+## RTK Integration
+
+Always prefix commands with `rtk` — it reduces token output 60-90%:
+
+```bash
+rtk go build && rtk go test ./...
+rtk git status && rtk git diff
+rtk git log
+```
+
+---
+
+## Event Bus Rule
+
+All new subsystems must publish and subscribe through `internal/bus` — never via
+direct function calls or shared state. This is the foundation for future autonomous
+agents, federation, streaming API, and the plugin system.
+
+New event types go in `internal/bus/bus.go` as `EventType` constants.
+
+---
+
+## Architecture-for-Option-4 Rule
+
+Every new component must be designed with the following future capabilities in mind:
+- **Autonomous agents** — rules that trigger actions without human input
+- **Federation** — multiple imap-mcp instances sharing KG/enrichment data
+- **Streaming event bus** — `/api/events` SSE stream for real-time consumers
+- **Plugin system** — third-party enrichment, classifiers, custom rule engines
+
+Design guideline: new subsystems expose an interface, not a concrete type, so
+they can be replaced or extended without touching call sites.
+
+---
+
+*Prime rule: the user makes all decisions. When in doubt, run DIP before writing code.*
