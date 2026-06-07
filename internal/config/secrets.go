@@ -60,7 +60,12 @@ func resolveSecrets(cfg *Config) error {
 		if hasSecretRef(a.Password) || hasSecretRef(a.ClientID) ||
 			hasSecretRef(a.ClientSecret) || hasSecretRef(a.Username) {
 			anyRef = true
-			break
+		}
+		if s := cfg.Accounts[i].SMTP; s != nil && (hasSecretRef(s.Password) || hasSecretRef(s.Username)) {
+			anyRef = true
+		}
+		if in := cfg.Accounts[i].Inbound; in != nil && hasSecretRef(in.Gates.HMACSecret) {
+			anyRef = true
 		}
 	}
 	if !anyRef {
@@ -82,7 +87,14 @@ func resolveSecrets(cfg *Config) error {
 	for i := range cfg.Accounts {
 		a := &cfg.Accounts[i].Auth
 		acct := cfg.Accounts[i].Name
-		for _, f := range []*string{&a.Password, &a.ClientID, &a.ClientSecret, &a.Username} {
+		fields := []*string{&a.Password, &a.ClientID, &a.ClientSecret, &a.Username}
+		if s := cfg.Accounts[i].SMTP; s != nil {
+			fields = append(fields, &s.Password, &s.Username)
+		}
+		if in := cfg.Accounts[i].Inbound; in != nil {
+			fields = append(fields, &in.Gates.HMACSecret)
+		}
+		for _, f := range fields {
 			resolved, err := r.expand(*f)
 			if err != nil {
 				return fmt.Errorf("account %q: %w", acct, err)

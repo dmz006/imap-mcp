@@ -265,6 +265,51 @@ bundles no tools and opens no connection. Pull it on demand:
 
 The source of truth lives in this repo under `skills/imap-mcp/SKILL.md`.
 
+### Bidirectional comm: outbound send + trust-gated inbound
+
+imap-mcp can act as a full communication channel — sending mail *and* receiving
+trust-gated commands — so datawatch (or any consumer) can treat email as a
+first-class comm. **None of this auto-injects into any session;** it activates
+only via per-account config you opt into.
+
+**Outbound (per-domain SMTP).** Each account gets its own `smtp:` block, so mail
+leaves through the correct domain's server, never a shared relay. Credentials
+default to the IMAP auth block. The `send_message` MCP tool drives it:
+
+```yaml
+smtp:
+  host: smtp.example.com
+  port: 587            # 587=STARTTLS, 465=implicit TLS
+  starttls: true
+  from: "Me <me@example.com>"
+```
+
+**Inbound command channel (default-deny, composable gates).** An account can
+become a trust-gated control channel. A command (a fenced envelope in the body)
+is acted on **only if every required gate passes** — imap-mcp is the trust
+boundary and emits a verified-command event only then. Because `From:` is
+spoofable, gates are layered and composable per account:
+
+| Gate | What it proves |
+|------|----------------|
+| `allowlist` | sender address/domain is expected (coarse; spoofable alone) |
+| `require_dkim` / `require_dmarc` | the receiving server validated domain auth (`dkim=pass`/`dmarc=pass` in `Authentication-Results`) |
+| `hmac_secret` | the command envelope carries a valid HMAC-SHA256 (shared secret) |
+| `replay_window_minutes` + nonce | command is fresh and single-use (no replay) |
+| `require_pgp` | **backlog** — PGP-signed envelope; **fails closed** until implemented |
+
+With `inbound.enabled: true` you must configure at least one gate, or startup
+refuses (no ungated command channel). A verified command must also name a verb
+in the account's `capabilities` list — capability scoping, default-deny. The
+command envelope format and the full gate config are documented in
+`config.example.yaml`.
+
+> Note: imap-mcp emits `inbound.command` (verified) and `inbound.rejected`
+> (audited) events. A downstream consumer such as a datawatch comm backend
+> should act **only** on verified events, never on raw mail. That backend is
+> datawatch-side work, tracked separately — imap-mcp owns the mail + crypto
+> trust boundary; datawatch owns command dispatch.
+
 ### Credentials: standalone vs datawatch secrets
 
 imap-mcp resolves each credential in priority order:

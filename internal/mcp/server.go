@@ -53,6 +53,9 @@ func NewServer(
 	s.AddTool(tools.MoveBulkTool(), h.MoveBulk)
 	s.AddTool(tools.FlagBulkTool(), h.FlagBulk)
 
+	// ── Outbound (SMTP send — per-account) ───────────────────────────────────
+	s.AddTool(tools.SendMessageTool(), h.SendMessage)
+
 	// ── Search ───────────────────────────────────────────────────────────────
 	s.AddTool(tools.SearchMessagesTool(), h.SearchMessages)
 	s.AddTool(tools.CrossAccountSearchTool(), h.CrossAccountSearch)

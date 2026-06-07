@@ -24,6 +24,40 @@ accounts:
       # Use ${ENV_VAR} to pull from environment, or put the value directly here.
       # Never commit a config file with real passwords to git.
       password: ${IMAP_MCP_PERSONAL_PASSWORD}
+    # ── Outbound (OPTIONAL) ───────────────────────────────────────────────
+    # Per-domain SMTP. Sends go through THIS domain's server, not a relay.
+    # Credentials default to the auth block above; override if they differ.
+    # Omit the whole smtp block to keep the account receive-only.
+    smtp:
+      host: smtp.example.com
+      port: 587          # 587=STARTTLS, 465=implicit TLS
+      starttls: true
+      from: "Me <user@example.com>"
+      # username: user@example.com         # defaults to auth.username
+      # password: ${secret:personal_smtp}  # defaults to auth.password
+    # ── Inbound command channel (OPTIONAL, default-deny) ──────────────────
+    # Turns this account into a TRUST-GATED control channel: a command in a
+    # watched message is acted on ONLY if every required gate passes. Email
+    # From: is spoofable, so an allowlist alone is NOT enough — layer gates.
+    # Commands use a fenced envelope in the body:
+    #   -----BEGIN DATAWATCH COMMAND-----
+    #   verb: mail.archive
+    #   args: {"from":"noise@example.com"}
+    #   nonce: <unique-per-command>
+    #   ts: 2026-06-07T20:00:00Z
+    #   hmac: <hex hmac-sha256 over the canonical envelope>   # if hmac_secret set
+    #   -----END DATAWATCH COMMAND-----
+    inbound:
+      enabled: false              # opt-in; off by default
+      watch_folder: INBOX
+      gates:                      # ALL configured gates are required (AND)
+        allowlist: [ops@example.com]   # addresses or bare domains
+        require_dkim: true        # needs dkim=pass in Authentication-Results
+        require_dmarc: true       # needs dmarc=pass
+        hmac_secret: ${secret:personal_inbound_hmac}  # shared-secret over envelope
+        replay_window_minutes: 10 # reject stale commands; nonces are single-use
+        require_pgp: false        # BACKLOG — when true, fails closed until implemented
+      capabilities: [status, mail.archive]  # allowed verbs (default-deny)
 
   # ── Gmail ──────────────────────────────────────────────────────────────────
   # Gmail requires an App Password (NOT your regular Google password).
