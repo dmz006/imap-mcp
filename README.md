@@ -248,7 +248,42 @@ Or use HTTP mode (recommended for persistent IMAP connections — start `imap-mc
 
 If you use [datawatch](https://github.com/dmz006/datawatch), imap-mcp coexists without configuration changes. datawatch's `WriteProjectMCPConfig` preserves all non-datawatch entries in `.mcp.json` on every session spawn. Add imap-mcp to `~/.mcp.json` once and it persists through datawatch session spawns automatically.
 
-A `extra_mcp_servers` config option for datawatch is tracked at [datawatch#118](https://github.com/dmz006/datawatch/issues/118) — this will allow datawatch to inject imap-mcp into every spawned session automatically.
+A `extra_mcp_servers` config option for datawatch is tracked at [datawatch#118](https://github.com/dmz006/datawatch/issues/118). Note: imap-mcp does **not** rely on auto-injection. Whether, when, and where imap-mcp is connected to a session is an **operator decision** — you attach it to the specific sessions or projects you choose. A session that wasn't given imap-mcp simply doesn't have it.
+
+### Credentials: standalone vs datawatch secrets
+
+imap-mcp resolves each credential in priority order:
+
+1. `${ENV_VAR}` — read from the environment at startup (**standalone**, the default)
+2. `${secret:name}` — fetched from a datawatch secrets service at startup (**datawatch-integrated**)
+3. plain value — used as-is
+
+**Standalone** (no datawatch dependency):
+
+```yaml
+auth:
+  type: plain
+  username: user@gmail.com
+  password: ${GMAIL_APP_PASSWORD}      # from the environment
+```
+
+**datawatch-integrated** — store the credential in datawatch's secrets service and reference it. This requires a `datawatch:` block; without one, a `${secret:...}` reference is a startup error (so you never get a silent placeholder):
+
+```yaml
+accounts:
+  - name: gmail
+    auth:
+      type: plain
+      username: user@gmail.com
+      password: ${secret:gmail_app_password}   # fetched from datawatch
+
+# Resolve ${secret:...} against a running datawatch instance.
+datawatch:
+  api_url: ${DATAWATCH_API_URL}          # e.g. http://localhost:7777
+  token: ${DATAWATCH_SECRETS_TOKEN}      # agent-scoped secrets token (least privilege)
+```
+
+imap-mcp fetches each secret over `GET {api_url}/api/agents/secrets/{name}` with the bearer token. The token and API URL are themselves `${ENV_VAR}` references — **never put a literal token in a config file or commit one to a repo.** Both modes are fully supported; the datawatch block is optional and additive — remove it and imap-mcp runs entirely on its own.
 
 ---
 

@@ -16,13 +16,17 @@ import (
 var Version = "0.1.0"
 
 type Config struct {
-	Accounts   []AccountConfig   `yaml:"accounts"`
-	Server     ServerConfig      `yaml:"server"`
-	DB         DBConfig          `yaml:"db"`
-	WorkingDir string            `yaml:"working_dir"`
-	Enrichment EnrichmentConfig  `yaml:"enrichment"`
-	Sync       SyncConfig        `yaml:"sync"`
-	Log        LogConfig         `yaml:"log"`
+	Accounts   []AccountConfig  `yaml:"accounts"`
+	Server     ServerConfig     `yaml:"server"`
+	DB         DBConfig         `yaml:"db"`
+	WorkingDir string           `yaml:"working_dir"`
+	Enrichment EnrichmentConfig `yaml:"enrichment"`
+	Sync       SyncConfig       `yaml:"sync"`
+	Log        LogConfig        `yaml:"log"`
+	// Datawatch is optional. When present, ${secret:name} references in
+	// credentials resolve against a datawatch secrets service. When absent,
+	// imap-mcp runs fully standalone (plain values / ${ENV_VAR} only).
+	Datawatch *DatawatchConfig `yaml:"datawatch,omitempty"`
 }
 
 type AccountConfig struct {
@@ -94,6 +98,12 @@ func Load(path string) (*Config, error) {
 	applyEnvOverrides(cfg)
 	expandPaths(cfg)
 
+	// Resolve ${secret:name} references against datawatch, if configured.
+	// No-op (and no datawatch dependency) when no such references are used.
+	if err := resolveSecrets(cfg); err != nil {
+		return nil, fmt.Errorf("resolve secrets: %w", err)
+	}
+
 	if err := validate(cfg); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -135,6 +145,11 @@ var envRefRe = regexp.MustCompile(`\$\{([^}]+)\}`)
 func expandEnvRefs(s string) string {
 	return envRefRe.ReplaceAllStringFunc(s, func(m string) string {
 		key := envRefRe.FindStringSubmatch(m)[1]
+		// Leave ${secret:name} references intact — they are resolved later
+		// against datawatch, after the config (incl. the datawatch block) parses.
+		if strings.HasPrefix(key, "secret:") {
+			return m
+		}
 		if val := os.Getenv(key); val != "" {
 			return val
 		}
