@@ -1,10 +1,26 @@
 ---
+# --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: 0.1.0
-tags: [email, imap, mail, triage, productivity]
-# datawatch v1 extensions (all optional, additive)
-compatible_with: [datawatch>=6.7.0]
+version: "0.1.0"
+tags:
+  - email
+  - imap
+  - mail
+  - triage
+  - productivity
+
+# --- Community required fields ---
+author: dmz006
+author_url: https://github.com/dmz006
+contributor_notes: "Companion skill for the imap-mcp MCP server (https://github.com/dmz006/imap-mcp). Teaches an agent the safe workflows for managing a mailbox over IMAP. Instructions only — it bundles no tools and opens no connection; the operator decides if and when imap-mcp is attached to a session."
+license: MIT
+category: comms
+datawatch_min_version: "8.0.0"
+
+# --- datawatch optional extensions ---
+compatible_with: [datawatch>=8.0.0]
+requires: []
 applies_to:
   agents: [claude-code]
   session_types: []          # empty = any
