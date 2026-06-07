@@ -246,6 +246,9 @@ Or use HTTP mode (recommended for persistent IMAP connections — start `imap-mc
 
 ### Using with datawatch
 
+> **Full walkthrough:** [`docs/datawatch-integration.md`](docs/datawatch-integration.md) — an end-to-end, task-oriented guide to all three layers (secrets, skill, comm), standalone vs integrated, with copy-paste config. The sections below summarize each layer.
+
+
 If you use [datawatch](https://github.com/dmz006/datawatch), imap-mcp coexists without configuration changes. datawatch's `WriteProjectMCPConfig` preserves all non-datawatch entries in `.mcp.json` on every session spawn. Add imap-mcp to `~/.mcp.json` once and it persists through datawatch session spawns automatically.
 
 A `extra_mcp_servers` config option for datawatch is tracked at [datawatch#118](https://github.com/dmz006/datawatch/issues/118). Note: imap-mcp does **not** rely on auto-injection. Whether, when, and where imap-mcp is connected to a session is an **operator decision** — you attach it to the specific sessions or projects you choose. A session that wasn't given imap-mcp simply doesn't have it.
