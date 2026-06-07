@@ -15,10 +15,12 @@ import (
 	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/imap/auth"
+	"github.com/dmz006/imap-mcp/internal/inbound"
 	mcpserver "github.com/dmz006/imap-mcp/internal/mcp"
 	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/server"
 	"github.com/dmz006/imap-mcp/internal/sync"
+	"github.com/dmz006/imap-mcp/internal/trust"
 	mcpgo "github.com/mark3labs/mcp-go/server"
 )
 
@@ -170,9 +172,15 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	syncer := sync.New(cfg, pool, database, b, log)
 	pipeline := enrichment.NewPipeline(cfg.Enrichment, database, b, log)
 
+	// Inbound command channel (trust-gated). The watcher is a no-op unless an
+	// account enables inbound, so it is always safe to start.
+	verifier := trust.NewVerifier(database.Nonces)
+	watcher := inbound.NewWatcher(cfg, pool, inbound.NewProcessor(b, verifier), log)
+
 	// Start background workers
 	go syncer.Run(ctx)
 	go pipeline.Run(ctx)
+	go watcher.Run(ctx)
 
 	cleanup := func() {
 		pool.Close()

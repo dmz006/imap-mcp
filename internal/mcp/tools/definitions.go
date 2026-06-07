@@ -325,3 +325,16 @@ func DeleteFileTool() mcp.Tool {
 		mcp.WithString("filename", mcp.Required(), mcp.Description("Relative filename to delete within the working directory")),
 	)
 }
+
+// SendMessageTool sends an outbound email via the account's configured SMTP
+// server (per-domain). Available only for accounts with an smtp: config block.
+func SendMessageTool() mcp.Tool {
+	return mcp.NewTool("send_message",
+		mcp.WithDescription("Send an email via the account's configured SMTP server. Requires an smtp: block on the account."),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
+		mcp.WithString("to", mcp.Required(), mcp.Description("Comma-separated recipient addresses")),
+		mcp.WithString("cc", mcp.Description("Comma-separated CC addresses")),
+		mcp.WithString("subject", mcp.Required(), mcp.Description("Subject line")),
+		mcp.WithString("body", mcp.Required(), mcp.Description("Plain-text body")),
+	)
+}

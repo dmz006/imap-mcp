@@ -1,6 +1,15 @@
 # imap-mcp configuration example
 # Copy to config.yaml and edit. Never commit config.yaml.
-# Values like ${ENV_VAR} are resolved from environment variables at startup.
+#
+# Credential resolution — three ways, in priority order:
+#   1. ${ENV_VAR}      → resolved from the environment at startup (standalone)
+#   2. ${secret:name}  → fetched from a datawatch secrets service at startup
+#                        (requires the `datawatch:` block below — see bottom of file)
+#   3. plain value     → used as-is
+#
+# imap-mcp runs FULLY STANDALONE by default. The datawatch block is optional;
+# without it, ${secret:...} references are a startup error and only ${ENV_VAR}
+# / plain values are used.
 
 accounts:
   - name: personal
@@ -15,6 +24,40 @@ accounts:
       # Use ${ENV_VAR} to pull from environment, or put the value directly here.
       # Never commit a config file with real passwords to git.
       password: ${IMAP_MCP_PERSONAL_PASSWORD}
+    # ── Outbound (OPTIONAL) ───────────────────────────────────────────────
+    # Per-domain SMTP. Sends go through THIS domain's server, not a relay.
+    # Credentials default to the auth block above; override if they differ.
+    # Omit the whole smtp block to keep the account receive-only.
+    smtp:
+      host: smtp.example.com
+      port: 587          # 587=STARTTLS, 465=implicit TLS
+      starttls: true
+      from: "Me <user@example.com>"
+      # username: user@example.com         # defaults to auth.username
+      # password: ${secret:personal_smtp}  # defaults to auth.password
+    # ── Inbound command channel (OPTIONAL, default-deny) ──────────────────
+    # Turns this account into a TRUST-GATED control channel: a command in a
+    # watched message is acted on ONLY if every required gate passes. Email
+    # From: is spoofable, so an allowlist alone is NOT enough — layer gates.
+    # Commands use a fenced envelope in the body:
+    #   -----BEGIN DATAWATCH COMMAND-----
+    #   verb: mail.archive
+    #   args: {"from":"noise@example.com"}
+    #   nonce: <unique-per-command>
+    #   ts: 2026-06-07T20:00:00Z
+    #   hmac: <hex hmac-sha256 over the canonical envelope>   # if hmac_secret set
+    #   -----END DATAWATCH COMMAND-----
+    inbound:
+      enabled: false              # opt-in; off by default
+      watch_folder: INBOX
+      gates:                      # ALL configured gates are required (AND)
+        allowlist: [ops@example.com]   # addresses or bare domains
+        require_dkim: true        # needs dkim=pass in Authentication-Results
+        require_dmarc: true       # needs dmarc=pass
+        hmac_secret: ${secret:personal_inbound_hmac}  # shared-secret over envelope
+        replay_window_minutes: 10 # reject stale commands; nonces are single-use
+        require_pgp: false        # BACKLOG — when true, fails closed until implemented
+      capabilities: [status, mail.archive]  # allowed verbs (default-deny)
 
   # ── Gmail ──────────────────────────────────────────────────────────────────
   # Gmail requires an App Password (NOT your regular Google password).
@@ -36,7 +79,11 @@ accounts:
     auth:
       type: plain
       username: user@gmail.com
+      # Standalone: from the environment …
       password: ${GMAIL_APP_PASSWORD}
+      # datawatch-integrated: … or store the App Password in datawatch's secrets
+      # service and reference it (requires the `datawatch:` block at the bottom):
+      # password: ${secret:gmail_app_password}
 
   # ── Outlook / Microsoft 365 ────────────────────────────────────────────────
   # Option A: App Password (same as Gmail — requires MFA enabled on account)
@@ -87,3 +134,18 @@ sync:
 log:
   level: info
   format: text
+
+# ── datawatch integration (OPTIONAL) ─────────────────────────────────────────
+# Uncomment to resolve ${secret:name} credential references against a datawatch
+# secrets service. Leave commented out to run fully standalone.
+#
+# SECURITY: never put a literal token here. Always use an ${ENV_VAR} reference so
+# no secret is ever written into a config file or committed to a repo.
+#
+#   export DATAWATCH_API_URL=http://localhost:7777
+#   export DATAWATCH_SECRETS_TOKEN=<datawatch agent-scoped secrets token>
+#
+# datawatch:
+#   api_url: ${DATAWATCH_API_URL}
+#   # Prefer an agent-scoped secrets token (least privilege) over the operator token.
+#   token: ${DATAWATCH_SECRETS_TOKEN}

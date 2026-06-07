@@ -246,9 +246,107 @@ Or use HTTP mode (recommended for persistent IMAP connections — start `imap-mc
 
 ### Using with datawatch
 
+> **Full walkthrough:** [`docs/datawatch-integration.md`](docs/datawatch-integration.md) — an end-to-end, task-oriented guide to all three layers (secrets, skill, comm), standalone vs integrated, with copy-paste config. The sections below summarize each layer.
+
+
 If you use [datawatch](https://github.com/dmz006/datawatch), imap-mcp coexists without configuration changes. datawatch's `WriteProjectMCPConfig` preserves all non-datawatch entries in `.mcp.json` on every session spawn. Add imap-mcp to `~/.mcp.json` once and it persists through datawatch session spawns automatically.
 
-A `extra_mcp_servers` config option for datawatch is tracked at [datawatch#118](https://github.com/dmz006/datawatch/issues/118) — this will allow datawatch to inject imap-mcp into every spawned session automatically.
+A `extra_mcp_servers` config option for datawatch is tracked at [datawatch#118](https://github.com/dmz006/datawatch/issues/118). Note: imap-mcp does **not** rely on auto-injection. Whether, when, and where imap-mcp is connected to a session is an **operator decision** — you attach it to the specific sessions or projects you choose. A session that wasn't given imap-mcp simply doesn't have it.
+
+### Companion skill (datawatch community registry)
+
+A usage skill is published to the datawatch community registry at
+`skills/comms/imap-mcp` ([dmz006/datawatch-community](https://github.com/dmz006/datawatch-community)).
+It teaches an agent the safe workflows for these tools (triage, unsubscribe,
+sender audit, bulk-archive, search, export). It is **instructions only** — it
+bundles no tools and opens no connection. Pull it on demand:
+
+```
+# over datawatch MCP:    skills_registry_sync { name: "community", skills: "imap-mcp" }
+# or CLI:                datawatch skills registry sync community imap-mcp
+```
+
+The source of truth lives in this repo under `skills/imap-mcp/SKILL.md`.
+
+### Bidirectional comm: outbound send + trust-gated inbound
+
+imap-mcp can act as a full communication channel — sending mail *and* receiving
+trust-gated commands — so datawatch (or any consumer) can treat email as a
+first-class comm. **None of this auto-injects into any session;** it activates
+only via per-account config you opt into.
+
+**Outbound (per-domain SMTP).** Each account gets its own `smtp:` block, so mail
+leaves through the correct domain's server, never a shared relay. Credentials
+default to the IMAP auth block. The `send_message` MCP tool drives it:
+
+```yaml
+smtp:
+  host: smtp.example.com
+  port: 587            # 587=STARTTLS, 465=implicit TLS
+  starttls: true
+  from: "Me <me@example.com>"
+```
+
+**Inbound command channel (default-deny, composable gates).** An account can
+become a trust-gated control channel. A command (a fenced envelope in the body)
+is acted on **only if every required gate passes** — imap-mcp is the trust
+boundary and emits a verified-command event only then. Because `From:` is
+spoofable, gates are layered and composable per account:
+
+| Gate | What it proves |
+|------|----------------|
+| `allowlist` | sender address/domain is expected (coarse; spoofable alone) |
+| `require_dkim` / `require_dmarc` | the receiving server validated domain auth (`dkim=pass`/`dmarc=pass` in `Authentication-Results`) |
+| `hmac_secret` | the command envelope carries a valid HMAC-SHA256 (shared secret) |
+| `replay_window_minutes` + nonce | command is fresh and single-use (no replay) |
+| `require_pgp` | **backlog** — PGP-signed envelope; **fails closed** until implemented |
+
+With `inbound.enabled: true` you must configure at least one gate, or startup
+refuses (no ungated command channel). A verified command must also name a verb
+in the account's `capabilities` list — capability scoping, default-deny. The
+command envelope format and the full gate config are documented in
+`config.example.yaml`.
+
+> Note: imap-mcp emits `inbound.command` (verified) and `inbound.rejected`
+> (audited) events. A downstream consumer such as a datawatch comm backend
+> should act **only** on verified events, never on raw mail. That backend is
+> datawatch-side work, tracked separately — imap-mcp owns the mail + crypto
+> trust boundary; datawatch owns command dispatch.
+
+### Credentials: standalone vs datawatch secrets
+
+imap-mcp resolves each credential in priority order:
+
+1. `${ENV_VAR}` — read from the environment at startup (**standalone**, the default)
+2. `${secret:name}` — fetched from a datawatch secrets service at startup (**datawatch-integrated**)
+3. plain value — used as-is
+
+**Standalone** (no datawatch dependency):
+
+```yaml
+auth:
+  type: plain
+  username: user@gmail.com
+  password: ${GMAIL_APP_PASSWORD}      # from the environment
+```
+
+**datawatch-integrated** — store the credential in datawatch's secrets service and reference it. This requires a `datawatch:` block; without one, a `${secret:...}` reference is a startup error (so you never get a silent placeholder):
+
+```yaml
+accounts:
+  - name: gmail
+    auth:
+      type: plain
+      username: user@gmail.com
+      password: ${secret:gmail_app_password}   # fetched from datawatch
+
+# Resolve ${secret:...} against a running datawatch instance.
+datawatch:
+  api_url: ${DATAWATCH_API_URL}          # e.g. http://localhost:7777
+  token: ${DATAWATCH_SECRETS_TOKEN}      # agent-scoped secrets token (least privilege)
+```
+
+imap-mcp fetches each secret over `GET {api_url}/api/agents/secrets/{name}` with the bearer token. The token and API URL are themselves `${ENV_VAR}` references — **never put a literal token in a config file or commit one to a repo.** Both modes are fully supported; the datawatch block is optional and additive — remove it and imap-mcp runs entirely on its own.
 
 ---
 

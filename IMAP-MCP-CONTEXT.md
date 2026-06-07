@@ -33,7 +33,25 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Go version | 1.25.10 |
 | Current version | 0.1.0 |
 | Location | `/home/dmz/workspace/imap-mcp` |
-| Status | v0.1.0 scaffold — 5 MCP tools implemented, 23 stubs, REST API shell |
+| Status | v0.1.0 — 34 MCP tools registered; datawatch secrets + bidirectional comm (SMTP send + trust-gated inbound) implemented; some intelligence tools still stubbed |
+
+## datawatch integration (operator-controlled, never auto-injected)
+
+Three independent, opt-in layers. The operator decides if/when imap-mcp attaches
+to a session — there is no auto-injection.
+
+1. **Secrets** — `${secret:name}` resolves via datawatch secrets service when a
+   `datawatch:` block (api_url, token as env refs) is present; else standalone
+   (`${ENV}`/plain). `internal/config/secrets.go`.
+2. **Skill** — published to the datawatch community registry at
+   `skills/comms/imap-mcp` (github.com/dmz006/datawatch-community). Source of
+   truth: `skills/imap-mcp/SKILL.md`. On-demand only.
+3. **Comm** — imap-mcp is the *trust boundary*: it sends (per-account SMTP) and
+   emits verified `inbound.command` events for trust-gated mail. The datawatch
+   *messaging.Backend* that consumes those events is **datawatch-side dev**
+   (handed off via issue + session message), not built in this repo.
+
+PGP inbound gate is **backlogged** — declared but fails closed until implemented.
 
 ---
 
@@ -176,7 +194,13 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 | `internal/mcp/tools/impl_accounts.go` | list_accounts, sync_account ✅ |
 | `internal/mcp/tools/impl_folders.go` | list_folders, create_folder, delete_folder ✅ |
 | `internal/mcp/tools/impl_files.go` | write_file, read_file, list_files, delete_file |
+| `internal/mcp/tools/impl_send.go` | send_message (per-account SMTP outbound) |
 | `internal/output/writer.go` | Enforced output sandbox (only file writer in MCP layer) |
+| `internal/config/secrets.go` | `${secret:name}` resolver via datawatch secrets service (optional `datawatch:` block) |
+| `internal/smtp/smtp.go` | Per-account SMTP sender (STARTTLS/implicit TLS, header-injection safe) |
+| `internal/trust/` | Inbound command-channel trust boundary: composable gates (allowlist, DKIM/DMARC, HMAC, replay), PGP gate fails closed (backlog) |
+| `internal/inbound/` | Watcher polls inbound-enabled folders; Processor emits `inbound.command`/`inbound.rejected` bus events |
+| `internal/db/nonces.go` | SQLite `inbound_nonces` replay store (implements trust.NonceStore) |
 | `internal/mcp/tools/impl_stubs.go` | Remaining unimplemented tools |
 | `internal/api/server.go` | REST API router; /api/health, /api/accounts ✅ |
 | `internal/server/server.go` | Combined HTTP server (MCP at /mcp, REST at /api) |

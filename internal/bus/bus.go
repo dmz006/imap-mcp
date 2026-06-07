@@ -26,6 +26,15 @@ const (
 	EventAccountDisconnect EventType = "account.disconnected"
 	EventWebhookDelivered  EventType = "webhook.delivered"
 	EventWebhookFailed     EventType = "webhook.failed"
+	// EventInboundCommand is published only for an inbound email that passed
+	// every required trust gate and whose verb is capability-allowed. Consumers
+	// (e.g. a datawatch comm backend) should act ONLY on this event, never on
+	// raw inbound mail. Payload is a trust.VerifiedCommand.
+	EventInboundCommand EventType = "inbound.command"
+	// EventInboundRejected is published when an inbound message carried a
+	// command envelope but failed one or more gates. Payload is a
+	// trust.Result. Useful for audit/alerting; never actionable.
+	EventInboundRejected EventType = "inbound.rejected"
 )
 
 type Event struct {

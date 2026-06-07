@@ -25,6 +25,7 @@ type DB struct {
 	Webhooks  *WebhookRepo
 	Rules     *RuleRepo
 	Enrich    *EnrichRepo
+	Nonces    *NonceRepo
 }
 
 func Open(path string) (*DB, error) {
@@ -56,6 +57,7 @@ func Open(path string) (*DB, error) {
 	db.Webhooks = &WebhookRepo{db: conn}
 	db.Rules = &RuleRepo{db: conn}
 	db.Enrich = &EnrichRepo{db: conn}
+	db.Nonces = &NonceRepo{db: conn}
 
 	return db, nil
 }

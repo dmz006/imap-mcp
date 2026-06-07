@@ -222,4 +222,14 @@ CREATE TABLE IF NOT EXISTS rules (
     created_at  INTEGER DEFAULT (unixepoch()),
     updated_at  INTEGER DEFAULT (unixepoch())
 );
+
+-- Replay protection for the inbound command channel: each (account, nonce)
+-- may be honored at most once.
+CREATE TABLE IF NOT EXISTS inbound_nonces (
+    account   TEXT NOT NULL,
+    nonce     TEXT NOT NULL,
+    cmd_ts    INTEGER,
+    seen_at   INTEGER DEFAULT (unixepoch()),
+    PRIMARY KEY (account, nonce)
+);
 `
