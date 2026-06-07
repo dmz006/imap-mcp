@@ -250,6 +250,21 @@ If you use [datawatch](https://github.com/dmz006/datawatch), imap-mcp coexists w
 
 A `extra_mcp_servers` config option for datawatch is tracked at [datawatch#118](https://github.com/dmz006/datawatch/issues/118). Note: imap-mcp does **not** rely on auto-injection. Whether, when, and where imap-mcp is connected to a session is an **operator decision** — you attach it to the specific sessions or projects you choose. A session that wasn't given imap-mcp simply doesn't have it.
 
+### Companion skill (datawatch community registry)
+
+A usage skill is published to the datawatch community registry at
+`skills/comms/imap-mcp` ([dmz006/datawatch-community](https://github.com/dmz006/datawatch-community)).
+It teaches an agent the safe workflows for these tools (triage, unsubscribe,
+sender audit, bulk-archive, search, export). It is **instructions only** — it
+bundles no tools and opens no connection. Pull it on demand:
+
+```
+# over datawatch MCP:    skills_registry_sync { name: "community", skills: "imap-mcp" }
+# or CLI:                datawatch skills registry sync community imap-mcp
+```
+
+The source of truth lives in this repo under `skills/imap-mcp/SKILL.md`.
+
 ### Credentials: standalone vs datawatch secrets
 
 imap-mcp resolves each credential in priority order:
