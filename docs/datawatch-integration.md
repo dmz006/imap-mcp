@@ -190,15 +190,43 @@ The HMAC (when `hmac_secret` is set) is computed over the canonical form
 
 Ordinary mail (no envelope) is never touched and emits nothing.
 
-### 3c. The datawatch side (not yet built)
+### 3c. The datawatch side (built — loop is closed)
 
-For datawatch to *act on* inbound commands and *send* through imap-mcp, it needs
-a `messaging.Backend` that consumes only `inbound.command` events and sends via
-`send_message`. That is **datawatch-side development**, tracked at
-[datawatch#127](https://github.com/dmz006/datawatch/issues/127). imap-mcp gates
+datawatch ships an `imap_mcp` messaging backend
+(`internal/messaging/backends/imapmcp`) that consumes only verified
+`inbound.command` events and sends replies through imap-mcp. imap-mcp gates
 *authenticity*; datawatch decides *what a verified command may do* (its own
-capability scoping + human-in-the-loop). Until that backend lands, the inbound
-channel verifies and emits events, but no datawatch comm consumes them yet.
+capability scoping + human-in-the-loop). Tracked at
+[datawatch#127](https://github.com/dmz006/datawatch/issues/127).
+
+**Wire it up (datawatch config.yaml):**
+```yaml
+imap_mcp:
+  enabled: true
+  url: "http://localhost:8765"   # imap-mcp HTTP server (run: imap-mcp serve)
+  account: ""                    # empty = imap-mcp default account
+  subject_prefix: "datawatch"    # prepended to reply subjects
+```
+
+**The transport contract (imap-mcp v0.2.1+ serves both):**
+
+| Direction | Endpoint | Notes |
+|-----------|----------|-------|
+| Receive | `GET /api/events` (SSE) | datawatch subscribes; acts only on `inbound.command`, reconnects with backoff |
+| Send | `POST /api/accounts/{account}/messages/send` | `{to,subject,body,cc}`; `account` may be `_default` |
+
+Event envelope is `{type, account, payload}`; the verified-command payload
+carries `Account`, `From`, `Command{Verb,Args,Nonce}`, `Gates`.
+
+**End-to-end flow:** trust-gated email arrives → imap-mcp runs the gates →
+emits `inbound.command` over SSE → datawatch's backend surfaces it as an inbound
+message, applies its own dispatch/scoping → replies via the send endpoint, which
+goes out through the account's SMTP. Both halves are now released
+(imap-mcp ≥ v0.2.1, datawatch `imap_mcp` backend).
+
+> Run `imap-mcp serve` (HTTP mode) for this — the SSE stream needs a persistent
+> server. The operator still chooses to enable the `imap_mcp:` channel; nothing
+> auto-connects.
 
 ---
 
@@ -209,7 +237,7 @@ channel verifies and emits events, but no datawatch comm consumes them yet.
 | Creds from datawatch vault | `datawatch:` block + `${secret:}` | secrets service running |
 | An agent that knows the workflows | nothing in imap-mcp | `skills_registry_sync community imap-mcp` |
 | Send mail | per-account `smtp:` | none |
-| Trust-gated inbound commands | per-account `inbound:` + gates | backend (datawatch#127) to consume events |
+| Trust-gated inbound commands | per-account `inbound:` + gates | datawatch `imap_mcp:` backend (built, datawatch#127) |
 
 ## Verifying it works
 

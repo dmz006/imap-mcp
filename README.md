@@ -308,10 +308,13 @@ command envelope format and the full gate config are documented in
 `config.example.yaml`.
 
 > Note: imap-mcp emits `inbound.command` (verified) and `inbound.rejected`
-> (audited) events. A downstream consumer such as a datawatch comm backend
-> should act **only** on verified events, never on raw mail. That backend is
-> datawatch-side work, tracked separately — imap-mcp owns the mail + crypto
-> trust boundary; datawatch owns command dispatch.
+> (audited) events over `GET /api/events` (SSE). A downstream consumer acts
+> **only** on verified events, never on raw mail. datawatch's `imap_mcp`
+> messaging backend does exactly this (consumes verified events via SSE, sends
+> via `POST /api/accounts/{account}/messages/send`) — the loop is closed as of
+> imap-mcp v0.2.1 + datawatch#127. imap-mcp owns the mail + crypto trust
+> boundary; datawatch owns command dispatch. See
+> [`docs/datawatch-integration.md`](docs/datawatch-integration.md).
 
 ### Credentials: standalone vs datawatch secrets
 
@@ -437,8 +440,10 @@ Base URL: `http://localhost:8765` (when running `imap-mcp serve`)
 ### Implemented
 
 ```
-GET  /api/health                   Server status, version, account count
-GET  /api/accounts                 List accounts and connection status
+GET  /api/health                                    Server status, version, account count
+GET  /api/accounts                                  List accounts and connection status
+GET  /api/events                                    SSE event stream (bus events; datawatch consumes inbound.command)
+POST /api/accounts/{account}/messages/send          Send mail via the account's SMTP ({to,subject,body,cc}; account may be _default)
 ```
 
 ### Planned (returns 501 until implemented)
@@ -472,7 +477,6 @@ DELETE /api/rules/{id}
 POST /api/rules/{id}/test
 
 POST /api/query              ← algorithmic query DSL entry point
-GET  /api/events             ← SSE event stream (future)
 ```
 
 ---

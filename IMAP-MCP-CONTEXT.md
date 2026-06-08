@@ -47,9 +47,13 @@ to a session — there is no auto-injection.
    `skills/comms/imap-mcp` (github.com/dmz006/datawatch-community). Source of
    truth: `skills/imap-mcp/SKILL.md`. On-demand only.
 3. **Comm** — imap-mcp is the *trust boundary*: it sends (per-account SMTP) and
-   emits verified `inbound.command` events for trust-gated mail. The datawatch
-   *messaging.Backend* that consumes those events is **datawatch-side dev**
-   (handed off via issue + session message), not built in this repo.
+   emits verified `inbound.command` events for trust-gated mail. **Loop closed
+   (v0.2.1):** imap-mcp serves `GET /api/events` (SSE) + `POST /api/accounts/
+   {account}/messages/send`; datawatch's `imap_mcp` messaging backend
+   (`internal/messaging/backends/imapmcp`, datawatch#127) consumes verified
+   events via SSE and replies via the send endpoint. imap-mcp owns mail+crypto;
+   datawatch owns dispatch. Note: the REST endpoints were added by a sibling
+   session in commit 1f01312.
 
 PGP inbound gate is **backlogged** — declared but fails closed until implemented.
 
@@ -295,6 +299,8 @@ Current event types: `message.synced`, `message.updated`, `message.deleted`,
 ```
 GET  /api/health                          ✅ implemented
 GET  /api/accounts                        ✅ implemented
+GET  /api/events                          ✅ implemented (SSE; datawatch consumes inbound.command)
+POST /api/accounts/{account}/messages/send ✅ implemented (SMTP send; account may be _default)
 POST /api/accounts/{account}/sync         501 stub
 GET  /api/accounts/{account}/folders      501 stub
 GET  /api/accounts/{account}/folders/{folder}/messages   501 stub
@@ -306,7 +312,6 @@ GET  /api/anomalies                       501 stub
 POST /api/webhooks                        501 stub
 POST /api/rules                           501 stub
 POST /api/query                           501 stub  ← algorithmic layer entry point
-GET  /api/events                          501 stub  ← future streaming/federation
 ```
 
 ---
