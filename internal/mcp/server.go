@@ -35,6 +35,8 @@ func NewServer(
 	s.AddTool(tools.ListFoldersTool(), h.ListFolders)
 	s.AddTool(tools.CreateFolderTool(), h.CreateFolder)
 	s.AddTool(tools.DeleteFolderTool(), h.DeleteFolder)
+	s.AddTool(tools.LabelMessageTool(), h.LabelMessage)
+	s.AddTool(tools.EmptyTrashTool(), h.EmptyTrash)
 
 	// ── Messages (read) ──────────────────────────────────────────────────────
 	s.AddTool(tools.ListMessagesTool(), h.ListMessages)
@@ -59,6 +61,12 @@ func NewServer(
 
 	// ── Analytics ────────────────────────────────────────────────────────────
 	s.AddTool(tools.TopSendersTool(), h.TopSenders)
+
+	// ── Automation rules ─────────────────────────────────────────────────────
+	s.AddTool(tools.CreateRuleTool(), h.CreateRule)
+	s.AddTool(tools.ListRulesTool(), h.ListRules)
+	s.AddTool(tools.DeleteRuleTool(), h.DeleteRule)
+	s.AddTool(tools.RunRulesTool(), h.RunRules)
 
 	// ── Search ───────────────────────────────────────────────────────────────
 	s.AddTool(tools.SearchMessagesTool(), h.SearchMessages)

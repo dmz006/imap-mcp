@@ -33,6 +33,7 @@ func CreateFolderTool() mcp.Tool {
 		mcp.WithDescription("Create a new mailbox folder"),
 		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Folder path, e.g. Archive/2026")),
+		mcp.WithString("folder", mcp.Description("Alias for path")),
 	)
 }
 
@@ -41,6 +42,7 @@ func DeleteFolderTool() mcp.Tool {
 		mcp.WithDescription("Delete a mailbox folder (must be empty)"),
 		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Folder path to delete")),
+		mcp.WithString("folder", mcp.Description("Alias for path")),
 	)
 }
 
@@ -360,5 +362,66 @@ func TopSendersTool() mcp.Tool {
 		mcp.WithNumber("top", mcp.Description("How many top senders to return (default: 30)")),
 		mcp.WithNumber("scan", mcp.Description("Max messages to scan (default: all; cap for speed on huge folders)")),
 		mcp.WithString("group_by", mcp.Description("address (default) or domain")),
+	)
+}
+
+// CreateRuleTool persists an automation rule (match → action).
+func CreateRuleTool() mcp.Tool {
+	return mcp.NewTool("create_rule",
+		mcp.WithDescription("Create a persistent rule: match messages by sender/subject/text/age and apply an action (trash/move/flag/seen). Run with run_rules; ideal for recurring spam so it never rebuilds."),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Unique rule name")),
+		mcp.WithString("action", mcp.Required(), mcp.Description("trash | move | flag | seen")),
+		mcp.WithString("from", mcp.Description("Match From substring")),
+		mcp.WithString("subject", mcp.Description("Match Subject substring")),
+		mcp.WithString("text", mcp.Description("Match body text")),
+		mcp.WithNumber("older_than_days", mcp.Description("Match messages older than N days")),
+		mcp.WithString("dest", mcp.Description("Destination folder (for action=move)")),
+		mcp.WithString("flags", mcp.Description("Flags to add (for action=flag), comma-separated")),
+		mcp.WithString("account", mcp.Description("Account scope (omit for default)")),
+		mcp.WithString("folder", mcp.Description("Folder to act on (default: INBOX)")),
+		mcp.WithString("description", mcp.Description("Human note")),
+		mcp.WithBoolean("active", mcp.Description("Active on run_rules (default: true)")),
+	)
+}
+
+// ListRulesTool lists persisted rules.
+func ListRulesTool() mcp.Tool {
+	return mcp.NewTool("list_rules", mcp.WithDescription("List all persisted automation rules with their match/action and run counts."))
+}
+
+// DeleteRuleTool removes a rule by id.
+func DeleteRuleTool() mcp.Tool {
+	return mcp.NewTool("delete_rule",
+		mcp.WithDescription("Delete an automation rule by id."),
+		mcp.WithNumber("id", mcp.Required(), mcp.Description("Rule id (from list_rules)")),
+	)
+}
+
+// RunRulesTool applies active rules now.
+func RunRulesTool() mcp.Tool {
+	return mcp.NewTool("run_rules",
+		mcp.WithDescription("Apply active rules to their folders now. Use dry_run to preview match counts without acting."),
+		mcp.WithNumber("id", mcp.Description("Run only this rule id (default: all active)")),
+		mcp.WithBoolean("dry_run", mcp.Description("Count matches without applying actions")),
+	)
+}
+
+// LabelMessageTool applies a Gmail label (COPY into the label mailbox).
+func LabelMessageTool() mcp.Tool {
+	return mcp.NewTool("label_message",
+		mcp.WithDescription("Apply a Gmail label to a message (COPY into the label mailbox; message keeps its place and gains the label). Creates the label if missing."),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
+		mcp.WithString("folder", mcp.Description("Folder containing the message (default: INBOX)")),
+		mcp.WithNumber("uid", mcp.Required(), mcp.Description("Message UID")),
+		mcp.WithString("label", mcp.Required(), mcp.Description("Label/mailbox to apply")),
+		mcp.WithBoolean("create", mcp.Description("Create the label if it doesn't exist (default: true)")),
+	)
+}
+
+// EmptyTrashTool permanently deletes everything in Trash.
+func EmptyTrashTool() mcp.Tool {
+	return mcp.NewTool("empty_trash",
+		mcp.WithDescription("Permanently delete every message in the account's Trash mailbox (auto-detected). Irreversible."),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
 	)
 }
