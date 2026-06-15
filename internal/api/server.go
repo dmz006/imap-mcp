@@ -159,14 +159,11 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		Default   bool   `json:"default"`
 		Connected bool   `json:"connected"`
 	}
-	names := s.pool.AccountNames()
-	nameSet := make(map[string]bool, len(names))
-	for _, n := range names {
-		nameSet[n] = true
-	}
 	result := make([]info, 0, len(s.cfg.Accounts))
 	for _, a := range s.cfg.Accounts {
-		result = append(result, info{Name: a.Name, Default: a.Default, Connected: nameSet[a.Name]})
+		// Probe live state (NOOP) rather than trusting pool membership, so a
+		// silently-dropped connection is reported as disconnected.
+		result = append(result, info{Name: a.Name, Default: a.Default, Connected: s.pool.Probe(a.Name)})
 	}
 	writeJSON(w, result)
 }

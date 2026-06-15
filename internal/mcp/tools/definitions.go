@@ -338,3 +338,27 @@ func SendMessageTool() mcp.Tool {
 		mcp.WithString("body", mcp.Required(), mcp.Description("Plain-text body")),
 	)
 }
+
+// PurgeSenderTool deletes every message from a sender, draining the folder in
+// one call (auto-detects the account's Trash mailbox).
+func PurgeSenderTool() mcp.Tool {
+	return mcp.NewTool("purge_sender",
+		mcp.WithDescription("Move ALL messages from a sender to Trash, looping until the folder is drained. Auto-detects the Trash mailbox (e.g. Gmail's [Gmail]/Trash). Returns the total purged."),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
+		mcp.WithString("from", mcp.Required(), mcp.Description("Sender substring to match in the From header")),
+		mcp.WithString("folder", mcp.Description("Folder to purge from (default: INBOX)")),
+		mcp.WithBoolean("permanent", mcp.Description("Expunge in place instead of moving to Trash (irreversible)")),
+	)
+}
+
+// TopSendersTool aggregates senders in a folder by message count.
+func TopSendersTool() mcp.Tool {
+	return mcp.NewTool("top_senders",
+		mcp.WithDescription("Rank senders in a folder by message count — surfaces bulk/spam clusters across the whole folder in one call."),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
+		mcp.WithString("folder", mcp.Description("Folder to scan (default: INBOX)")),
+		mcp.WithNumber("top", mcp.Description("How many top senders to return (default: 30)")),
+		mcp.WithNumber("scan", mcp.Description("Max messages to scan (default: all; cap for speed on huge folders)")),
+		mcp.WithString("group_by", mcp.Description("address (default) or domain")),
+	)
+}

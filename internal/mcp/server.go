@@ -52,9 +52,13 @@ func NewServer(
 	s.AddTool(tools.AppendMessageTool(), h.AppendMessage)
 	s.AddTool(tools.MoveBulkTool(), h.MoveBulk)
 	s.AddTool(tools.FlagBulkTool(), h.FlagBulk)
+	s.AddTool(tools.PurgeSenderTool(), h.PurgeSender)
 
 	// ── Outbound (SMTP send — per-account) ───────────────────────────────────
 	s.AddTool(tools.SendMessageTool(), h.SendMessage)
+
+	// ── Analytics ────────────────────────────────────────────────────────────
+	s.AddTool(tools.TopSendersTool(), h.TopSenders)
 
 	// ── Search ───────────────────────────────────────────────────────────────
 	s.AddTool(tools.SearchMessagesTool(), h.SearchMessages)

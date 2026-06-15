@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/dmz006/imap-mcp/internal/bus"
 	"github.com/dmz006/imap-mcp/internal/config"
@@ -181,6 +182,7 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	go syncer.Run(ctx)
 	go pipeline.Run(ctx)
 	go watcher.Run(ctx)
+	go pool.StartKeepalive(ctx, 4*time.Minute) // keep IMAP connections warm + self-heal
 
 	cleanup := func() {
 		pool.Close()

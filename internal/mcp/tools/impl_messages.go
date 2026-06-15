@@ -330,9 +330,12 @@ func (h *Handlers) SearchMessages(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	uids := searchData.AllUIDs()
+	// Capture the TRUE total before truncating to the page limit. IMAP UIDSearch
+	// returns every matching UID, so this is exact — not capped at `limit`.
+	totalMatches := len(uids)
 	if len(uids) == 0 {
 		result, _ := mcp.NewToolResultJSON(map[string]any{
-			"folder": folder, "total_matches": 0, "messages": []messageHeader{},
+			"folder": folder, "total_matches": 0, "returned": 0, "messages": []messageHeader{},
 		})
 		return result, nil
 	}
@@ -359,11 +362,6 @@ func (h *Handlers) SearchMessages(ctx context.Context, req mcp.CallToolRequest) 
 	// Reverse for newest-first
 	for i, j := 0, len(headers)-1; i < j; i, j = i+1, j-1 {
 		headers[i], headers[j] = headers[j], headers[i]
-	}
-
-	totalMatches := len(uids)
-	if searchData.Count > 0 {
-		totalMatches = int(searchData.Count)
 	}
 
 	result, err := mcp.NewToolResultJSON(map[string]any{
