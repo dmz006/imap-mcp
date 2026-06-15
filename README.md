@@ -120,6 +120,9 @@ accounts:
       password: abcdabcdabcdabcd   # 16-char app password, no spaces
 ```
 
+**Enterprise Gmail / Google Workspace (OAuth):** if your org disables App
+Passwords and requires OAuth, see **[`docs/enterprise-gmail-oauth.md`](docs/enterprise-gmail-oauth.md)** — both 3-legged user consent (`type: xoauth2`, `provider: google`, `auth-setup`) and headless service-account domain-wide delegation (`type: xoauth2_service_account`). Note: Workspace addresses **require** `provider: google`.
+
 ### Outlook / Microsoft 365
 
 ```yaml

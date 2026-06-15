@@ -174,7 +174,7 @@ func runAuthSetup(args []string) error {
 		return err
 	}
 	if a.Auth.Type != "xoauth2" {
-		return fmt.Errorf("account %q uses %s auth, not xoauth2", name, a.Auth.Type)
+		return fmt.Errorf("account %q uses %s auth, not xoauth2 (service-account auth needs no setup step)", name, a.Auth.Type)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -185,6 +185,7 @@ func runAuthSetup(args []string) error {
 		a.Auth.ClientID,
 		a.Auth.ClientSecret,
 		a.Auth.TokenFile,
+		a.Auth.Provider,
 	)
 }
 
