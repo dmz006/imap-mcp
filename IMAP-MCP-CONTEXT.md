@@ -33,7 +33,17 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Go version | 1.25.10 |
 | Current version | 0.1.0 |
 | Location | `/home/dmz/workspace/imap-mcp` |
-| Status | v0.1.0 — 34 MCP tools registered; datawatch secrets + bidirectional comm (SMTP send + trust-gated inbound) implemented; some intelligence tools still stubbed |
+| Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
+
+## Cleanup & automation tooling (v0.3.0)
+
+- `internal/mcp/tools/impl_purge.go` — `purge_sender` (self-draining bulk delete; `resolveTrash` auto-detects \Trash/[Gmail]/Trash)
+- `internal/mcp/tools/impl_topsenders.go` — `top_senders` (rank folder senders by count, whole-folder scan)
+- `internal/mcp/tools/impl_rules.go` + `internal/db/rules.go` — rules engine (create/list/delete/run_rules; match→action persisted in `rules` table; `dry_run` previews)
+- `internal/mcp/tools/impl_labels.go` — `label_message` (Gmail label via COPY), `empty_trash`
+- `internal/imap/pool.go` — `StartKeepalive` (NOOP every 4m) + `reconnectOnce` + `Probe` (live health); `/api/accounts` probes live state
+- `search_messages` now returns the true `total_matches` (was capped at page size)
+- create_folder/delete_folder accept `folder` as an alias for `path`
 
 ## datawatch integration (operator-controlled, never auto-injected)
 
