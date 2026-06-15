@@ -79,20 +79,34 @@ func (h *Handlers) RunRules(_ context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	onlyID := int64(req.GetFloat("id", 0))
 	dryRun := req.GetBool("dry_run", false)
 
+	results, err := h.RunActiveRules(onlyID, dryRun)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("run rules: %v", err)), nil
+	}
+	result, err := mcp.NewToolResultJSON(map[string]any{"dry_run": dryRun, "results": results})
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return result, nil
+}
+
+// RuleRunResult is the outcome of applying one rule.
+type RuleRunResult struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Matched int    `json:"matched"`
+	Action  string `json:"action"`
+	Error   string `json:"error,omitempty"`
+}
+
+// RunActiveRules applies all active rules (or one by id) and returns per-rule
+// results. Shared by the run_rules MCP tool and the `run-rules` CLI command.
+func (h *Handlers) RunActiveRules(onlyID int64, dryRun bool) ([]RuleRunResult, error) {
 	rules, err := h.db.Rules.List()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("list rules: %v", err)), nil
+		return nil, err
 	}
-
-	type ruleResult struct {
-		ID      int64  `json:"id"`
-		Name    string `json:"name"`
-		Matched int    `json:"matched"`
-		Action  string `json:"action"`
-		Error   string `json:"error,omitempty"`
-	}
-	var results []ruleResult
-
+	var results []RuleRunResult
 	for _, rule := range rules {
 		if !rule.Active && onlyID == 0 {
 			continue
@@ -100,25 +114,20 @@ func (h *Handlers) RunRules(_ context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		if onlyID != 0 && rule.ID != onlyID {
 			continue
 		}
-		res := ruleResult{ID: rule.ID, Name: rule.Name}
+		res := RuleRunResult{ID: rule.ID, Name: rule.Name}
 		if len(rule.Actions) > 0 {
 			res.Action = rule.Actions[0].Type
 		}
-		n, err := h.applyRule(rule, dryRun)
+		n, aerr := h.applyRule(rule, dryRun)
 		res.Matched = n
-		if err != nil {
-			res.Error = err.Error()
+		if aerr != nil {
+			res.Error = aerr.Error()
 		} else if !dryRun && n > 0 {
 			_ = h.db.Rules.IncrementRun(rule.ID, n)
 		}
 		results = append(results, res)
 	}
-
-	result, err := mcp.NewToolResultJSON(map[string]any{"dry_run": dryRun, "results": results})
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return result, nil
+	return results, nil
 }
 
 // applyRule searches a rule's folder by its conditions and applies its actions.

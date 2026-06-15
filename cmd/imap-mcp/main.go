@@ -18,6 +18,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/imap/auth"
 	"github.com/dmz006/imap-mcp/internal/inbound"
 	mcpserver "github.com/dmz006/imap-mcp/internal/mcp"
+	"github.com/dmz006/imap-mcp/internal/mcp/tools"
 	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/server"
 	"github.com/dmz006/imap-mcp/internal/sync"
@@ -44,6 +45,8 @@ func run() error {
 		return runServe(os.Args[2:])
 	case "auth-setup":
 		return runAuthSetup(os.Args[2:])
+	case "run-rules":
+		return runRules(os.Args[2:])
 	case "version":
 		fmt.Println(Version)
 		return nil
@@ -77,6 +80,53 @@ func runStdio() error {
 
 	log.Info("imap-mcp running in stdio mode", "version", Version)
 	return stdio.Listen(ctx, os.Stdin, os.Stdout)
+}
+
+// runRules applies all active automation rules once and exits. Designed to be
+// invoked by a scheduler (e.g. an hourly datawatch cron) for unattended inbox
+// triage + categorization. Connects, runs rules, prints a summary.
+func runRules(args []string) error {
+	fs := flag.NewFlagSet("run-rules", flag.ExitOnError)
+	cfgPath := fs.String("config", "", "config file path")
+	dryRun := fs.Bool("dry-run", false, "preview match counts without acting")
+	_ = fs.Parse(args)
+
+	cfg, log, err := loadConfig(*cfgPath)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	database, err := db.Open(cfg.DB.Path)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer database.Close()
+
+	pool := imap.NewPool(cfg, bus.New(), log)
+	if err := pool.Connect(ctx); err != nil {
+		return fmt.Errorf("connect accounts: %w", err)
+	}
+	defer pool.Close()
+
+	h := tools.NewHandlers(cfg, pool, database, nil, nil)
+	results, err := h.RunActiveRules(0, *dryRun)
+	if err != nil {
+		return fmt.Errorf("run rules: %w", err)
+	}
+
+	total := 0
+	for _, r := range results {
+		total += r.Matched
+		line := fmt.Sprintf("  %-22s %-6s x%d", r.Name, r.Action, r.Matched)
+		if r.Error != "" {
+			line += "  ERROR: " + r.Error
+		}
+		fmt.Println(line)
+	}
+	fmt.Printf("run-rules: %d active rules, %d messages actioned (dry_run=%v)\n", len(results), total, *dryRun)
+	return nil
 }
 
 // runServe starts the combined HTTP server (MCP + REST API).
