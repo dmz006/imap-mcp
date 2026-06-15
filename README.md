@@ -247,6 +247,8 @@ Or use HTTP mode (recommended for persistent IMAP connections — start `imap-mc
 ### Using with datawatch
 
 > **Full walkthrough:** [`docs/datawatch-integration.md`](docs/datawatch-integration.md) — an end-to-end, task-oriented guide to all three layers (secrets, skill, comm), standalone vs integrated, with copy-paste config. The sections below summarize each layer.
+>
+> **Worked example:** [`docs/cookbook-inbox-cleanup.md`](docs/cookbook-inbox-cleanup.md) — a redacted, end-to-end case study: dig a 17k-message inbox out of bulk mail, sort it into labels, and keep it clean automatically with an hourly datawatch spawn job.
 
 
 If you use [datawatch](https://github.com/dmz006/datawatch), imap-mcp coexists without configuration changes. datawatch's `WriteProjectMCPConfig` preserves all non-datawatch entries in `.mcp.json` on every session spawn. Add imap-mcp to `~/.mcp.json` once and it persists through datawatch session spawns automatically.
