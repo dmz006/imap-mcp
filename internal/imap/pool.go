@@ -18,11 +18,11 @@ import (
 
 // Pool holds authenticated IMAP connections for all configured accounts.
 type Pool struct {
-	mu      sync.RWMutex
-	conns   map[string]*Conn
-	cfg     *config.Config
-	bus     *bus.Bus
-	log     *slog.Logger
+	mu    sync.RWMutex
+	conns map[string]*Conn
+	cfg   *config.Config
+	bus   *bus.Bus
+	log   *slog.Logger
 }
 
 // Conn wraps a single account's IMAP connection with reconnect logic.
@@ -181,6 +181,79 @@ func (p *Pool) Reconnect(ctx context.Context, accountName string) {
 		p.log.Info("reconnected", "account", accountName)
 		return
 	}
+}
+
+// StartKeepalive issues a NOOP on every connection at the given interval and
+// reconnects any that have dropped. IMAP servers close idle connections, so
+// this keeps them warm and self-heals instead of failing on next use. Safe to
+// run for the life of the process; blocks until ctx is cancelled.
+func (p *Pool) StartKeepalive(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 4 * time.Minute
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			for _, name := range p.AccountNames() {
+				conn, err := p.Get(name)
+				if err != nil {
+					continue
+				}
+				if err := conn.ping(); err != nil {
+					p.log.Warn("keepalive: dead connection, reconnecting", "account", name, "err", err)
+					p.reconnectOnce(ctx, name)
+				}
+			}
+		}
+	}
+}
+
+// ping issues a NOOP to check the connection is alive.
+func (c *Conn) ping() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client == nil {
+		return fmt.Errorf("no client")
+	}
+	return c.client.Noop().Wait()
+}
+
+// Probe reports whether the account's connection is actually alive (live NOOP),
+// not just present in the pool. Used by health checks so they don't lie.
+func (p *Pool) Probe(account string) bool {
+	conn, err := p.Get(account)
+	if err != nil {
+		return false
+	}
+	return conn.ping() == nil
+}
+
+// reconnectOnce makes a single reconnect attempt and swaps in the new client.
+func (p *Pool) reconnectOnce(ctx context.Context, name string) {
+	a, err := p.cfg.Account(name)
+	if err != nil {
+		return
+	}
+	conn, err := p.connect(ctx, *a)
+	if err != nil {
+		p.log.Warn("keepalive reconnect failed", "account", name, "err", err)
+		p.bus.PublishAsync(bus.Event{Type: bus.EventAccountError, Account: name, Payload: err.Error()})
+		return
+	}
+	p.mu.Lock()
+	if old := p.conns[name]; old != nil {
+		old.mu.Lock()
+		old.client.Close() //nolint:errcheck
+		old.mu.Unlock()
+	}
+	p.conns[name] = conn
+	p.mu.Unlock()
+	p.bus.PublishAsync(bus.Event{Type: bus.EventAccountConnected, Account: name})
+	p.log.Info("keepalive reconnected", "account", name)
 }
 
 // Close disconnects all accounts gracefully.

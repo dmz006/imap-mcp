@@ -37,11 +37,20 @@ func (h *Handlers) ListFolders(ctx context.Context, req mcp.CallToolRequest) (*m
 	return mcp.NewToolResultJSON(result)
 }
 
+// folderPath accepts either `path` or `folder` so the folder tools are
+// consistent with the rest of the API (which uses `folder`).
+func folderPath(req mcp.CallToolRequest) string {
+	if p := req.GetString("path", ""); p != "" {
+		return p
+	}
+	return req.GetString("folder", "")
+}
+
 func (h *Handlers) CreateFolder(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	account := req.GetString("account", "")
-	path := req.GetString("path", "")
+	path := folderPath(req)
 	if path == "" {
-		return mcp.NewToolResultError("path is required"), nil
+		return mcp.NewToolResultError("path (or folder) is required"), nil
 	}
 
 	conn, err := h.pool.Resolve(account)
@@ -60,9 +69,9 @@ func (h *Handlers) CreateFolder(ctx context.Context, req mcp.CallToolRequest) (*
 
 func (h *Handlers) DeleteFolder(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	account := req.GetString("account", "")
-	path := req.GetString("path", "")
+	path := folderPath(req)
 	if path == "" {
-		return mcp.NewToolResultError("path is required"), nil
+		return mcp.NewToolResultError("path (or folder) is required"), nil
 	}
 
 	conn, err := h.pool.Resolve(account)

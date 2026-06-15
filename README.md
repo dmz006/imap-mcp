@@ -394,6 +394,22 @@ All tools accept an optional `account` parameter. Omit to use the default accoun
 | `append_message` | `folder`*, `message`*, `flags` | Write a raw RFC 2822 message into a folder |
 | `move_bulk` | `folder`*, `query`/`subject`, `destination`* | Move all matching messages in bulk |
 | `flag_bulk` | `folder`*, `query`, `add`/`remove` | Flag all matching messages in bulk |
+| `purge_sender` | `from`*, `folder`, `permanent` | Move **all** mail from a sender to Trash, draining the folder in one call (auto-detects Trash) |
+| `label_message` | `uid`*, `label`*, `folder`, `create` | Apply a Gmail label (COPY into the label mailbox; creates it if missing) |
+| `empty_trash` | `account` | Permanently delete everything in the auto-detected Trash mailbox |
+| `send_message` | `to`*, `subject`*, `body`*, `cc` | Send via the account's SMTP (per-domain) |
+
+### Cleanup automation & analytics
+
+| Tool | Key parameters | Description |
+|------|---------------|-------------|
+| `top_senders` | `folder`, `top`, `scan`, `group_by` | Rank a folder's senders by count (address/domain) — surfaces bulk/spam clusters across the whole folder in one call |
+| `create_rule` | `name`*, `action`*, `from`/`subject`/`text`/`older_than_days`, `dest`, `flags`, `account`, `folder` | Persist a match→action rule (trash/move/flag/seen) |
+| `list_rules` | — | List persisted rules with run counts |
+| `delete_rule` | `id`* | Delete a rule |
+| `run_rules` | `id`, `dry_run` | Apply active rules now (`dry_run` previews match counts) |
+
+> `search_messages` now returns the **true** `total_matches` (no longer capped at the page size), and connections self-heal via a NOOP keepalive + auto-reconnect, with `/api/accounts` reporting live-probed state.
 
 ### Search
 
