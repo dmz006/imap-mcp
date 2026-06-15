@@ -37,6 +37,7 @@ func NewServer(
 	s.AddTool(tools.DeleteFolderTool(), h.DeleteFolder)
 	s.AddTool(tools.LabelMessageTool(), h.LabelMessage)
 	s.AddTool(tools.EmptyTrashTool(), h.EmptyTrash)
+	s.AddTool(tools.LabelBulkTool(), h.LabelBulk)
 
 	// ── Messages (read) ──────────────────────────────────────────────────────
 	s.AddTool(tools.ListMessagesTool(), h.ListMessages)

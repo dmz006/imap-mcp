@@ -425,3 +425,16 @@ func EmptyTrashTool() mcp.Tool {
 		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
 	)
 }
+
+// LabelBulkTool applies a Gmail label to all messages matching a sender/subject.
+func LabelBulkTool() mcp.Tool {
+	return mcp.NewTool("label_bulk",
+		mcp.WithDescription("Apply a Gmail label to ALL messages matching a sender (and/or subject) in one call (COPY into the label mailbox; originals stay in place). Creates the label if missing."),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
+		mcp.WithString("folder", mcp.Description("Source folder (default: INBOX)")),
+		mcp.WithString("from", mcp.Description("Match From substring (whole-token on Gmail)")),
+		mcp.WithString("subject", mcp.Description("Match Subject substring")),
+		mcp.WithString("label", mcp.Required(), mcp.Description("Label/mailbox to apply")),
+		mcp.WithBoolean("create", mcp.Description("Create the label if missing (default: true)")),
+	)
+}
