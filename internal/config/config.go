@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.3.1"
+var Version = "0.4.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
