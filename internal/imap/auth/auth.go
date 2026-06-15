@@ -18,14 +18,35 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, c *imaplib.Client) error
 }
 
-// New constructs an Authenticator from config values.
-func New(authType, username, password, clientID, clientSecret, tokenFile string) (Authenticator, error) {
-	switch authType {
+// Options carries everything an authenticator may need. Built from the
+// account's AuthConfig by the caller, so the auth package stays decoupled.
+type Options struct {
+	Type         string
+	Username     string
+	Password     string
+	ClientID     string
+	ClientSecret string
+	TokenFile    string
+	Provider     string // "google" | "microsoft" (xoauth2 endpoint selection)
+	// Service-account (domain-wide delegation) fields:
+	ServiceAccountFile string
+	Subject            string // user to impersonate; defaults to Username
+}
+
+// New constructs an Authenticator from options.
+func New(o Options) (Authenticator, error) {
+	switch o.Type {
 	case "plain", "":
-		return NewPlain(username, password), nil
+		return NewPlain(o.Username, o.Password), nil
 	case "xoauth2":
-		return NewXOAuth2(username, clientID, clientSecret, tokenFile), nil
+		return NewXOAuth2(o.Username, o.ClientID, o.ClientSecret, o.TokenFile, o.Provider), nil
+	case "xoauth2_service_account":
+		subject := o.Subject
+		if subject == "" {
+			subject = o.Username
+		}
+		return NewServiceAccount(subject, o.ServiceAccountFile)
 	default:
-		return nil, fmt.Errorf("unknown auth type %q", authType)
+		return nil, fmt.Errorf("unknown auth type %q", o.Type)
 	}
 }

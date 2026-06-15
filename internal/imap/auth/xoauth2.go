@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	imaplib "github.com/emersion/go-imap/v2/imapclient"
@@ -20,15 +21,17 @@ type XOAuth2 struct {
 	clientID     string
 	clientSecret string
 	tokenFile    string
+	provider     string // "google" | "microsoft"; empty = auto-detect
 	cfg          *oauth2.Config
 }
 
-func NewXOAuth2(username, clientID, clientSecret, tokenFile string) *XOAuth2 {
+func NewXOAuth2(username, clientID, clientSecret, tokenFile, provider string) *XOAuth2 {
 	return &XOAuth2{
 		username:     username,
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		tokenFile:    tokenFile,
+		provider:     provider,
 	}
 }
 
@@ -38,13 +41,21 @@ func (x *XOAuth2) oauthConfig() *oauth2.Config {
 	if x.cfg != nil {
 		return x.cfg
 	}
-	// Detect provider from username domain
+	// Endpoint selection: an explicit provider wins (required for enterprise
+	// Gmail on a custom domain, which can't be auto-detected from the address);
+	// otherwise fall back to a domain heuristic.
 	var endpoint oauth2.Endpoint
-	switch {
-	case isGmailAddress(x.username):
+	switch strings.ToLower(x.provider) {
+	case "google", "gmail", "workspace":
 		endpoint = google.Endpoint
-	default:
+	case "microsoft", "outlook", "office365", "azure":
 		endpoint = microsoft.AzureADEndpoint("common")
+	default:
+		if isGmailAddress(x.username) {
+			endpoint = google.Endpoint
+		} else {
+			endpoint = microsoft.AzureADEndpoint("common")
+		}
 	}
 	x.cfg = &oauth2.Config{
 		ClientID:     x.clientID,
@@ -107,8 +118,8 @@ func (x *XOAuth2) saveToken(t *oauth2.Token) error {
 
 // RunAuthSetup runs the browser-based OAuth2 flow and saves the token.
 // This is invoked by the --auth-setup subcommand.
-func RunAuthSetup(ctx context.Context, username, clientID, clientSecret, tokenFile string) error {
-	a := NewXOAuth2(username, clientID, clientSecret, tokenFile)
+func RunAuthSetup(ctx context.Context, username, clientID, clientSecret, tokenFile, provider string) error {
+	a := NewXOAuth2(username, clientID, clientSecret, tokenFile, provider)
 	cfg := a.oauthConfig()
 
 	state := fmt.Sprintf("imap-mcp-%d", time.Now().UnixNano())

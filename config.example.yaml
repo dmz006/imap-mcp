@@ -85,6 +85,38 @@ accounts:
       # service and reference it (requires the `datawatch:` block at the bottom):
       # password: ${secret:gmail_app_password}
 
+  # ── Enterprise Gmail / Google Workspace (OAuth) ─────────────────────────────
+  # For Workspace accounts that require OAuth (App Passwords often disabled).
+  # See docs/enterprise-gmail-oauth.md for the full Google Cloud setup.
+  #
+  # PATH A — 3-legged user consent (one-time browser sign-in):
+  #   1. Google Cloud project → OAuth consent screen (User type: Internal)
+  #   2. Create an OAuth client (Desktop app), enable scope https://mail.google.com/
+  #   3. Fill client_id/client_secret below, then run:
+  #        imap-mcp auth-setup --account work-gmail
+  # NOTE: provider: google is REQUIRED — a custom domain can't be auto-detected.
+  # - name: work-gmail
+  #   imap: { host: imap.gmail.com, port: 993, tls: true }
+  #   auth:
+  #     type: xoauth2
+  #     provider: google                       # REQUIRED for Workspace domains
+  #     username: you@company.com
+  #     client_id: ${GMAIL_OAUTH_CLIENT_ID}
+  #     client_secret: ${secret:gmail_oauth_client_secret}
+  #     token_file: ~/.config/imap-mcp/work-gmail.token.json
+  #
+  # PATH B — service account + domain-wide delegation (headless, admin-granted):
+  #   Admin authorizes the service account's client ID for scope
+  #   https://mail.google.com/ in the Workspace Admin Console. No browser, no
+  #   per-user token. imap-mcp impersonates `subject` via the key file.
+  # - name: work-gmail-sa
+  #   imap: { host: imap.gmail.com, port: 993, tls: true }
+  #   auth:
+  #     type: xoauth2_service_account
+  #     username: you@company.com              # mailbox to access (impersonated)
+  #     service_account_file: ~/.config/imap-mcp/gworkspace-sa.json
+  #     # subject: you@company.com             # defaults to username
+
   # ── Outlook / Microsoft 365 ────────────────────────────────────────────────
   # Option A: App Password (same as Gmail — requires MFA enabled on account)
   # Option B: OAuth2 (requires Azure AD app registration)
@@ -98,6 +130,7 @@ accounts:
       username: user@corp.example.com
       password: ${IMAP_MCP_WORK_PASSWORD}
       # For xoauth2, replace the above password field with:
+      # provider: microsoft
       # client_id: ${IMAP_MCP_WORK_OAUTH_CLIENT_ID}
       # client_secret: ${IMAP_MCP_WORK_OAUTH_CLIENT_SECRET}
       # token_file: ~/.config/imap-mcp/work.token.json

@@ -70,14 +70,17 @@ func (p *Pool) Connect(ctx context.Context) error {
 }
 
 func (p *Pool) connect(ctx context.Context, a config.AccountConfig) (*Conn, error) {
-	authenticator, err := auth.New(
-		a.Auth.Type,
-		a.Auth.Username,
-		a.Auth.Password,
-		a.Auth.ClientID,
-		a.Auth.ClientSecret,
-		a.Auth.TokenFile,
-	)
+	authenticator, err := auth.New(auth.Options{
+		Type:               a.Auth.Type,
+		Username:           a.Auth.Username,
+		Password:           a.Auth.Password,
+		ClientID:           a.Auth.ClientID,
+		ClientSecret:       a.Auth.ClientSecret,
+		TokenFile:          a.Auth.TokenFile,
+		Provider:           a.Auth.Provider,
+		ServiceAccountFile: a.Auth.ServiceAccountFile,
+		Subject:            a.Auth.Subject,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("build auth: %w", err)
 	}

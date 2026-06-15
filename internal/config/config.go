@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.4.0"
+var Version = "0.5.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -93,12 +93,24 @@ type IMAPConfig struct {
 }
 
 type AuthConfig struct {
-	Type         string `yaml:"type"` // "plain" | "xoauth2"
+	Type         string `yaml:"type"` // "plain" | "xoauth2" | "xoauth2_service_account"
 	Username     string `yaml:"username"`
 	Password     string `yaml:"password"`
 	ClientID     string `yaml:"client_id"`
 	ClientSecret string `yaml:"client_secret"`
 	TokenFile    string `yaml:"token_file"`
+	// Provider selects the OAuth2 endpoint for xoauth2: "google" | "microsoft".
+	// REQUIRED for enterprise Gmail / Google Workspace (custom domains), since
+	// the address domain can't be auto-detected. Empty falls back to domain
+	// heuristics (gmail.com → google, else microsoft).
+	Provider string `yaml:"provider,omitempty"`
+	// ServiceAccountFile is the path to a GCP service-account JSON key, used by
+	// the "xoauth2_service_account" type (domain-wide delegation — headless,
+	// admin-authorized, no browser/per-user token).
+	ServiceAccountFile string `yaml:"service_account_file,omitempty"`
+	// Subject is the Workspace user to impersonate for service-account auth.
+	// Defaults to Username.
+	Subject string `yaml:"subject,omitempty"`
 }
 
 type ServerConfig struct {
@@ -120,9 +132,9 @@ type EnrichmentConfig struct {
 }
 
 type SyncConfig struct {
-	IntervalMinutes  int      `yaml:"interval_minutes"`
-	FullSyncOnStart  bool     `yaml:"full_sync_on_start"`
-	Folders          []string `yaml:"folders"`
+	IntervalMinutes int      `yaml:"interval_minutes"`
+	FullSyncOnStart bool     `yaml:"full_sync_on_start"`
+	Folders         []string `yaml:"folders"`
 }
 
 type LogConfig struct {
@@ -240,6 +252,7 @@ func expandPaths(cfg *Config) {
 	cfg.WorkingDir = expand(cfg.WorkingDir)
 	for i := range cfg.Accounts {
 		cfg.Accounts[i].Auth.TokenFile = expand(cfg.Accounts[i].Auth.TokenFile)
+		cfg.Accounts[i].Auth.ServiceAccountFile = expand(cfg.Accounts[i].Auth.ServiceAccountFile)
 	}
 }
 
