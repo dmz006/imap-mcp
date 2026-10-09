@@ -142,6 +142,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | P4 | 0.9.0 | Load + enrichment: provider interface (Ollama / datawatch proxy), two-lane priority, caps/backoff, datawatch capacity yield, quiet hours, `/api/health` stats | D11a, D11b | Planned |
 | P5 | 0.10.0 | REST full platform: shared service layer (MCP + REST), all stub routes (reads, writes, rules, enrichment), webhook delivery, `/api/query` DSL | D13, D13a | Planned |
 | P6 | each release | Docs + release per phase: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation notes; **email community skill** (`skills/imap-mcp/SKILL.md` → datawatch-community `skills/comms/imap-mcp`) updated per release, or new email skills added, covering new tools (`cache_sweep`), auth/token setup, REST routes, sync window and encryption config | all | Ongoing |
+| P7 | after 0.10.0 | **Full docs, tutorials and examples pass** (operator request 2026-10-08): once everything is built, expand the documentation with end-to-end tutorials and worked examples across MCP tools, REST (incl. webhooks + `/api/query` DSL), token auth/scopes setup, datawatch integration (secrets, messaging backend, scheduled jobs), sync window/encryption/cleaning config, and the email community skills. Examples use `example.com` placeholders only, never mailbox data | P1–P6 | Planned |
 
 Each phase follows AGENT.md:
 - `go build ./...` and `go test ./...` pass, with functional tests (Tested=Yes).
