@@ -37,6 +37,12 @@ type Scanner struct {
 	log        *slog.Logger
 	now        func() time.Time
 	sleep      func(ctx context.Context, d time.Duration)
+
+	// refreshEvery: during a long first scan (one big folder can take hours),
+	// replies are paired and roles recomputed every this many new messages, so
+	// profiles fill in progressively instead of only at the end of the tick.
+	refreshEvery int
+	sinceRefresh int
 }
 
 // New builds a scanner. classify may be nil (no model-assigned roles).
@@ -44,7 +50,7 @@ func New(cfg *config.Config, src Source, state, cache *sql.DB, classify Classify
 	sc := &Scanner{
 		cfg: cfg.Intel, src: src, state: state, cache: cache, st: &store{db: state},
 		own: map[string]map[string]bool{}, ownDomains: map[string]bool{},
-		log: log, now: time.Now, sleep: sleepCtx,
+		log: log, now: time.Now, sleep: sleepCtx, refreshEvery: 5000,
 	}
 	if cfg.Intel.LLMRolesOn() {
 		sc.classify = classify
@@ -110,8 +116,29 @@ type TickResult struct {
 func (sc *Scanner) Tick(ctx context.Context) error {
 	var res TickResult
 	start := sc.now()
+	// List and register every account's folders first, so progress reflects
+	// the whole job from the start of the tick.
+	scopes := map[string][]string{}
 	for _, account := range sc.src.Accounts() {
-		if err := sc.scanAccount(ctx, account, &res); err != nil {
+		all, err := sc.src.Folders(ctx, account)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			sc.log.Warn("intel: list folders", "account", account, "err", err)
+			continue
+		}
+		scopes[account] = sc.scope(all)
+		if err := sc.st.register(ctx, account, scopes[account]); err != nil {
+			return err
+		}
+	}
+	for _, account := range sc.src.Accounts() {
+		folders, ok := scopes[account]
+		if !ok {
+			continue
+		}
+		if err := sc.scanAccount(ctx, account, folders, &res); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -140,12 +167,8 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 	return nil
 }
 
-func (sc *Scanner) scanAccount(ctx context.Context, account string, res *TickResult) error {
-	all, err := sc.src.Folders(ctx, account)
-	if err != nil {
-		return err
-	}
-	for _, folder := range sc.scope(all) {
+func (sc *Scanner) scanAccount(ctx context.Context, account string, folders []string, res *TickResult) error {
+	for _, folder := range folders {
 		if err := sc.scanFolder(ctx, account, folder, res); err != nil {
 			if ctx.Err() != nil {
 				return err
@@ -207,6 +230,15 @@ func (sc *Scanner) scanFolder(ctx context.Context, account, folder string, res *
 		res.Scanned += len(b.Headers)
 		res.New += a.New
 		res.Duplicate += a.Duplicate
+		if sc.sinceRefresh += a.New; sc.sinceRefresh >= sc.refreshEvery {
+			sc.sinceRefresh = 0
+			if _, err := sc.st.pairReplies(ctx, account); err != nil {
+				return err
+			}
+			if _, err := sc.recomputeRoles(ctx); err != nil {
+				return err
+			}
+		}
 		if len(b.Headers) > 0 {
 			after = b.Headers[len(b.Headers)-1].UID
 		}

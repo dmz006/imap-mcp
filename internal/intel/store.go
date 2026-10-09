@@ -143,6 +143,42 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 	return res, tx.Commit()
 }
 
+// register records folders about to be scanned, so progress counts them
+// before their first batch (backfill_complete must not be true while a
+// folder has not started).
+func (st *store) register(ctx context.Context, account string, folders []string) error {
+	// Folders that left the scope (deleted, excluded) would otherwise stay
+	// incomplete forever. Dropping their progress is safe: the D28 index keeps
+	// a later rescan from counting anything twice.
+	keep := map[string]bool{}
+	for _, f := range folders {
+		keep[f] = true
+	}
+	rows, err := st.db.QueryContext(ctx, `SELECT folder FROM intel_scan WHERE account=?`, account)
+	if err != nil {
+		return err
+	}
+	var gone []string
+	for rows.Next() {
+		var f string
+		if rows.Scan(&f) == nil && !keep[f] {
+			gone = append(gone, f)
+		}
+	}
+	rows.Close()
+	for _, f := range gone {
+		if _, err := st.db.ExecContext(ctx, `DELETE FROM intel_scan WHERE account=? AND folder=?`, account, f); err != nil {
+			return err
+		}
+	}
+	for _, f := range folders {
+		if _, err := st.db.ExecContext(ctx, `INSERT OR IGNORE INTO intel_scan(account, folder) VALUES(?,?)`, account, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resetFolder restarts a folder's scan after a UIDVALIDITY change. The D28
 // index keeps the rescan from counting any message twice.
 func (st *store) resetFolder(ctx context.Context, account, folder string, validity uint32) error {

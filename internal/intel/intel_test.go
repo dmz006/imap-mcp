@@ -329,3 +329,60 @@ func TestRunDisabled(t *testing.T) {
 		t.Fatal("disabled scanner must return immediately")
 	}
 }
+
+// cancelAfter cancels the scan after n fetches, like a shutdown mid-backfill.
+type cancelAfter struct {
+	Source
+	n      int
+	cancel context.CancelFunc
+}
+
+func (c *cancelAfter) Fetch(ctx context.Context, account, folder string, after uint32, limit int) (Batch, error) {
+	if c.n--; c.n < 0 {
+		c.cancel()
+		return Batch{}, ctx.Err()
+	}
+	return c.Source.Fetch(ctx, account, folder, after, limit)
+}
+
+// TestRolesFillInDuringLongScan: roles are refreshed during the scan, so a
+// tick cut short (hours into a big first scan) still leaves roles behind.
+func TestRolesFillInDuringLongScan(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.sc.src = &cancelAfter{Source: f.sc.src, n: 4, cancel: cancel}
+	f.sc.refreshEvery = 2
+	if err := f.sc.Tick(ctx); err == nil {
+		t.Fatal("expected the cut-short tick to report cancellation")
+	}
+	var known int
+	f.d.StateSQL().QueryRow(`SELECT count(*) FROM senders WHERE role <> 'unknown'`).Scan(&known) //nolint:errcheck
+	if known == 0 {
+		t.Error("no roles assigned before the tick was cut short")
+	}
+}
+
+// TestProgressCountsUnstartedFolders: backfill_complete must not flip to true
+// between folders. Every folder in scope is registered before any is scanned.
+func TestProgressCountsUnstartedFolders(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.sc.src = &cancelAfter{Source: f.sc.src, n: 1, cancel: cancel}
+	f.sc.Tick(ctx) //nolint:errcheck
+	var total, done int
+	f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done) //nolint:errcheck
+	if total != 3 || done == total { // INBOX, Sent, Archive (Junk and Drafts excluded)
+		t.Errorf("registered %d folders, %d complete", total, done)
+	}
+	// A folder that leaves the scope stops counting toward progress.
+	f.sc.cfg.ExcludeFolders = append(f.sc.cfg.ExcludeFolders, "Archive")
+	if err := f.sc.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done) //nolint:errcheck
+	if total != 2 || done != 2 {
+		t.Errorf("after excluding Archive: %d folders, %d complete", total, done)
+	}
+}
