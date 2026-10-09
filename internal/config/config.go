@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.10.3"
+var Version = "0.10.4"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -255,8 +255,9 @@ type SyncConfig struct {
 	// KeepFlagged keeps \Flagged messages cached (and fetches them) even
 	// outside the window (D7). Default off.
 	KeepFlagged bool `yaml:"keep_flagged"`
-	// VacuumIntervalHours is how often the cache file is VACUUMed after a sync
-	// cycle that removed messages (default 24; 0 disables automatic VACUUM).
+	// VacuumIntervalHours is the minimum time between automatic VACUUMs of the
+	// cache file; the check runs after every sync cycle's cleaning pass
+	// (default 24; 0 disables automatic VACUUM).
 	VacuumIntervalHours int `yaml:"vacuum_interval_hours"`
 }
 

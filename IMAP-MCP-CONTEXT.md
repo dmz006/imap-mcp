@@ -6,21 +6,22 @@
 Read IMAP-MCP-CONTEXT.md
 ```
 
-Then re-read the relevant sections of `AGENT.md` for the task at hand.
+Then re-read the relevant sections of `AGENT.md` for the task at hand. This file
+is a quick reference of facts; the code is the source of truth when they differ.
 
 ---
 
 ## What is imap-mcp?
 
-A Go binary that connects to one or more IMAP email accounts and exposes them via:
-1. **MCP (Model Context Protocol)** — Claude Code can call 28 email management tools
-2. **REST API** — HTTP endpoints for algorithmic/scripted automation
-3. **Intelligence layer** — local SQLite cache with FTS5 full-text search, vector
-   semantic search (nomic-embed-text via Ollama), temporal knowledge graph, sender
-   profiles, and anomaly detection
+A Go binary that connects to one or more IMAP accounts and exposes them through:
 
-Primary use case: design and run mail management tools from Claude Code sessions,
-with a local LLM (qwen3:1.7b) enriching email data in the background.
+1. **MCP**: 44 tools (40 working, 4 stubs), over stdio or Streamable HTTP at `/mcp`.
+2. **REST API** at `/api`: mailbox operations, search, analytics, rules,
+   webhooks, a JSON query DSL and an SSE event stream. Every route is implemented.
+3. **Local cache and enrichment**: a windowed SQLite cache of recent mail
+   (FTS5 table, embeddings) filled by a background sync, and an enrichment
+   pipeline that embeds and classifies cached mail through Ollama (or datawatch
+   for classification).
 
 ---
 
@@ -31,40 +32,35 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.10.3 |
+| Current version | 0.10.4 |
 | Location | the repo root |
-| Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
+| Status | 44 MCP tools registered (4 stubs); all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
 
-## Cleanup & automation tooling (v0.3.0)
+---
 
-- `internal/mcp/tools/impl_purge.go` — `purge_sender` (self-draining bulk delete; `resolveTrash` auto-detects \Trash/[Gmail]/Trash)
-- `internal/mcp/tools/impl_topsenders.go` — `top_senders` (rank folder senders by count, whole-folder scan)
-- `internal/mcp/tools/impl_rules.go` + `internal/db/rules.go` — rules engine (create/list/delete/run_rules; match→action persisted in `rules` table; `dry_run` previews)
-- `internal/mcp/tools/impl_labels.go` — `label_message` (Gmail label via COPY), `empty_trash`
-- `internal/imap/pool.go` — `StartKeepalive` (NOOP every 4m) + `reconnectOnce` + `Probe` (live health); `/api/accounts` probes live state
-- `search_messages` now returns the true `total_matches` (was capped at page size)
-- create_folder/delete_folder accept `folder` as an alias for `path`
+## Binary and subcommands
 
-## datawatch integration (operator-controlled, never auto-injected)
+| Command | What it does |
+|---------|--------------|
+| `imap-mcp` | MCP over stdio. Takes no flags (see config path below) |
+| `imap-mcp serve [--config PATH]` | HTTP server: MCP at `/mcp`, REST at `/api`. Starts the webhook dispatcher |
+| `imap-mcp auth-setup [--account NAME] [--config PATH]` | OAuth2 browser flow for an `xoauth2` account (defaults to the default account). Callback on loopback only; verifies a random `state` |
+| `imap-mcp run-rules [--dry-run] [--config PATH]` | Apply active rules once and exit. Opens only `imap.db`; queues `rule.fired` webhooks for `serve` to deliver |
+| `imap-mcp db encrypt [--only state\|cache] [--config PATH]` | Encrypt existing plaintext DBs in place with the configured keys. Stop the service first |
+| `imap-mcp version` / `help` | Print version / usage |
 
-Three independent, opt-in layers. The operator decides if/when imap-mcp attaches
-to a session — there is no auto-injection.
+Any other first argument falls through to stdio mode.
 
-1. **Secrets** — `${secret:name}` resolves via datawatch secrets service when a
-   `datawatch:` block (api_url, token as env refs) is present; else standalone
-   (`${ENV}`/plain). `internal/config/secrets.go`.
-2. **Skill** — published to the datawatch community registry at
-   `skills/comms/imap-mcp` (github.com/dmz006/datawatch-community). Source of
-   truth: `skills/imap-mcp/SKILL.md`. On-demand only.
-3. **Comm** — imap-mcp is the *trust boundary*: it sends (per-account SMTP) and
-   emits verified `inbound.command` events for trust-gated mail. **Loop closed
-   (v0.2.1):** imap-mcp serves `GET /api/events` (SSE) + `POST /api/accounts/
-   {account}/messages/send`; datawatch's `imap_mcp` messaging backend
-   (`internal/messaging/backends/imapmcp`, datawatch#127) consumes verified
-   events via SSE and replies via the send endpoint. imap-mcp owns mail+crypto;
-   datawatch owns dispatch.
+**Config path.** `serve`, `auth-setup`, `run-rules` and `db encrypt` take
+`--config`. Without it, and always in stdio mode, the path is `config.yaml`
+in the current working directory if that file exists, otherwise
+`~/.config/imap-mcp/config.yaml`. Stdio mode has no `--config` flag: an
+argument such as `imap-mcp --config x.yaml` is treated as an unknown
+subcommand and the flag is ignored. Set the MCP client's working directory to
+pick a different `config.yaml`.
 
-PGP inbound gate is **backlogged** — declared but fails closed until implemented.
+Do not build into the repo root (`go build -o imap-mcp`) while developing if a
+deployed service runs that binary. Use `go build ./...` and `go test ./...`.
 
 ---
 
@@ -72,119 +68,100 @@ PGP inbound gate is **backlogged** — declared but fails closed until implement
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| MCP transport | stdio + Streamable HTTP (no SSE) | SSE is deprecated in MCP spec |
-| Config | YAML + env overrides | YAML for structure, env for secrets |
-| Multi-account | All accounts connected simultaneously | Enables cross-account tools |
-| Auth | Plain + XOAUTH2 + pluggable interface | Gmail/Outlook compatibility |
-| `--auth-setup` | Browser OAuth2 flow built in | Never manually copy tokens |
-| Cache | SQLite + FTS5 + vectors (ncruces pure-Go driver; cache.db / imap.db split; optional adiantum encryption) | Fast offline analytics |
-| Embedding | nomic-embed-text via Ollama | Local, free, 768-dim, already installed |
-| Enrichment LLM | qwen3:1.7b via Ollama | Local background classification |
-| REST API scope | Full platform (MCP mirror + analytics + webhooks + rules + query DSL) | Algorithmic layer |
-| Internal bus | Event bus at core (`internal/bus`) | Foundation for agents/federation/plugins |
-| Architecture | Designed for Option 4 | Agents, federation, streaming, plugins |
-
----
-
-## Running the Binary
-
-```bash
-# Build
-go build -o imap-mcp ./cmd/imap-mcp/
-
-# stdio mode (for Claude Code)
-./imap-mcp
-
-# HTTP server mode (persistent connections + REST API)
-./imap-mcp serve --config ~/.config/imap-mcp/config.yaml
-
-# OAuth2 setup for Gmail/Outlook
-./imap-mcp auth-setup --account work
-
-# Version
-./imap-mcp version
-```
+| MCP transport | stdio + Streamable HTTP (no MCP SSE transport) | MCP SSE transport is deprecated |
+| Config | YAML + `IMAP_MCP_*` env overrides; `${ENV}` and `${secret:name}` refs | Structure in YAML, secrets out of it |
+| Multi-account | All accounts connected at once, one default | Cross-account tooling |
+| IMAP auth | `plain`, `xoauth2` (Google or Microsoft), `xoauth2_service_account` (Google Workspace) | Gmail, Workspace, Microsoft 365 |
+| Service layer | `internal/service` shared by MCP and REST (D13) | No operation implemented twice |
+| HTTP auth | Named bearer tokens with scopes `read`, `write`, `send`, `admin`; fails closed (D13a) | Local processes and browsers are untrusted |
+| Storage | `imap.db` (state) + `cache.db` (disposable cache), ncruces pure-Go SQLite, optional adiantum encryption per file (D1, D1b) | Cache can be dropped; state cannot |
+| Sync | Windowed, read-only (EXAMINE), UID diff, CONDSTORE flags, UIDVALIDITY rebuild (D8-D10) | One code path for Dovecot and Gmail |
+| Enrichment | Embeddings via direct Ollama; classify via Ollama or datawatch LLM proxy; new-mail lane before backfill (D11a, D11b) | Never starve new mail; yield the GPU |
+| Webhooks | Durable outbox in `imap.db`, metadata-only payloads (D16) | At-least-once, no content leaks |
+| Query DSL | JSON over fixed read-only views, bound parameters (D17) | No SQL from clients |
+| Internal bus | `internal/bus`, in-process pub/sub | SSE, webhooks and future consumers |
 
 ---
 
 ## Configuration
 
-Config file: `~/.config/imap-mcp/config.yaml` (or `--config` flag)  
-Template: `config.example.yaml` in project root  
-Env vars: see `.env.example`
+Template: `config.example.yaml`. Env template: `.env.example`.
 
-Key env vars:
-```bash
-IMAP_MCP_SERVER_PORT=8765
-IMAP_MCP_OLLAMA_URL=http://localhost:11434
-IMAP_MCP_LOG_LEVEL=debug
-```
+Defaults that matter: server `127.0.0.1:8765`; state DB
+`~/.local/share/imap-mcp/imap.db`; cache DB `cache.db` next to it; sync folders
+`INBOX` + `\Sent`, 30-day window, every 15 minutes; Ollama at
+`http://localhost:11434` with `nomic-embed-text` (embed) and `qwen3:1.7b`
+(classify).
 
-Credentials always via env refs in YAML:
+Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
+`IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
+`IMAP_MCP_DB_ENCRYPTION_KEY`, `IMAP_MCP_DB_CACHE_ENCRYPTION_KEY`,
+`IMAP_MCP_SYNC_*`, `IMAP_MCP_OLLAMA_URL`, `IMAP_MCP_ENRICHMENT_*`,
+`IMAP_MCP_LOG_LEVEL`. Full list: `applyEnvOverrides` in `internal/config/config.go`.
+
+Credentials always via references:
+
 ```yaml
 auth:
-  password: ${IMAP_MCP_PERSONAL_PASSWORD}
+  password: ${IMAP_MCP_EXAMPLE_PASSWORD}   # environment variable
+# or ${secret:name}, resolved from datawatch when a datawatch: block is set
 ```
+
+Fail-closed rules: `serve` refuses to start with no tokens unless
+`server.auth.disabled: true`; tokens must be at least 32 characters and carry
+at least one scope; an unresolved `${...}` token or DB key reference is an
+error; a missing or wrong DB key refuses to open the file.
 
 ---
 
-## Claude Code Integration
+## Claude Code integration
 
-### Wiring alongside datawatch (no conflict)
+The key under `mcpServers` names the server; Claude Code exposes its tools as
+`mcp__<key>__<tool>`. Use `imap-mcp` so tools appear as
+`mcp__imap-mcp__list_accounts`.
 
-datawatch manages `~/.mcp.json` and project-level `.mcp.json` files, but
-**preserves all non-datawatch entries** on every session spawn (`WriteProjectMCPConfig`
-in `internal/channel/mcp_config.go`). Add imap-mcp once and it persists.
+Stdio (no auth; reconnects to IMAP each session):
 
-Add to `~/.mcp.json` (global — available in every Claude Code session):
+```json
+{ "mcpServers": { "imap-mcp": { "command": "/path/to/imap-mcp/imap-mcp" } } }
+```
+
+HTTP (start `imap-mcp serve` first; persistent IMAP connections; needs a token):
+
 ```json
 {
   "mcpServers": {
-    "datawatch": { ... },
     "imap-mcp": {
-      "command": "/path/to/imap-mcp/imap-mcp",
-      "args": [],
-      "env": {}
+      "type": "http",
+      "url": "http://localhost:8765/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
     }
   }
 }
 ```
 
-Or use HTTP mode if you want persistent IMAP connections (start `imap-mcp serve` first):
-```json
-{
-  "mcpServers": {
-    "datawatch": { ... },
-    "imap-mcp": { "url": "http://localhost:8765/mcp" }
-  }
-}
-```
+datawatch preserves non-datawatch entries in `~/.mcp.json` and project
+`.mcp.json` files, so the entry survives session spawns. datawatch never
+injects imap-mcp; the operator attaches it. See `docs/auth-tokens.md` for
+token setup and `docs/datawatch-integration.md` for the datawatch side.
 
-### datawatch feature request (GH #118)
-A first-class `extra_mcp_servers` config option in datawatch would auto-inject
-imap-mcp into every spawned session. Filed at:
-https://github.com/dmz006/datawatch/issues/118
+---
 
-### stdio (zero config, reconnects each session)
-```json
-{
-  "mcpServers": {
-    "imap-mcp": {
-      "command": "/path/to/imap-mcp/imap-mcp"
-    }
-  }
-}
-```
+## datawatch integration (operator-controlled, never auto-injected)
 
-### HTTP (recommended for persistent connections)
-Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
-```json
-{
-  "mcpServers": {
-    "imap-mcp": { "url": "http://localhost:8765/mcp" }
-  }
-}
-```
+1. **Secrets**: `${secret:name}` resolves through the datawatch secrets service
+   when a `datawatch:` block (`api_url`, `token`) is present; otherwise only
+   `${ENV}` and plain values work. `internal/config/secrets.go`.
+2. **Skill**: `skills/imap-mcp/SKILL.md` is the source of truth for the
+   community skill. Loaded on demand only.
+3. **Comm**: imap-mcp is the trust boundary. It sends mail per account over
+   SMTP and publishes `inbound.command` only for mail that passed every
+   configured trust gate. A datawatch backend consumes `GET /api/events` (SSE)
+   and replies with `POST /api/accounts/{account}/messages/send`.
+4. **Enrichment** (optional): classification through datawatch's LLM proxy and
+   a backfill gate on datawatch capacity pools.
+
+The PGP inbound gate is declared but fails closed until implemented.
 
 ---
 
@@ -192,190 +169,212 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 
 | File | Purpose |
 |------|---------|
-| `cmd/imap-mcp/main.go` | Entry point; subcommand routing; `var Version` |
-| `internal/config/config.go` | Config struct; YAML load; env overrides; `var Version` |
+| `cmd/imap-mcp/main.go` | Entry point; subcommands; dependency wiring (`buildDeps`); config path lookup |
+| `internal/config/config.go` | Config structs, defaults, YAML load, env overrides; `var Version` |
+| `internal/config/auth.go` | `ServeAuth`: resolves `server.auth` tokens, fails closed |
+| `internal/config/dbkeys.go` | `ResolveDBKeys`: resolves DB encryption keys, fails closed |
+| `internal/config/secrets.go` | `${secret:name}` resolver via datawatch |
 | `internal/bus/bus.go` | Event bus; all event type constants |
-| `internal/imap/pool.go` | Multi-account connection pool; reconnect logic |
-| `internal/imap/auth/` | Authenticator interface, Plain, XOAuth2, auth-setup flow |
-| `internal/db/schema.go` | SQLite schemas: `cacheSchema` (cache.db) and `stateSchema` (imap.db) |
-| `internal/db/migrate.go` | One-time verified split of a pre-0.6.0 single-file imap.db |
-| `internal/db/db.go` | Opens state + cache DBs (ncruces driver, optional adiantum encryption); repository types |
-| `internal/enrichment/pipeline.go` | Enrichment worker: new/backfill lanes, per-provider caps, backfill rate limit, backoff, stats (D11b) |
-| `internal/enrichment/providers.go` | `Embedder`/`Classifier` interfaces: direct Ollama, datawatch LLM proxy (D11a) |
-| `internal/enrichment/gates.go` | `LoadGate`s pausing backfill: window, Ollama residency, datawatch capacity |
+| `internal/imap/pool.go` | Multi-account connection pool; keepalive (NOOP every 4 min); reconnect; live probe |
+| `internal/imap/auth/` | Authenticator interface; plain, xoauth2, service account; auth-setup flow |
+| `internal/db/db.go` | Opens state + cache DBs (ncruces driver, optional adiantum encryption); repositories |
+| `internal/db/schema.go` | `stateSchema` (imap.db) and `cacheSchema` (cache.db) |
+| `internal/db/migrate.go` | One-time verified split of a pre-0.6.0 single-file `imap.db` |
+| `internal/db/encrypt.go` | `imap-mcp db encrypt` implementation (verify before replace) |
+| `internal/db/cache.go` | Cache repositories: sync state, messages, flags, Message-ID de-dup, sweep |
+| `internal/db/rules.go`, `webhooks.go`, `nonces.go` | State repositories |
+| `internal/sync/syncer.go` | Cache sync engine: window, UID diff, CONDSTORE flags, UIDVALIDITY rebuild, cleaning/vacuum |
+| `internal/sync/source.go` | Read-only mailbox `Source`; SPECIAL-USE resolution |
+| `internal/sync/mime.go` | MIME decode for the cache: text/html parts, attachment metadata, thread ID |
+| `internal/enrichment/pipeline.go` | Enrichment worker: lanes, per-provider caps, backfill rate limit, backoff, stats |
+| `internal/enrichment/providers.go` | `Embedder` / `Classifier`: direct Ollama, datawatch LLM proxy |
+| `internal/enrichment/gates.go` | Backfill `LoadGate`s: time window, Ollama residency, datawatch capacity |
 | `internal/enrichment/cleaner.go` | `Cleaner` hook for content cleaning before models (iteration 3) |
-| `internal/enrichment/ollama.go` | Ollama embed + generate API client |
-| `internal/sync/syncer.go` | Cache sync engine: window, UID diff, CONDSTORE flags, UIDVALIDITY rebuild (D8–D10) |
-| `internal/sync/source.go` | `Source` interface (read-only mailbox view) + IMAP implementation; SPECIAL-USE resolution |
-| `internal/sync/mime.go` | MIME decode (go-message): text/html parts, attachment metadata, thread ID |
-| `internal/db/cache.go` | Cache repositories: sync state, message insert/flags/delete, Message-ID de-dup |
-| `internal/httpauth/` | Named, scoped bearer-token auth for /api and /mcp (D13a) |
-| `internal/mcp/server.go` | MCP server; all 28 tools registered |
-| `internal/mcp/tools/definitions.go` | All tool definitions (names, params, descriptions) |
-| `internal/mcp/tools/impl_accounts.go` | list_accounts, sync_account ✅ |
-| `internal/mcp/tools/impl_folders.go` | list_folders, create_folder, delete_folder ✅ |
-| `internal/mcp/tools/impl_files.go` | write_file, read_file, list_files, delete_file |
-| `internal/mcp/tools/impl_send.go` | send_message (per-account SMTP outbound) |
-| `internal/output/writer.go` | Enforced output sandbox (only file writer in MCP layer) |
-| `internal/config/secrets.go` | `${secret:name}` resolver via datawatch secrets service (optional `datawatch:` block) |
-| `internal/smtp/smtp.go` | Per-account SMTP sender (STARTTLS/implicit TLS, header-injection safe) |
-| `internal/trust/` | Inbound command-channel trust boundary: composable gates (allowlist, DKIM/DMARC, HMAC, replay), PGP gate fails closed (backlog) |
-| `internal/inbound/` | Watcher polls inbound-enabled folders; Processor emits `inbound.command`/`inbound.rejected` bus events |
-| `internal/db/nonces.go` | SQLite `inbound_nonces` replay store (implements trust.NonceStore) |
-| `internal/mcp/tools/impl_stubs.go` | Remaining unimplemented tools |
-| `internal/api/server.go` | REST API router; /api/health, /api/accounts ✅ |
-| `internal/server/server.go` | Combined HTTP server (MCP at /mcp, REST at /api) |
-| `internal/httpauth/` | Named, scoped bearer-token auth for /api and /mcp (D13a) |
-| `AGENT.md` | Operating rules for Claude sessions |
-| `docs/architecture/overview.md` | Full architecture doc with diagrams |
+| `internal/service/` | Operations shared by MCP and REST: mail, search, intel, rules, send, stats, webhooks, query |
+| `internal/mcp/server.go` | MCP server; registers all 44 tools |
+| `internal/mcp/scopes.go` | Tool → scope table; middleware and `tools/list` filter |
+| `internal/mcp/tools/definitions.go` | All tool schemas (names, params, descriptions) |
+| `internal/mcp/tools/impl_*.go` | Tool handlers; `impl_stubs.go` holds the 4 stubs |
+| `internal/api/server.go` | REST router with per-route scopes; SSE `/api/events` |
+| `internal/server/server.go` | Combined HTTP server: `browserGuard` → auth → `/mcp` + `/api` |
+| `internal/server/guard.go` | `browserGuard`: Host/Origin checks, JSON-only unsafe `/api` methods |
+| `internal/httpauth/` | Named, scoped bearer-token auth for `/api` and `/mcp` (D13a) |
+| `internal/query/query.go` | `/api/query` DSL compiler over read-only views |
+| `internal/webhook/` | Enqueuer (bus → outbox) and Dispatcher (outbox → HTTP, retries) |
+| `internal/smtp/smtp.go` | Per-account SMTP sender (STARTTLS / implicit TLS, PLAIN auth, header-injection safe) |
+| `internal/trust/` | Inbound trust gates: allowlist, DKIM/DMARC, HMAC, replay; PGP fails closed |
+| `internal/inbound/` | Watcher polls inbound-enabled folders every 60 s; Processor publishes `inbound.command` / `inbound.rejected` |
+| `internal/output/writer.go` | Enforced output sandbox; the only file writer in the MCP layer |
+| `AGENT.md` | Operating rules and decision log |
+| `docs/architecture/overview.md` | Architecture overview with diagrams |
 
 ---
 
 ## MCP Tools Status
 
-**Implemented (v0.2.0):**
-- `list_accounts` — list configured accounts and connection status
-- `sync_account` — trigger immediate sync
-- `list_folders` — folder tree for an account (live-tested: returns all mailboxes)
-- `create_folder` — create mailbox folder
-- `delete_folder` — delete mailbox folder
-- `list_messages` — paginated messages with headers, date sort, total count
-- `get_message` — full message fetch by UID including raw body (live-tested; body is raw MIME — decode pass needed)
-- `get_headers` — headers-only fetch by UID
-- `search_messages` — IMAP SEARCH by from/subject/text/date range/flags (live-tested)
+44 tools registered in `internal/mcp/server.go`. Scopes from
+`internal/mcp/scopes.go` (enforced over HTTP only; stdio has no auth).
 
-**Known limitation (iteration 2):**
-`get_message` body is raw MIME (quoted-printable encoded). Needs MIME decoder pass for clean plain text.
+| Group | Tools | Scope |
+|-------|-------|-------|
+| Accounts | `list_accounts`; `sync_account` | read; admin |
+| Folders | `list_folders`; `create_folder`, `delete_folder` | read; write |
+| Labels / Trash | `label_message`, `label_bulk`, `empty_trash` | write |
+| Read | `list_messages`, `get_message`, `get_headers` | read |
+| Write | `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender` | write |
+| Send | `send_message` | send |
+| Analytics | `top_senders`, `summarize_folder`, `detect_subscriptions`, `get_sender_history` | read |
+| Rules | `list_rules`; `create_rule`, `delete_rule`, `run_rules` | read; write |
+| Search | `search_messages`, `semantic_search` | read |
+| Enrichment | `enrichment_status`; `trigger_enrichment` | read; admin |
+| Cache | `cache_sweep` (cache only, `dry_run` defaults to true) | admin |
+| Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
+| **Stubs** | `get_thread`, `get_attachments`, `cross_account_search` (read); `export_message` (write) | return "not yet implemented" |
+| **Always empty** | `get_sender_profile`, `kg_query`, `get_anomalies` | read; nothing populates their tables yet |
 
-**File output tools (v0.4.0):**
-- `write_file` — enforced sandbox write to `working_dir`; rejects absolute paths and `..` traversal
-- `read_file` — read file from `working_dir`
-- `list_files` — list files in `working_dir` or subdirectory; returns root path
-- `delete_file` — delete file from `working_dir`
+Behaviour notes:
 
-**Stubbed (iteration 3):**  
-Remaining 15 tools return "not yet implemented" error with descriptive message.
-
-**Deferred (later iteration):**  
-`watch_folder` — IMAP IDLE push notifications
+- `search_messages` is plain IMAP SEARCH on one folder (default `INBOX`);
+  `hall`/`wing`/`room` are accepted but ignored; no FTS. Returns the true
+  `total_matches`.
+- `move_bulk` and `flag_bulk` match `query` as a **From header substring**, not
+  as IMAP SEARCH syntax; `limit` (default 100) keeps the newest matches.
+  `move_bulk` also reads an undeclared `subject` argument.
+- `purge_sender` loops until the folder has no matches; Trash is auto-detected
+  (`\Trash` special-use, then common names).
+- `summarize_folder` returns only `total` and `recent` counts.
+- `get_message` returns the raw `BODY[TEXT]` section (not MIME-decoded).
+- `semantic_search` and `get_sender_history` read the cache, so they see only
+  mail inside the sync window.
+- Deferred: IMAP IDLE / `watch_folder`.
 
 ---
 
 ## Database Schema Summary
 
-Two files since 0.6.0 (AGENT.md D1b), each optionally encrypted:
-`imap.db` (state: rules, webhooks, inbound_nonces) and `cache.db` (everything
-below except those three; disposable, rebuilt from IMAP).
-An existing plaintext file is converted with `imap-mcp db encrypt` (service
-stopped; verified before the plaintext original is replaced; AGENT.md D14).
+Two files since 0.6.0 (D1b), each optionally encrypted (adiantum, Argon2id
+key derivation). `imap-mcp db encrypt` converts an existing plaintext file
+(service stopped; verified before the original is replaced; D14).
+
+**`imap.db`** (state; cannot be rebuilt from IMAP):
 
 ```sql
-messages          -- cached messages with hall/wing/room enrichment tags
-message_vectors   -- float32 embedding blobs (768-dim nomic-embed-text)
-senders           -- enriched sender profiles (role, counts, anomaly_score)
-kg_entities       -- KG nodes: person|organization|topic|project|thread
-kg_relationships  -- KG edges with valid_from/valid_to timestamps
-anomalies         -- episodic anomaly log: behavior_change|silence|reply_spike
-folders           -- folder metadata and last-sync state
-sync_state        -- per-account/folder UID watermark
-enrichment_queue  -- pending/processing/done enrichment jobs
-webhooks          -- registered webhook endpoints (signing secret, fail count)
-webhook_deliveries -- durable webhook outbox (metadata-only payloads, retries)
-rules             -- automation rules (conditions + actions JSON)
+rules              -- automation rules (conditions + actions JSON, run_count)
+webhooks           -- registered endpoints (signing secret, active, fail_count)
+webhook_deliveries -- durable outbox (metadata-only payloads, retries)
+inbound_nonces     -- replay protection for inbound commands (account, nonce)
 ```
 
-Memory patterns borrowed from datawatch:
-- **Wing/Room/Hall tagging** — spatial classification for spatial search
-- **Temporal KG** — entity relationships with time validity
-- **Sender profiles** — first-class entities with relationship history
-- **Anomaly episodic log** — behavioral change detection
+**`cache.db`** (disposable; rebuilt from IMAP; dropped and recreated when its
+schema version changes):
+
+```sql
+messages          -- cached messages, bodies, flags, hall/wing/room tags, enrichment_status
+messages_fts      -- FTS5 over subject, body_text, from_addr, from_name (trigger-maintained)
+message_vectors   -- float32 embedding blobs (model, dims)
+senders           -- sender profiles            (not populated yet)
+kg_entities       -- KG nodes                   (not populated yet)
+kg_relationships  -- KG edges, valid_from/to    (not populated yet)
+anomalies         -- anomaly log                (not populated yet)
+folders           -- folder metadata
+sync_state        -- per account/folder: UIDVALIDITY, highest_modseq, last_uid
+enrichment_queue  -- pending/processing/done/error jobs, lane 0 = new, 1 = backfill
+```
 
 ---
 
 ## Enrichment Pipeline
 
 ```
-Sync writes message → status: pending → enrichment_queue (lane: new | backfill)
-Pipeline (10s tick, new lane first; backfill rate-limited and gated):
-  1. nomic-embed-text → message_vectors (768-dim float32 blob)
-  2. qwen3:1.7b → hall/wing/room classification (JSON from prompt)
-  3. bus.Publish(EventEnrichmentDone)
+Sync caches a message → enrichment_queue (lane new | backfill)
+Pipeline: new lane first; per-provider concurrency cap (default 2);
+          backfill rate limit (default 30/min) and LoadGates
+          (backfill_window, ollama_load, datawatch capacity);
+          exponential backoff on transient provider errors (cap 300 s);
+          max_attempts (default 3) then status = error
+  1. embed (direct Ollama, nomic-embed-text) → message_vectors
+  2. classify (Ollama qwen3:1.7b or datawatch LLM proxy) → hall/wing/room
+  3. publish enrichment.done (or enrichment.error)
 ```
 
-Ollama must be running at `http://localhost:11434`.
-Default models: `nomic-embed-text` (embeddings), `qwen3:1.7b` (classification).
+New mail is never gated. `trigger_enrichment` bypasses window, yield and rate
+limit but not backoff or caps.
 
 ---
 
 ## Event Bus
 
-`internal/bus` is the backbone. Every subsystem publishes and subscribes here.
-Never couple subsystems via direct calls — always through the bus.
+`internal/bus` is in-process pub/sub. `/api/events` (SSE) and the webhook
+enqueuer subscribe to every event.
 
-Current event types: `message.synced`, `message.updated`, `message.deleted`,
-`folder.synced`, `sync.complete`, `sync.error`, `enrichment.done`, `enrichment.error`,
-`anomaly.detected`, `rule.fired`, `account.connected`, `account.error`,
-`account.disconnected`, `webhook.delivered`, `webhook.failed`.
+| Event | Published by |
+|-------|--------------|
+| `message.synced`, `message.updated`, `message.deleted` | sync |
+| `folder.synced`, `sync.complete`, `sync.error` | sync |
+| `cache.cleaned` | sync (cleaning, `cache_sweep`) |
+| `enrichment.done`, `enrichment.error` | enrichment pipeline |
+| `rule.fired` | rules (`run_rules`, `run-rules`, REST) |
+| `account.connected`, `account.error` | IMAP pool |
+| `account.disconnected` | declared, not published |
+| `anomaly.detected` | declared, not published (no detector yet) |
+| `webhook.delivered`, `webhook.failed` | webhook dispatcher |
+| `inbound.command`, `inbound.rejected` | inbound processor |
 
 ---
 
-## REST API Endpoints (v0.10.0, in progress)
+## REST API Endpoints
 
-All routes except `/api/health` require a bearer token with the listed scope
-(`internal/api/server.go` `Router`). Every handler calls `internal/service`,
-which is shared with the MCP tools.
+All routes are implemented. All except `/api/health` require a bearer token
+with the listed scope (`internal/api/server.go` `Router`). Full reference:
+`docs/rest-api.md`.
 
 ```
-GET    /api/health                                         open
-GET    /api/accounts                                       read
-POST   /api/accounts/{account}/sync                        admin
-GET    /api/accounts/{account}/stats                       read
-GET    /api/accounts/{account}/folders                     read
-GET    /api/accounts/{account}/folders/{folder}/messages   read   (?limit&offset&order; folder %2F-encoded)
-GET    /api/accounts/{account}/folders/{folder}/messages/{uid}          read
-DELETE /api/accounts/{account}/folders/{folder}/messages/{uid}          write (?permanent=true)
-PUT    /api/accounts/{account}/folders/{folder}/messages/{uid}/flags    write
-POST   /api/accounts/{account}/folders/{folder}/messages/{uid}/move     write
-POST   /api/accounts/{account}/messages/send               send
-GET    /api/search                                         read
-POST   /api/search/semantic                                read
-GET    /api/senders, /api/senders/{address}                read
-GET    /api/kg, /api/anomalies                             read
-GET    /api/enrichment/status                              read
-POST   /api/enrichment/trigger                             admin
-POST   /api/cache/sweep                                    admin
-GET|POST /api/rules, PUT|DELETE /api/rules/{id}, POST /api/rules/{id}/test   read / write
-GET    /api/events                                         read (SSE)
-GET|POST /api/webhooks, DELETE /api/webhooks/{id}          admin — durable outbox, metadata-only (D16; docs/webhooks.md)
-POST   /api/webhooks/{id}/enable | /test                   admin — re-enable after auto-disable; queue a webhook.test ping
-GET    /api/webhooks/{id}/deliveries?limit=N               admin — recent outbox rows
-GET|POST /api/query                                        admin — JSON query DSL over cache views (D17; docs/query.md)
+GET    /api/health                                                     open
+GET    /api/events                                                     read (SSE)
+GET    /api/accounts                                                   read
+POST   /api/accounts/{account}/sync                                    admin
+GET    /api/accounts/{account}/stats                                   read
+GET    /api/accounts/{account}/folders                                 read
+GET    /api/accounts/{account}/folders/{folder}/messages               read  (folder %2F-encoded)
+GET    /api/accounts/{account}/folders/{folder}/messages/{uid}         read
+DELETE /api/accounts/{account}/folders/{folder}/messages/{uid}         write
+PUT    /api/accounts/{account}/folders/{folder}/messages/{uid}/flags   write
+POST   /api/accounts/{account}/folders/{folder}/messages/{uid}/move    write
+POST   /api/accounts/{account}/messages/send                           send
+GET    /api/search                                                     read
+POST   /api/search/semantic                                            read
+GET    /api/senders, /api/senders/{address}                            read
+GET    /api/kg, /api/anomalies                                         read
+GET    /api/enrichment/status                                          read
+POST   /api/enrichment/trigger                                         admin
+POST   /api/cache/sweep                                                admin
+GET    /api/rules                                                      read
+POST   /api/rules, PUT|DELETE /api/rules/{id}, POST /api/rules/{id}/test   write
+GET|POST /api/webhooks, DELETE /api/webhooks/{id}                     admin
+POST   /api/webhooks/{id}/enable, /api/webhooks/{id}/test             admin
+GET    /api/webhooks/{id}/deliveries                                   admin
+GET|POST /api/query                                                    admin
 ```
 
-## Next Iterations
+Unsafe `/api` methods must send `Content-Type: application/json`
+(`browserGuard`).
 
-**Iteration 2 (message CRUD):**
-- Implement `list_messages` — paginated IMAP UID FETCH with header-only mode
-- Implement `get_message` — full fetch with body + MIME parsing
-- Implement `search_messages` — IMAP SEARCH + SQLite FTS5 hybrid
-- Implement corresponding REST endpoints
-- Wire up sync UID range fetch in `internal/sync/syncer.go`
+---
 
-**Iteration 3 (intelligence):**
-- `summarize_folder`, `detect_subscriptions`, `get_sender_history`
-- Sender profile builder on enrichment events
-- KG entity extractor in enrichment pipeline
-- `semantic_search` using stored vectors
+## Open items
 
-**Iteration 4 (watch_folder + streaming):**
-- IMAP IDLE support
-- `GET /api/events` SSE stream
-- Real-time enrichment on new messages
+| Item | Notes |
+|------|-------|
+| Stub tools | `get_thread`, `get_attachments`, `export_message`, `cross_account_search` |
+| Intelligence (iteration 3) | Sender-profile builder, KG extractor, anomaly detector: nothing writes `senders`, `kg_*` or `anomalies`; `anomaly.detected` never fires. Content cleaning (`Cleaner`) |
+| `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
+| SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
+| PGP inbound gate | Declared, fails closed |
+| datawatch peer token | Capacity gate and LLM proxy need a separate datawatch peer token; both stay off until a config field exists |
+| IMAP IDLE / `watch_folder` | Iteration 4 |
+| Auth rejection log volume | Rate-limit repeated per-request rejection logs |
 
-**Option 4 (future):**
-- Autonomous rule engine (triggers actions on bus events)
-- Federation (multi-instance KG sharing)
-- Plugin system (external bus subscribers)
+Plans and backlog: `docs/plans/README.md`.
 
 ---
 
@@ -383,7 +382,7 @@ GET|POST /api/query                                        admin — JSON query 
 
 See `AGENT.md` for the full rule set.
 
-**Prime rule: the user makes all decisions.**  
+**Prime rule: the user makes all decisions.**
 When any design decision is not covered by an existing rule, stop and run DIP.
 
 **Always load this file before starting work in a new session.**

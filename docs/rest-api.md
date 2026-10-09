@@ -1,0 +1,485 @@
+# REST API reference
+
+`imap-mcp serve` runs one HTTP server. The MCP endpoint is at `/mcp` and the
+REST API is under `/api`. The default address is `http://127.0.0.1:8765`.
+
+This page lists every REST route. The query DSL and webhooks have their own
+pages: [query.md](query.md) and [webhooks.md](webhooks.md).
+
+## Conventions
+
+### Authentication and scopes
+
+Every route except `GET /api/health` needs `Authorization: Bearer <token>`.
+Each token carries one or more scopes. Each route requires exactly one scope:
+
+| Scope | Covers |
+|-------|--------|
+| `read` | Accounts, folders, messages, search, analytics, rules listing, the event stream |
+| `write` | Mailbox changes (delete, flags, move) and rule changes |
+| `send` | Outbound mail |
+| `admin` | Sync, enrichment trigger, cache sweep, webhooks, query DSL |
+
+If `server.auth.disabled: true` is set, the server checks no tokens and no
+scopes. See [auth-tokens.md](auth-tokens.md).
+
+### Request guard
+
+The server checks every request before it checks authentication:
+
+- **Host:** the `Host` header must be `localhost`, a loopback IP, or the
+  configured `server.host`. A wildcard bind (`0.0.0.0`, `::`) allows only
+  loopback names. Any other host gets **403** `forbidden: host not allowed`.
+- **Origin:** if an `Origin` header is present, it must be `http` or `https`
+  and name an allowed host. Otherwise the request gets **403**
+  `forbidden: cross-origin request`. An `Origin` of `null` is always refused.
+- **Content type:** every `/api/` request with a method other than GET, HEAD
+  or OPTIONS must send `Content-Type: application/json`. Otherwise it gets
+  **415**. This applies to POST, PUT and DELETE, even routes that read no body
+  (for example `DELETE /api/rules/{id}`).
+
+Routes that read a JSON body (marked "Body" below) need a valid JSON value. An
+empty body fails with 400, so send `{}` when you have no fields to set.
+
+curl, datawatch and MCP clients send loopback `Host` headers and no `Origin`,
+so the guard does not affect them.
+
+### Path parameters
+
+- `{account}` is a configured account name. `_default` means the default
+  account.
+- `{folder}` is the mailbox name. Encode `/` as `%2F`, for example
+  `%5BGmail%5D%2FSent%20Mail` for `[Gmail]/Sent Mail`.
+- `{uid}` and `{id}` must be positive integers. Anything else gets 400.
+
+### Errors
+
+| Status | Meaning | Body |
+|--------|---------|------|
+| 400 | Bad or missing input, or a body that is not valid JSON | text |
+| 401 | Missing or invalid bearer token | JSON `{"error": "..."}` and a `WWW-Authenticate: Bearer realm="imap-mcp"` header |
+| 403 | Token lacks the route's scope (JSON body), or the guard refused the host or origin (text body) | |
+| 404 | Unknown account, folder, message, rule or webhook | text |
+| 415 | Unsafe method without `Content-Type: application/json` | text |
+| 422 | The config cannot serve the request, for example sending from a receive-only account or testing a disabled webhook | text |
+| 502 | The IMAP or SMTP server failed | text |
+| 503 | The subsystem is not running in this mode (for example no syncer or no enrichment pipeline) | text |
+| 500 | Anything else | text |
+
+Every route except `/api/events` has a 30-second request timeout. A request
+that runs longer gets **504**, and its context is cancelled. A manual sync of a
+large account, for example, stops early. The next scheduled cycle picks up
+where it left off.
+
+## Health
+
+### `GET /api/health`
+
+No token needed.
+
+```json
+{
+  "status": "ok",
+  "version": "<version>",
+  "accounts": 2,
+  "auth": "enabled",
+  "sync": {
+    "interval_minutes": 15,
+    "window_days": 30,
+    "max_message_mb": 25,
+    "keep_flagged": false,
+    "vacuum_interval_hours": 24,
+    "folders": ["INBOX", "\\Sent"]
+  },
+  "enrichment": {
+    "enabled": true,
+    "concurrency": 2,
+    "backfill_per_minute": 30,
+    "backfill_window": "",
+    "max_attempts": 3,
+    "backoff_max_seconds": 300,
+    "yield": true,
+    "embed_provider": "ollama:nomic-embed-text",
+    "classify_provider": "ollama:qwen3:1.7b",
+    "pending": {"new": 0, "backfill": 120},
+    "done_last_hour": 340,
+    "errors": 2,
+    "oldest_pending_seconds": {"backfill": 600},
+    "backfill_paused": "backfill_window: outside backfill window 22:00-07:00",
+    "backoff_seconds": 40
+  },
+  "storage": {"state_encrypted": false, "cache_encrypted": false}
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `accounts` | Number of accounts in the connection pool |
+| `auth` | `enabled` or `disabled` |
+| `sync.*` | Global sync settings. `window_days` and `folders` are the global values, not per-account overrides. See [sync-cache.md](sync-cache.md). |
+| `enrichment.enabled` … `yield` | Enrichment config |
+| `enrichment.embed_provider`, `classify_provider`, `pending`, `done_last_hour`, `errors`, `oldest_pending_seconds` | Live queue state. These appear only when the pipeline is running and its stats query succeeds. |
+| `enrichment.backfill_paused` | Present only while a gate pauses backfill. Gives the reason. |
+| `enrichment.backoff_seconds` | Present only during a provider backoff |
+| `storage.*` | Whether each database has an encryption key configured. See [encryption.md](encryption.md). |
+
+For more enrichment detail, use `GET /api/enrichment/status`. See
+[enrichment.md](enrichment.md).
+
+## Event stream
+
+### `GET /api/events` (`read`)
+
+This is a Server-Sent Events stream of every internal bus event. It has no
+request timeout.
+
+- Response headers: `Content-Type: text/event-stream`,
+  `Cache-Control: no-cache`, `X-Accel-Buffering: no`. The server sends the
+  status line right away.
+- Each event is a single `data:` line holding one JSON object, followed by a
+  blank line. There is no `event:` or `id:` field.
+- Every 15 seconds the server sends a heartbeat comment, `: heartbeat`.
+- Missed events are not buffered and there is no replay. A client that falls
+  more than 32 events behind loses events, so the bus never blocks. Reconnect
+  when the stream drops.
+
+```
+data: {"type":"message.synced","account":"work","payload":{"folder":"INBOX","id":98,"queued":true,"uid":4211}}
+
+: heartbeat
+
+```
+
+The event object:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `type` | string | Event type, listed below |
+| `account` | string | Omitted when empty |
+| `payload` | any | Omitted when empty. The shape depends on the type. |
+
+```bash
+curl -N -H "Authorization: Bearer <token>" http://127.0.0.1:8765/api/events
+```
+
+#### Event types
+
+| Type | `account` | `payload` |
+|------|-----------|-----------|
+| `message.synced` | yes | `{folder, uid, id, queued}`. `id` is the cache row id. `queued` is false when a copy with the same Message-ID is already queued for enrichment. |
+| `message.updated` | yes | `{folder, uid, flags}` (flags changed on the server) |
+| `message.deleted` | yes | `{folder, uid}`. The message left the cache because it was expunged, moved or aged out of the window. The mailbox is not touched. |
+| `folder.synced` | yes | Folder stats: `{account, entry, folder, window_days, cached, new, removed, flags_updated, condstore, rebuilt?, error?, at}` |
+| `sync.complete` | yes | none |
+| `sync.error` | yes | Error text (string) |
+| `cache.cleaned` | no | After a sync cycle: `{stale_folders?, orphans: {vectors, queue_entries, fts_rebuilt}, vacuumed, at}`. After a real `cache_sweep`: `{dry_run, folders, total, orphans, note}`. |
+| `enrichment.done` | no | The enrichment result: `{MessageID, Hall, Wing, Room, Embedding, Entities, Anomalies}`. The field names are Go names, and `Embedding` is the full vector. |
+| `enrichment.error` | no | `{message_id, error}`, sent when a message reaches `max_attempts` |
+| `rule.fired` | rule's `account` condition (empty for the default account) | `{rule_id, action, matched}` |
+| `account.connected` | yes | none |
+| `account.error` | yes | Error text (string) |
+| `webhook.delivered` | no | `{id, delivery_id}` |
+| `webhook.failed` | no | `{id, delivery_id, consecutive_failures, disabled}` |
+| `inbound.command` | yes | A verified inbound command. See [datawatch-integration.md](datawatch-integration.md). |
+| `inbound.rejected` | yes | The trust-gate result for a rejected command email |
+
+`anomaly.detected` and `account.disconnected` are defined but nothing
+publishes them yet.
+
+Webhooks receive a reduced, metadata-only form of these events. See
+[webhooks.md](webhooks.md).
+
+## Accounts
+
+### `GET /api/accounts` (`read`)
+
+```json
+[{"name": "work", "default": true, "connected": true}]
+```
+
+`connected` comes from a live NOOP probe.
+
+### `POST /api/accounts/{account}/sync` (`admin`)
+
+Runs an immediate cache sync of one account. It returns that account's
+last-sync stats for each folder.
+
+```json
+{"account": "work", "folders": [{"account": "work", "entry": "INBOX", "folder": "INBOX", "window_days": 30, "cached": 812, "new": 3, "removed": 1, "flags_updated": 2, "condstore": true, "at": "2026-10-09T12:00:00Z"}]}
+```
+
+Errors: 404 unknown account, 502 sync failure, 503 no syncer.
+
+### `GET /api/accounts/{account}/stats` (`read`)
+
+Shows cache counts, the last sync results and the enrichment state counts for
+one account.
+
+```json
+{
+  "account": "work",
+  "connected": true,
+  "cached": [{"account": "work", "folder": "INBOX", "count": 812}],
+  "sync": [{"entry": "INBOX", "folder": "INBOX", "...": "..."}],
+  "enrichment": {"done": 790, "pending": 20, "duplicate": 2}
+}
+```
+
+## Folders
+
+### `GET /api/accounts/{account}/folders` (`read`)
+
+```json
+[{"path": "INBOX", "delimiter": "/"}, {"path": "[Gmail]/Sent Mail", "delimiter": "/", "attributes": ["\\HasNoChildren", "\\Sent"]}]
+```
+
+## Messages
+
+These routes talk to the IMAP server directly. They do not read the cache.
+
+### `GET /api/accounts/{account}/folders/{folder}/messages` (`read`)
+
+| Query | Type | Default | Notes |
+|-------|------|---------|-------|
+| `limit` | int | 50 | Must be 1–200. Values outside that range use 50. |
+| `offset` | int | 0 | |
+| `order` | string | newest first | `asc` for oldest first |
+
+```json
+{"folder": "INBOX", "total": 812, "offset": 0, "limit": 50, "count": 50,
+ "messages": [{"uid": 4211, "seq_num": 812, "subject": "Hello", "from": "Ann <ann@example.com>",
+               "to": ["you@example.com"], "date": "2026-10-09T11:58:00Z", "flags": ["\\Seen"], "size_bytes": 5120}]}
+```
+
+`date` is the INTERNALDATE. `thread_id` appears when the message has
+In-Reply-To. An unknown folder gets 404.
+
+### `GET /api/accounts/{account}/folders/{folder}/messages/{uid}` (`read`)
+
+Returns the message header fields above plus `body_text`, which is the raw
+`BODY[TEXT]` section. The fetch uses `BODY.PEEK`, so reading a message does
+not set `\Seen`. An unknown UID gets 404.
+
+### `DELETE /api/accounts/{account}/folders/{folder}/messages/{uid}` (`write`)
+
+| Query | Type | Default |
+|-------|------|---------|
+| `permanent` | bool | false |
+
+By default the server moves the message to `Trash` or `[Gmail]/Trash`. If
+neither exists, it marks the message `\Deleted` without expunging it. With
+`permanent=true`, it expunges exactly this UID and never touches other
+`\Deleted` mail.
+
+```json
+{"uid": 4211, "permanent": false, "trash": "[Gmail]/Trash"}
+```
+
+### `PUT /api/accounts/{account}/folders/{folder}/messages/{uid}/flags` (`write`)
+
+Body:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `add` | string | Comma-separated flags. The leading backslash is optional: `seen,flagged`. |
+| `remove` | string | Same format |
+
+You must send at least one of `add` or `remove`. Response:
+`{"uid": 4211, "status": "updated"}`.
+
+### `POST /api/accounts/{account}/folders/{folder}/messages/{uid}/move` (`write`)
+
+Body: `{"destination": "Archive"}` (required). The server uses `MOVE` when it
+supports it. Otherwise it copies the message and deletes exactly that UID.
+Response: `{"uid": 4211, "status": "moved", "destination": "Archive"}`.
+
+## Search
+
+### `GET /api/search` (`read`)
+
+Runs a plain IMAP `UID SEARCH` in one folder.
+
+| Query | Type | Default | Notes |
+|-------|------|---------|-------|
+| `account` | string | default account | |
+| `folder` | string | `INBOX` | |
+| `from`, `subject` | string | | Header match |
+| `text` | string | | Body match |
+| `since`, `before` | string | | `YYYY-MM-DD` |
+| `flags` | string | | One of `seen`, `unseen`, `flagged`, `answered` |
+| `limit` | int | 50 | Must be 1–500 |
+
+```json
+{"folder": "INBOX", "total_matches": 1204, "returned": 50, "messages": [ ... ]}
+```
+
+`total_matches` is exact. `messages` holds the newest `limit` matches. Some
+servers, Gmail among them, match search terms as whole tokens. See
+[rules.md](rules.md#gotcha-whole-token-matching).
+
+### `POST /api/search/semantic` (`read`)
+
+Ranks cached, enriched messages by cosine similarity. Body:
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `query` | string | | Free text, embedded with the enrichment embedder |
+| `reference_uid` | int | | Use this cached message's vector instead. Needs `folder`. |
+| `account` | string | all accounts | |
+| `folder` | string | all folders | Filters results only when `query` is used |
+| `limit` | int | 10 | Must be 1–100 |
+| `threshold` | float | 0.7 | Must be in (0, 1] |
+
+You must send either `query` or `reference_uid`.
+
+```json
+{"hits": [{"account": "work", "folder": "INBOX", "uid": 4211, "subject": "...", "from": "ann@example.com",
+           "date": "2026-10-09T11:58:00Z", "hall": "conversation", "score": 0.83}],
+ "searched": 790}
+```
+
+`searched` counts the messages with vectors in scope. If it is 0, the response
+includes a `note`. Errors: 503 if the pipeline is not running (for `query`),
+404 if the reference message is not cached and enriched, 502 if embedding
+fails.
+
+## Intelligence (cache)
+
+Nothing populates the senders, knowledge-graph or anomalies tables yet, so
+these routes return empty lists. `GET /api/senders/{address}` still returns
+the count of cached messages from that address.
+
+| Route | Scope | Query | Response |
+|-------|-------|-------|----------|
+| `GET /api/senders` | `read` | `role`, `domain`, `limit` (default 50, max 500) | `{count, senders: [...]}` |
+| `GET /api/senders/{address}` | `read` | | Sender fields plus `cached_messages`, `relationships`, `anomalies`. 404 when there is neither a profile nor cached mail. |
+| `GET /api/kg` | `read` | `entity`, `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence}]}` |
+| `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [...]}` |
+
+## Enrichment
+
+### `GET /api/enrichment/status` (`read`)
+
+```json
+{
+  "enabled": true,
+  "embed_provider": "ollama:nomic-embed-text",
+  "classify_provider": "ollama:qwen3:1.7b",
+  "pending": {"new": 0, "backfill": 120},
+  "processing": 2,
+  "done": 790,
+  "errors": 2,
+  "duplicates": 14,
+  "done_last_hour": 340,
+  "oldest_pending_seconds": {"backfill": 600},
+  "backfill_paused": "ollama_load: other models resident on ollama (...)",
+  "backoff_seconds": 40,
+  "consecutive_failures": 3,
+  "last_error": "..."
+}
+```
+
+The last four fields appear only when they are set. 503 if the pipeline is not
+running. See [enrichment.md](enrichment.md).
+
+### `POST /api/enrichment/trigger` (`admin`)
+
+Body: `{"limit": 50}`. `limit` defaults to 50. Send `{}` to use the default.
+
+The pipeline processes up to `limit` messages now. A trigger bypasses the
+backfill window, the yield gates and the rate limit. It does not bypass
+backoff or the concurrency caps.
+
+```json
+{"triggered": true, "limit": 50}
+```
+
+`triggered` is false when a trigger is already pending. 503 when enrichment is
+disabled.
+
+## Cache maintenance
+
+### `POST /api/cache/sweep` (`admin`)
+
+Deletes cached copies only, never mailbox mail. Body:
+
+| Field | Type | Default |
+|-------|------|---------|
+| `account` | string | |
+| `folder` | string | Resolved mailbox name |
+| `older_than_days` | number | By INTERNALDATE |
+| `errors_only` | bool | false |
+| `all` | bool | false |
+| `dry_run` | bool | **true** |
+
+You must set at least one filter or `all: true`. Otherwise the request gets
+400. See [sync-cache.md](sync-cache.md#on-demand-cache_sweep) for the response
+and behaviour.
+
+## Webhooks
+
+All webhook routes need the `admin` scope. [webhooks.md](webhooks.md) covers
+payloads, signatures and delivery.
+
+| Route | Body / query | Response |
+|-------|--------------|----------|
+| `GET /api/webhooks` | | `{count, webhooks: [{id, url, events, active, created_at, last_fired?, fail_count, pending}], events: [deliverable types]}` |
+| `POST /api/webhooks` | `{url, events}` | **201** with the webhook and `secret`. This is the only time the secret is shown. 400 for a bad URL or bad events. |
+| `DELETE /api/webhooks/{id}` | | `{id, status: "deleted"}` |
+| `POST /api/webhooks/{id}/enable` | | The webhook, re-enabled with its failure count reset |
+| `POST /api/webhooks/{id}/test` | | **202** `{id, status: "queued", event: "webhook.test"}`. 422 if the webhook is disabled. |
+| `GET /api/webhooks/{id}/deliveries` | `limit` (default 50, max 500) | `{count, deliveries: [{webhook_id, delivery_id, event, payload, status, attempts, next_attempt, last_status?, last_error?, created_at, done_at?}]}`, newest first |
+
+## Rules
+
+[rules.md](rules.md) covers the rule model and behaviour.
+
+| Route | Scope | Body | Response |
+|-------|-------|------|----------|
+| `GET /api/rules` | `read` | | `{count, rules: [rule]}` in priority order |
+| `POST /api/rules` | `write` | rule body | **201** `{id, name}` |
+| `PUT /api/rules/{id}` | `write` | rule body (full replacement) | The updated rule |
+| `DELETE /api/rules/{id}` | `write` | | `{id, status: "deleted"}` |
+| `POST /api/rules/{id}/test` | `write` | | Dry run: `{id, name, matched, action, error?}` |
+
+The rule body:
+
+| Field | Type | Default |
+|-------|------|---------|
+| `name` | string | Required, unique |
+| `description` | string | |
+| `conditions` | object | `{account, folder, from, subject, text, older_than_days}` |
+| `actions` | array | `[{type, dest?, flags?}]` |
+| `active` | bool | true |
+| `priority` | int | 100 (0 also means 100) |
+
+## Query DSL
+
+| Route | Scope | |
+|-------|-------|--|
+| `GET /api/query` | `admin` | Lists views, fields, operators and aggregates |
+| `POST /api/query` | `admin` | Runs a JSON query. Unknown fields get 400. |
+
+See [query.md](query.md).
+
+## Send
+
+### `POST /api/accounts/{account}/messages/send` (`send`)
+
+Body:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `to` | string | Required. Comma-separated. |
+| `cc` | string | Optional. Comma-separated. |
+| `subject` | string | Required |
+| `body` | string | Required. Plain text. |
+
+The message goes out through the account's own `smtp` block.
+
+```json
+{"status": "sent", "from": "you@example.com", "account": "work"}
+```
+
+Errors: 400 missing field, 404 unknown account, 422 account has no `smtp`
+config, 502 SMTP failure.

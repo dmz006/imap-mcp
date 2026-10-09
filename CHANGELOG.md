@@ -6,12 +6,6 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
-### Changed
-- **Documentation pass (P7).** README rewritten for the current feature set; new
-  guides for token auth, encryption, deployment, the REST API, rules, the sync
-  cache, enrichment and known limitations, plus a docs index; existing guides,
-  example configs, the agent context file and the skill corrected against the code.
-
 ## [0.10.4] - 2026-10-09
 
 ### Fixed
@@ -35,6 +29,12 @@ All notable changes to imap-mcp are documented here. The format is based on
 - **Provider auto-detect no longer panics (v0.10.4)** on short non-Gmail
   addresses (11–13 characters), and only `@gmail.com` / `@googlemail.com`
   count as Gmail (not e.g. `@notgmail.com`).
+
+### Changed
+- **Documentation pass (P7, v0.10.4).** README rewritten for the current feature set; new
+  guides for token auth, encryption, deployment, the REST API, rules, the sync
+  cache, enrichment and known limitations, plus a docs index; existing guides,
+  example configs, the agent context file and the skill corrected against the code.
 
 ## [0.10.3] - 2026-10-09
 

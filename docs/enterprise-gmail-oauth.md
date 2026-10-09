@@ -12,10 +12,18 @@ imap-mcp supports two OAuth paths. Pick by how your org is run.
 | Headless / many users | awkward | ideal |
 | imap-mcp `auth.type` | `xoauth2` | `xoauth2_service_account` |
 
+> **Sending mail does not use OAuth.** `send_message` authenticates to SMTP with
+> PLAIN (username + password) only. An OAuth account can read mail, but to send
+> its `smtp:` block needs a `username` and `password` (for example an App
+> Password, if your org allows them).
+
 > **Required either way:** the IMAP OAuth scope is `https://mail.google.com/`.
 > For Workspace addresses you **must** set `provider: google` (Path A) — a custom
 > domain like `you@company.com` can't be auto-detected and would otherwise be
-> routed to the Microsoft endpoint.
+> routed to the Microsoft endpoint. (Microsoft 365 accounts use `provider:
+> microsoft`; imap-mcp then requests
+> `https://outlook.office.com/IMAP.AccessAsUser.All` and `offline_access`
+> instead. This guide covers Google only.)
 
 ---
 
@@ -27,6 +35,10 @@ imap-mcp supports two OAuth paths. Pick by how your org is run.
    (Internal Workspace apps skip Google verification and the 7-day test-token
    expiry). Publish it.
 3. **Credentials → Create credentials → OAuth client ID → Desktop app.**
+   imap-mcp uses the fixed loopback redirect URI
+   `http://localhost:8766/oauth/callback`. Desktop-app clients accept loopback
+   redirects without registering them; if you use a **Web application** client
+   instead, add that exact URI under *Authorized redirect URIs*.
 4. Note the **client ID** and **client secret**. (No API to "enable" — the
    `https://mail.google.com/` scope is requested by imap-mcp at sign-in. Your
    admin may need to allow the app under Admin Console → Security → API
@@ -48,10 +60,30 @@ accounts:
 
 **Authorize (once):**
 ```bash
-imap-mcp auth-setup --account work-gmail
-# opens a consent URL on stdout; sign in; the refresh token is saved to token_file
+imap-mcp auth-setup --account work-gmail --config /path/to/config.yaml
 ```
-After that, imap-mcp refreshes the access token automatically on every connect.
+(`--account` defaults to the default account; `--config` to the usual config
+path.) What happens:
+
+1. imap-mcp prints a consent URL. It does **not** open a browser; copy the URL
+   into one yourself.
+2. It listens for the callback on `127.0.0.1` and `::1`, port 8766 (loopback
+   only), and prints `Waiting for OAuth callback on
+   http://localhost:8766/oauth/callback ...`.
+3. You sign in and approve. Google redirects the browser to that URL.
+   imap-mcp checks the random `state` value it generated (callbacks with a
+   wrong or missing state are rejected and it keeps waiting), exchanges the
+   code, and writes the token (including the refresh token) to `token_file`
+   with mode 0600.
+4. If you deny consent, Google's error is reported and the command exits.
+
+It waits until the callback arrives or you press Ctrl-C; there is no timeout.
+The browser must reach port 8766 on the machine running `auth-setup`. On a
+headless server, forward the port first, e.g. `ssh -L 8766:localhost:8766
+server`, then open the URL in your local browser.
+
+`auth-setup` works only for `type: xoauth2` accounts. After that, imap-mcp
+refreshes the access token automatically on every connect.
 
 ---
 
@@ -95,6 +127,10 @@ on each connect. To service many mailboxes, add one account block per user
   `https://mail.google.com/`. Re-check the scope in both places.
 - **Routed to the Microsoft endpoint** — you forgot `provider: google` on a
   custom-domain account (Path A).
+- **`listen for OAuth callback: … address already in use`** — something else
+  holds port 8766 (often an earlier `auth-setup`). Stop it and retry.
+- **Browser shows "invalid state"** — the callback came from an older consent
+  URL. Use the URL printed by the running `auth-setup`.
 - **Refresh token stops working after ~7 days** — the OAuth consent screen is in
   "testing"; set it to Internal/Published.
 - **`invalid_grant` / `unauthorized_client` (Path B)** — the service-account

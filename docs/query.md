@@ -35,6 +35,10 @@ The response looks like this:
 
 - **`view`:** `messages`, `senders`, `anomalies` or `kg` (knowledge-graph
   relationships, with subject and object names).
+  > **Currently empty:** nothing populates the `senders`, `anomalies` or `kg`
+  > tables yet (that arrives with iteration-3 intelligence), so queries on
+  > those views return no rows. The `messages` view works today. See
+  > [known-limitations.md](known-limitations.md).
 - **`fields`:** columns to return. If omitted, a default set is returned. For
   `messages`, the default never includes bodies: `body_text` and `body_html`
   are returned only when named.
@@ -79,6 +83,9 @@ Unread, flagged mail per folder:
  "group_by": ["account", "folder"],
  "aggregate": [{"fn": "count", "as": "n"}]}
 ```
+
+The next three examples show the query shape for the intelligence views; they
+return no rows until those tables are populated.
 
 Senders you have never replied to, ranked by volume:
 

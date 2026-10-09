@@ -22,7 +22,18 @@ session: the operator decides if, when, and where imap-mcp connects.
 - A built `imap-mcp` binary (`go build -o imap-mcp ./cmd/imap-mcp/`).
 - A config file (copy `config.example.yaml`). Never commit it — `*.yaml` is
   gitignored except the example.
-- For datawatch layers: a running datawatch daemon (v8.0.0+).
+- For datawatch layers: a running datawatch daemon, **v8.75.0 or later**. That
+  is the first release with the external secrets endpoint
+  (`GET /api/external/secrets/{name}`) that Layer 1 uses.
+- For HTTP mode (`imap-mcp serve`): bearer tokens in `server.auth.tokens`. Auth
+  is on by default; every `/api` route except `/api/health`, and every MCP tool,
+  needs a token with the right scope (`read`, `write`, `send`, `admin`). See
+  [auth-tokens.md](auth-tokens.md).
+
+Related docs: [auth-tokens.md](auth-tokens.md) (token scopes and client
+headers), [encryption.md](encryption.md) (database keys), and
+[deployment.md](deployment.md) (systemd service, `EnvironmentFile`, scheduling
+`run-rules`).
 
 ## Wiring imap-mcp into Claude Code (operator-controlled)
 
@@ -35,10 +46,17 @@ stdio (reconnects per session):
 { "mcpServers": { "imap-mcp": { "command": "/path/to/imap-mcp/imap-mcp" } } }
 ```
 
-HTTP (persistent connections — start `imap-mcp serve` first):
+HTTP (persistent connections — start `imap-mcp serve` first). The client must
+send a bearer token; `tools/list` shows only the tools that token's scopes
+allow:
 ```json
-{ "mcpServers": { "imap-mcp": { "url": "http://localhost:8765/mcp" } } }
+{ "mcpServers": { "imap-mcp": {
+    "type": "http",
+    "url": "http://localhost:8765/mcp",
+    "headers": { "Authorization": "Bearer ${IMAP_MCP_TOKEN}" } } } }
 ```
+See [auth-tokens.md](auth-tokens.md) for other ways to supply the header
+(including Claude Code's `headersHelper`).
 
 A session that wasn't given imap-mcp simply doesn't have it. That is the design.
 
@@ -99,8 +117,74 @@ the service token, once per secret per process (cached). `serve` and
   skipped (AGENT.md D15a); an unreadable `ca_file` fails startup.
 - 403/404 → the secret does not exist or is not scoped `service:imap-mcp`.
 
-**Security:** `api_url`/`token` must be `${ENV_VAR}` references — never write a
-literal token into a config file or repo.
+**Security:** keep `api_url`/`token` as `${ENV_VAR}` references — never write a
+literal token into a config file or repo. (imap-mcp does not enforce this; it
+is on you.)
+
+### The `datawatch:` block
+
+| Field | Meaning |
+|-------|---------|
+| `api_url` | Base URL of the datawatch HTTP API, e.g. `https://127.0.0.1:8443`. |
+| `token` | imap-mcp's datawatch service token, sent as `Authorization: Bearer`. Use an `${ENV}` reference. |
+| `ca_file` | Optional PEM certificate to trust in addition to the system roots, e.g. datawatch's self-signed `~/.datawatch/tls/server/cert.pem`. `~` is expanded. |
+
+- The block is optional. Without it, imap-mcp runs standalone and any
+  `${secret:}` reference is a startup error.
+- `ca_file` applies to every call imap-mcp makes to datawatch (secrets,
+  capacity gate, LLM proxy). TLS verification is never turned off. A missing
+  or unreadable file, or one with no certificate, fails startup.
+- `${secret:}` resolution needs both `api_url` and `token`.
+
+### `${secret:}` for database keys and server tokens
+
+The same `${secret:name}` references work in two more places. Each is resolved
+only by the command that needs it:
+
+| Field | Resolved by | Notes |
+|-------|-------------|-------|
+| `db.encryption_key` | commands that open `imap.db` (`serve`, `run-rules`, …) | key for the state database |
+| `db.cache.encryption_key` | commands that open `cache.db` | `run-rules` never opens the cache, so never needs this key |
+| `server.auth.tokens[].token` | `serve` only | stdio and `run-rules` never resolve server tokens |
+
+```yaml
+db:
+  encryption_key: ${secret:imap_mcp_state_key}
+  cache:
+    encryption_key: ${secret:imap_mcp_cache_key}
+
+server:
+  auth:
+    tokens:
+      - name: datawatch
+        token: ${secret:imap_mcp_token_datawatch}
+        scopes: [read, send]
+```
+
+Resolution fails closed: an unreachable datawatch, a missing secret, an unset
+`${ENV}` or an empty value stops startup. A key is never generated for you.
+Secrets need `--scope service:imap-mcp` like any other. A scheduled `run-rules`
+job also needs `DATAWATCH_API_URL` and the service token in its environment
+when its config uses `${secret:}`; [deployment.md](deployment.md) shows a
+wrapper for that. Database encryption itself is covered in
+[encryption.md](encryption.md).
+
+### Enrichment features that call datawatch (not usable yet)
+
+Two enrichment settings also call datawatch, with the same `datawatch.token`:
+
+- **LLM classify provider:** `enrichment.classify.provider: datawatch` with
+  `datawatch_llm: <name>` sends classify prompts to
+  `POST {api_url}/api/proxy/llm/<name>`.
+- **Capacity gate:** `enrichment.yield.datawatch_pools` makes backfill pause
+  while those datawatch pools are full, read from `GET {api_url}/api/capacity`.
+
+Datawatch accepts the imap-mcp service token **only** on the secrets endpoint.
+The LLM proxy and the capacity endpoint need a datawatch federation-peer token,
+and imap-mcp has no separate config field for one yet. Leave both off for now:
+the classify provider will fail its calls, and the capacity gate cannot read
+capacity, so it never pauses (it fails open). See
+[known-limitations.md](known-limitations.md).
 
 ---
 
@@ -150,7 +234,10 @@ accounts:
       from: "Me <me@example.com>"
       # username/password default to the auth block above
 ```
-Drive it with the `send_message` MCP tool:
+Drive it with the `send_message` MCP tool. Over HTTP, `send_message` appears in
+`tools/list` and can be called only with a token that has the `send` scope
+(stdio has no tokens). SMTP auth is PLAIN with a password only; an `xoauth2`
+account cannot send unless its `smtp:` block has a username and password.
 ```json
 { "account": "work", "to": "a@b.com", "subject": "hi", "body": "..." }
 ```
@@ -222,14 +309,45 @@ imap_mcp:
   url: "http://localhost:8765"   # imap-mcp HTTP server (run: imap-mcp serve)
   account: ""                    # empty = imap-mcp default account
   subject_prefix: "datawatch"    # prepended to reply subjects
+  # plus the bearer token for imap-mcp; see datawatch's imap_mcp backend docs
+  # for the field name
 ```
+
+**Bearer token.** The backend calls imap-mcp's REST API, so it needs an
+imap-mcp token. Give datawatch its own token with exactly the `read` scope (for
+`GET /api/events`) and the `send` scope (for the send endpoint), and nothing
+else. Keep the token value as a datawatch-held secret: datawatch passes it to
+imap-mcp, and imap-mcp's config references the same secret:
+
+```yaml
+# imap-mcp config.yaml
+server:
+  auth:
+    tokens:
+      - name: datawatch
+        token: ${secret:imap_mcp_token_datawatch}
+        scopes: [read, send]
+```
+
+How datawatch reads that secret into its `imap_mcp:` block is defined by
+datawatch; see datawatch's imap_mcp backend docs. Token generation and scopes
+are covered in [auth-tokens.md](auth-tokens.md).
 
 **The transport contract (imap-mcp v0.2.1+ serves both):**
 
 | Direction | Endpoint | Notes |
 |-----------|----------|-------|
-| Receive | `GET /api/events` (SSE) | datawatch subscribes; acts only on `inbound.command`, reconnects with backoff |
-| Send | `POST /api/accounts/{account}/messages/send` | `{to,subject,body,cc}`; `account` may be `_default` |
+| Receive | `GET /api/events` (SSE) | scope `read`; datawatch subscribes, acts only on `inbound.command`, reconnects with backoff |
+| Send | `POST /api/accounts/{account}/messages/send` | scope `send`; `{to,subject,body,cc}`; `account` may be `_default` |
+
+Both calls carry `Authorization: Bearer <token>`. For example:
+
+```bash
+curl -sN -H "Authorization: Bearer <token>" http://localhost:8765/api/events
+curl -sS -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"to":"ops@example.com","subject":"status","body":"ok"}' \
+  http://localhost:8765/api/accounts/_default/messages/send
+```
 
 Event envelope is `{type, account, payload}`; the verified-command payload
 carries `Account`, `From`, `Command{Verb,Args,Nonce}`, `Gates`.
@@ -250,18 +368,18 @@ goes out through the account's SMTP. Both halves are now released
 
 | You want… | Configure | datawatch piece |
 |-----------|-----------|-----------------|
-| Creds from datawatch vault | `datawatch:` block + `${secret:}` | secrets service running |
+| Creds from datawatch vault | `datawatch:` block + `${secret:}` | secrets service (datawatch v8.75.0+) |
 | An agent that knows the workflows | nothing in imap-mcp | `skills_registry_sync community imap-mcp` |
 | Send mail | per-account `smtp:` | none |
-| Trust-gated inbound commands | per-account `inbound:` + gates | datawatch `imap_mcp:` backend (built, datawatch#127) |
+| Trust-gated inbound commands | per-account `inbound:` + gates; a `read`+`send` token for datawatch | datawatch `imap_mcp:` backend (built, datawatch#127) |
 
 ## Verifying it works
 
 ```bash
 ./imap-mcp serve --config config.yaml &
-curl -s localhost:8765/api/health           # {"status":"ok",...}
-curl -s localhost:8765/api/accounts          # connection status per account
-# MCP: initialize → tools/list should include send_message when smtp is configured
+curl -s localhost:8765/api/health           # {"status":"ok",...} — the one open route
+curl -s -H "Authorization: Bearer <token>" localhost:8765/api/accounts   # needs read
+# MCP: initialize → tools/list lists send_message only for a token with the send scope
 ```
 
 See the top-level `README.md` for the full tool list and `config.example.yaml`

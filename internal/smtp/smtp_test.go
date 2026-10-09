@@ -57,7 +57,7 @@ func TestFromAddr(t *testing.T) {
 	cases := map[string]string{
 		"Me <me@example.com>": "me@example.com",
 		"plain@example.com":   "plain@example.com",
-		"  spaced@x.com  ": "spaced@x.com",
+		"  spaced@x.com  ":    "spaced@x.com",
 	}
 	for in, want := range cases {
 		if got := fromAddr(in); got != want {

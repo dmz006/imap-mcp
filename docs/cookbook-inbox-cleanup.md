@@ -20,7 +20,12 @@ rebuilding — hands-off.
 ## Prerequisites
 
 - `imap-mcp serve` running, with its MCP tools available to your agent (stdio or
-  HTTP). See `docs/datawatch-integration.md` for wiring.
+  HTTP). See [datawatch-integration.md](datawatch-integration.md) for wiring.
+- In HTTP mode, a bearer token with the **`write`** scope for the cleanup tools
+  (`purge_sender`, `label_bulk`, `move_bulk`, `create_rule`, `run_rules`,
+  `empty_trash`) plus `read` for `top_senders` and `search_messages`. Without
+  `write`, those tools are hidden from `tools/list` and refused. stdio mode needs
+  no token. See [auth-tokens.md](auth-tokens.md).
 - A provider where labels are folders. (On Gmail, labels *are* IMAP mailboxes;
   COPY adds a label, MOVE re-files.)
 - Optional: **datawatch** for the scheduled, session-independent automation in
@@ -131,6 +136,19 @@ A sensible starter taxonomy (map each big sender to one):
   alerts *and* product promos *and* shared docs) aren't safe to bulk-anything.
   Target a specific sub-sender or subject, or leave them.
 
+**`move_bulk` moves at most `limit` messages per call (default 100)** — the
+newest matches, by UID. It does not loop like `purge_sender`; its result says
+`moved N messages …`. For a large sender, raise `limit` or call it again until
+it returns `no messages matched`:
+
+```
+move_bulk { account: "personal", folder: "INBOX",
+            query: "hsa-provider.example", destination: "Health", limit: 1000 }
+```
+
+Note that `move_bulk`'s `query` is matched against the **From** header (like
+`from:` elsewhere), not as free-form IMAP SEARCH criteria.
+
 Archiving the categorized mail drops the inbox dramatically (typically by more than half) while everything stays findable under its label.
 
 ---
@@ -169,7 +187,7 @@ Apply all rules once from the shell (cron-friendly):
 
 ```
 imap-mcp run-rules --config ~/.config/imap-mcp/config.yaml
-→ run-rules: 40 active rules, 2 messages actioned (dry_run=false)
+→ run-rules: 12 active rules, 3 messages actioned (dry_run=false)   # illustrative
 ```
 
 Then have **datawatch** spawn an ephemeral, session-independent job to run it
@@ -194,6 +212,10 @@ Verify it survives a cycle (fire **and** re-arm) before trusting it:
 ```
 datawatch schedule list      # confirm it re-armed to the next hour after firing
 ```
+
+If your config uses `${secret:}` or `${ENV}` references (for example an
+encrypted `imap.db`), the scheduled job needs those variables in its
+environment; [deployment.md](deployment.md) shows a wrapper script for this.
 
 Now every hour: new junk from known senders is trashed, new mail from known
 senders is filed into its label, untouched mail stays in the inbox.

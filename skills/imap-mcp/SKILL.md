@@ -1,8 +1,8 @@
 ---
 # --- PAI-compatible base fields ---
 name: imap-mcp
-description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: "0.6.0"
+description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search, run cleanup rules and send mail — using the imap-mcp MCP server.
+version: "0.7.0"
 tags:
   - email
   - imap
@@ -32,146 +32,228 @@ guardrail_profile: email-mutations
 # Using imap-mcp
 
 This skill teaches you how to drive the **imap-mcp** MCP server to manage email
-over IMAP. It is *instructions only* — it does not bundle tools or connect to
-anything. The operator decides whether and when imap-mcp is attached to a
-session; loading this skill does not establish any mail connection.
+over IMAP. It is *instructions only*: it bundles no tools and connects to
+nothing. The operator decides whether and when imap-mcp is attached to a
+session; loading this skill does not open any mail connection.
 
 ## Prerequisite
 
-The `imap-mcp` MCP server must be connected to this session (the operator wires
-it in `.mcp.json` — either a stdio command or an HTTP URL like
-`http://localhost:8765/mcp`). If the imap-mcp tools below are not available,
-stop and tell the operator the server is not attached. Do not attempt to
-connect it yourself.
+The `imap-mcp` MCP server must be connected to this session. The operator wires
+it in `.mcp.json`, either as a stdio command or as an HTTP URL such as
+`http://localhost:8765/mcp`. With the server key `imap-mcp`, tools appear as
+`mcp__imap-mcp__<tool>`. If the imap-mcp tools are not available, stop and tell
+the operator the server is not attached. Do not try to connect it yourself.
 
-Over HTTP, imap-mcp 0.5.3+ requires a bearer token, and each token carries
-scopes (`read`, `write`, `send`, `admin`). You only see the tools your token
-allows. If a tool you need is missing, or a call fails with
-`forbidden: tool "..." requires scope "..."`, tell the operator which scope
-is missing. Never look for, read or reuse another client's token.
+**Access is token-scoped over HTTP.** Each token carries scopes: `read`,
+`write` (mailbox, rules and sandbox changes), `send` and `admin`. You only see
+the tools your token allows. If a tool you need is missing, or a call fails
+with `forbidden: tool "..." requires scope "..."`, tell the operator which
+scope is missing. Do not work around it, and never look for, read or reuse
+another client's token. Over stdio there is no token and every tool is
+available.
 
-Confirm with `list_accounts` before doing anything else — it returns the
-configured accounts and whether each is connected. Every tool takes an optional
-`account` parameter; omit it to use the default account.
+Start with `list_accounts`. It returns the configured accounts and whether
+each is connected. Most tools take an optional `account`; omit it to use the
+default account.
 
 ## Safety rules (read before any mutation)
 
 1. **Destructive operations require explicit confirmation.** `delete_message`,
-   `move_message`/`move_bulk` to Trash, `delete_folder`, and `set_flags` with
-   `\Deleted` change the user's live mailbox. State exactly what will change
-   (which account, folder, how many messages, matched how) and get a yes before
-   running it. Never delete or expunge speculatively.
-2. **Prefer reversible moves over deletes.** Moving to Archive or a review
-   folder is recoverable; expunging is not. When the user says "remove from my
-   inbox," default to *move to Archive*, not delete, unless they say delete.
-3. **All file output goes through the working-directory sandbox.** Use
-   `write_file` / `read_file` / `list_files` — never write mailbox-derived data
-   anywhere else. The server rejects absolute paths and `..` traversal. Output
-   files (summaries, exports) belong in `working_dir`, never in a repo.
-4. **Never echo credentials or full message bodies into shared logs.** Summaries
-   should reference senders/subjects/counts, not paste raw content.
-5. **Scope bulk actions narrowly.** Always preview the match set (count + a few
-   example senders/subjects) before a `*_bulk` call. Search by `from` +
-   `subject` to keep the set tight.
+   `purge_sender`, `empty_trash`, `move_message`/`move_bulk` to Trash,
+   `delete_folder`, `set_flags`/`flag_bulk` with `\Deleted`, rules with
+   action `trash`, and `run_rules` without `dry_run` all change the live
+   mailbox. State exactly what will change (account, folder, how many
+   messages, matched how) and get a yes first. Never delete speculatively.
+2. **Irreversible tools need a second, specific yes.** `empty_trash`,
+   `purge_sender` with `permanent: true` and `delete_message` with
+   `permanent: true` expunge mail for good.
+3. **Prefer reversible moves over deletes.** When the user says "remove from my
+   inbox", default to moving to Archive, not deleting, unless they say delete.
+4. **Preview before every bulk action.** Run `search_messages` with the same
+   sender/subject first and show the count plus a few examples. `run_rules`
+   defaults to `dry_run: false`, so pass `dry_run: true` first.
+5. **All file output goes through the working-directory sandbox.** Use
+   `write_file` / `read_file` / `list_files` / `delete_file`. The server
+   rejects absolute paths and `..`. Never write mailbox data anywhere else.
+6. **Never echo credentials or full message bodies into shared logs.**
+   Summaries reference senders, subjects and counts.
+7. **Sending mail needs explicit approval of the exact recipients, subject
+   and body.** `send_message` sends immediately.
 
 ## Core workflows
 
 ### 1. Triage an inbox
 
 ```
-list_accounts                         → confirm connection
-list_folders { account }              → find INBOX / Archive names (Gmail uses [Gmail]/…)
-list_messages { account, folder: "INBOX", limit: 50 }   → newest first, with total count
+list_accounts                                         → confirm connection
+list_folders { account }                              → find INBOX / Archive names (Gmail uses [Gmail]/…)
+top_senders { account, folder: "INBOX", top: 30 }     → biggest senders across the whole folder
+list_messages { account, folder: "INBOX", limit: 50 } → newest first, with total count
 ```
 
-Group what you see by sender and intent, then propose actions (keep / archive /
-unsubscribe). Present the plan; let the user approve before mutating.
+Group by sender and intent, propose actions (keep / archive / unsubscribe /
+purge) and let the user approve before mutating. `top_senders` with
+`group_by: "domain"` groups by sender domain.
 
 ### 2. Find subscriptions and unsubscribe
 
 ```
-detect_subscriptions { account }      → scans List-Unsubscribe headers, groups by sender
+detect_subscriptions { account, folder: "INBOX" }   → senders with List-Unsubscribe, grouped
 ```
 
-Produce a summary table (sender, count, unsubscribe method) with `write_file`
-into `working_dir` so the user can review. For senders the user wants gone:
-- Follow the `List-Unsubscribe` action where present (note it; the user performs
-  web unsubscribes — you surface the link, you don't click external URLs).
-- Then clear existing mail with a tightly-scoped `move_bulk` to Archive (or
-  Trash only on explicit instruction), per-account (mind Gmail's `[Gmail]/Trash`).
+Omit `account` to scan every account. Write a summary table (sender, count,
+unsubscribe method) with `write_file` so the user can review. For senders the
+user wants gone:
+
+- Surface the `List-Unsubscribe` link. The user performs web unsubscribes; do
+  not open external URLs yourself.
+- Then clear existing mail with `move_bulk` to Archive, or `purge_sender` to
+  Trash on explicit instruction.
 
 ### 3. Audit a sender
 
 ```
-search_messages { account, from: "noreply@example.com" }
-get_sender_history / get_sender_profile   (if enrichment is enabled)
+search_messages { account, folder: "INBOX", from: "noreply@example.com" }   → live, with total_matches
+get_sender_history { address: "noreply@example.com" }                       → cached mail only (sync window)
 ```
 
-Summarize volume over time, first/last seen, and typical subjects. Useful before
-deciding to block, unsubscribe, or filter.
+Summarize volume over time, first/last seen and typical subjects.
 
-### 4. Bulk archive / clean up
-
-```
-search_messages { account, from, subject, before: "<date>" }   → preview the set
-# show the count + sample, get approval, THEN:
-move_bulk { account, from, subject, to: "Archive" }
-```
-
-### 5. Search
+### 4. Bulk archive or purge
 
 ```
-search_messages { account, text|from|subject|since|before|flags }
-cross_account_search { ... }          → all accounts at once (when implemented)
+search_messages { account, folder: "INBOX", from: "news@example.com" }   → preview count + samples
+# show the count and samples, get approval, THEN one of:
+move_bulk { account, folder: "INBOX", query: "news@example.com", destination: "Archive", limit: 500 }
+purge_sender { account, folder: "INBOX", from: "news@example.com" }      → all matches to Trash
 ```
 
-### 6. Export
+`move_bulk` moves at most `limit` messages (default 100), the newest matches
+first; repeat until "no messages matched". `purge_sender` loops until the
+folder has no matches and finds Trash automatically.
+
+### 5. Label (Gmail)
 
 ```
-get_message { account, folder, uid }  → full message
-export_message / write_file           → save to working_dir for the record
+label_message { account, folder: "INBOX", uid: 4242, label: "Receipts" }
+label_bulk { account, folder: "INBOX", from: "billing@example.com", label: "Receipts" }
 ```
+
+Labels are applied by IMAP COPY into the label mailbox; the original stays in
+place. The label is created if missing unless `create: false`.
+
+### 6. Recurring cleanup with rules
+
+```
+create_rule { name: "old-newsletters", from: "news@example.com", older_than_days: 30, action: "trash" }
+run_rules { id: <id>, dry_run: true }    → match counts only
+run_rules { id: <id> }                   → apply (after approval)
+list_rules                               → rules with run counts
+delete_rule { id: <id> }
+```
+
+A rule needs at least one condition (`from`, `subject`, `text`,
+`older_than_days`). Actions: `trash`, `move` (needs `dest`), `flag` (needs
+`flags`), `seen`. `folder` defaults to `INBOX`. Omitting `id` runs every
+active rule. The operator can schedule the same rules with
+`imap-mcp run-rules`.
+
+### 7. Search
+
+```
+search_messages { account, folder, from, subject, text, since: "2026-01-01", before, flags, limit }
+semantic_search { query: "invoices about hosting", limit: 10 }   → cached, enriched mail only
+```
+
+`search_messages` is plain IMAP SEARCH on one folder (default `INBOX`). Dates
+are `YYYY-MM-DD`. It returns the true `total_matches`.
+
+### 8. Send
+
+```
+send_message { account, to: "a@example.com", cc, subject, body }   → plain text, via the account's SMTP
+```
+
+Only accounts with an `smtp:` block can send. Requires the `send` scope.
+
+### 9. Export
+
+`export_message` is a stub. Use `get_message` and save the parts you need with
+`write_file`.
 
 ## Tool quick reference
 
-- **Accounts/sync:** `list_accounts`, `sync_account`
-- **Folders:** `list_folders`, `create_folder`, `delete_folder`
-- **Read:** `list_messages`, `get_message`, `get_headers`, `get_thread`, `get_attachments`, `export_message`
-- **Write (mutations — confirm first):** `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`
-- **Search:** `search_messages`, `cross_account_search`, `semantic_search`
-- **Intelligence:** `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status`, `trigger_enrichment`
-- **File output (sandbox):** `write_file`, `read_file`, `list_files`, `delete_file`
-- **Cache maintenance (admin):** `cache_sweep`. It only touches the local cache,
-  never the mailbox. Always run it with the default `dry_run` first and show
-  the operator the counts.
+| Group | Tool | Parameters (required in **bold**) | Scope |
+|-------|------|-----------------------------------|-------|
+| Accounts | `list_accounts` | none | read |
+| | `sync_account` | `account` | admin |
+| Folders | `list_folders` | `account` | read |
+| | `create_folder` | **`path`** (alias `folder`), `account` | write |
+| | `delete_folder` | **`path`** (alias `folder`), `account`; folder must be empty | write |
+| Read | `list_messages` | `account`, `folder` (INBOX), `limit` (50, max 200), `offset`, `order` (`asc`/`desc`) | read |
+| | `get_message` | **`folder`**, **`uid`**, `account`; body is the raw text section, not MIME-decoded | read |
+| | `get_headers` | **`folder`**, **`uid`**, `account` | read |
+| Write | `move_message` / `copy_message` | **`folder`**, **`uid`**, **`destination`**, `account` | write |
+| | `delete_message` | **`folder`**, **`uid`**, `account`, `permanent` | write |
+| | `set_flags` | **`folder`**, **`uid`**, `add`, `remove` (comma-separated, e.g. `Seen,Flagged`), `account` | write |
+| | `append_message` | **`folder`**, **`message`** (raw RFC 2822), `flags`, `account` | write |
+| | `move_bulk` | **`folder`**, **`query`** (From substring), **`destination`**, `limit` (100), `account` | write |
+| | `flag_bulk` | **`folder`**, **`query`** (From substring), `add`, `remove`, `limit` (100), `account` | write |
+| | `purge_sender` | **`from`** (From substring), `folder` (INBOX), `permanent`, `account` | write |
+| Labels / Trash | `label_message` | **`uid`**, **`label`**, `folder` (INBOX), `create` (true), `account` | write |
+| | `label_bulk` | **`label`**, `from` and/or `subject`, `folder` (INBOX), `create` (true), `account` | write |
+| | `empty_trash` | `account`; permanently deletes everything in Trash | write |
+| Send | `send_message` | **`to`**, **`subject`**, **`body`**, `cc`, `account` | send |
+| Analytics | `top_senders` | `folder` (INBOX), `top` (30), `scan` (all), `group_by` (`address`/`domain`), `account` | read |
+| | `summarize_folder` | **`folder`**, `account`; returns only `total` and `recent` counts | read |
+| | `detect_subscriptions` | `folder` (INBOX), `limit`, `account` (omit for all accounts) | read |
+| | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
+| Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
+| | `list_rules` | none | read |
+| | `delete_rule` | **`id`** | write |
+| | `run_rules` | `id` (all active), `dry_run` (false) | write |
+| Search | `search_messages` | `folder` (INBOX), `from`, `subject`, `text`, `since`, `before`, `flags`, `limit` (50), `account` | read |
+| | `semantic_search` | `query` or `reference_uid`, `folder`, `limit` (10), `threshold` (0.7), `account` (omit for all) | read |
+| Enrichment | `enrichment_status` | `account` (accepted, ignored; reports all) | read |
+| | `trigger_enrichment` | `limit` (50); `account` accepted, ignored | admin |
+| Cache | `cache_sweep` | `account`, `folder`, `older_than_days`, `errors_only`, `all`, `dry_run` (true) | admin |
+| Sandbox | `write_file` | **`filename`**, **`content`** | write |
+| | `read_file` | **`filename`** | read |
+| | `list_files` | `subdir` | read |
+| | `delete_file` | **`filename`** | write |
 
-imap-mcp 0.7.0+ keeps a local cache of recent mail: by default INBOX and Sent
-for the last 30 days, configured by the operator. Sync is read-only against
-the server. `sync_account` refreshes it immediately and reports, per folder,
-how many messages are cached, new or removed. Cache-backed tools
-(`semantic_search` and the intelligence tools) only see mail inside that
-window. For older mail, use the live IMAP tools (`search_messages`,
-`list_messages`).
+### Not usable yet
 
-Enrichment (embeddings and classification) runs in the background. New mail
-is always processed first; older "backfill" mail is rate-limited and pauses
-while the GPU is busy with other work. `enrichment_status` shows queue depth,
-throughput and any pause or backoff reason. Use it to explain why semantic
-results are incomplete before blaming the data. `trigger_enrichment` (admin)
-forces a run.
+| Tool | Status |
+|------|--------|
+| `get_thread`, `get_attachments`, `export_message`, `cross_account_search` | Stubs: return "not yet implemented". Use `list_messages` / `search_messages` per account and `get_message` instead |
+| `get_sender_profile`, `kg_query`, `get_anomalies` | Registered and callable, but always empty: nothing fills sender profiles, the knowledge graph or anomalies yet |
 
-**Access is token-scoped (0.5.3+).** Your token decides which tools you
-see: `read`, `write` (mailbox changes), `send` and `admin`. If a tool you
-expect is missing, the token lacks its scope. Say so; don't work around it.
+`search_messages` accepts `hall`, `wing` and `room` but ignores them.
 
-**REST-only features (admin token, 0.10.0+):**
-- `POST /api/query`: JSON questions over the cache, e.g. top sender domains or
-  unread-flagged counts per folder. See `docs/query.md`.
+## Cache and enrichment
+
+imap-mcp keeps a local cache of recent mail: by default INBOX and Sent for the
+last 30 days, as configured by the operator. Sync is read-only against the
+server. `sync_account` (admin) refreshes it now and reports per folder how many
+messages are cached, new or removed. `semantic_search` and
+`get_sender_history` only see mail inside that window; for older mail use the
+live tools (`search_messages`, `list_messages`).
+
+Enrichment (embeddings and classification) runs in the background. New mail is
+processed first; older backfill mail is rate-limited and pauses while other
+work uses the GPU. `enrichment_status` shows queue depth, throughput and any
+pause or backoff reason; use it to explain incomplete semantic results.
+`trigger_enrichment` (admin) forces a run.
+
+`cache_sweep` (admin) only touches the local cache, never the mailbox. Run it
+with the default `dry_run` first and show the operator the counts.
+
+## REST-only features (admin token)
+
+- `POST /api/query`: JSON questions over the cache, for example top sender
+  domains or unread counts per folder. See `docs/query.md`.
 - `/api/webhooks`: push notifications. Payloads carry IDs only; fetch details
   with your own token. See `docs/webhooks.md`.
 
 Prefer the MCP tools when they cover the task.
-
-Some intelligence tools require the optional Ollama-backed enrichment pipeline.
-If one returns "not yet implemented," fall back to the IMAP-level tools
-(`search_messages`, `list_messages`) and summarize manually.

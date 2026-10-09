@@ -61,7 +61,7 @@ accounts:
         allowlist: [ops@example.com]   # addresses or bare domains
         require_dkim: true        # needs dkim=pass in Authentication-Results
         require_dmarc: true       # needs dmarc=pass
-        hmac_secret: ${secret:personal_inbound_hmac}  # shared-secret over envelope
+        # hmac_secret: ${secret:personal_inbound_hmac}  # shared-secret over envelope (needs the datawatch block)
         replay_window_minutes: 10 # reject stale commands; nonces are single-use
         require_pgp: false        # BACKLOG — when true, fails closed until implemented
       capabilities: [status, mail.archive]  # allowed verbs (default-deny)
@@ -98,7 +98,9 @@ accounts:
   #
   # PATH A — 3-legged user consent (one-time browser sign-in):
   #   1. Google Cloud project → OAuth consent screen (User type: Internal)
-  #   2. Create an OAuth client (Desktop app), enable scope https://mail.google.com/
+  #   2. Create an OAuth client (Desktop app). On the consent screen, add the
+  #      scope https://mail.google.com/ (full IMAP access; there is no separate
+  #      API to enable for IMAP)
   #   3. Fill client_id/client_secret below, then run:
   #        imap-mcp auth-setup --account work-gmail
   # NOTE: provider: google is REQUIRED — a custom domain can't be auto-detected.
@@ -126,7 +128,11 @@ accounts:
 
   # ── Outlook / Microsoft 365 ────────────────────────────────────────────────
   # Option A: App Password (same as Gmail — requires MFA enabled on account)
-  # Option B: OAuth2 (requires Azure AD app registration)
+  # Option B: OAuth2 (requires Azure AD app registration). imap-mcp requests
+  #   https://outlook.office.com/IMAP.AccessAsUser.All and offline_access.
+  #   Register the redirect URI http://localhost:8766/oauth/callback, then run
+  #     imap-mcp auth-setup --account work
+  #   OAuth covers IMAP only: SMTP send still needs a password (PLAIN).
   - name: work
     imap:
       host: outlook.office365.com
@@ -165,8 +171,10 @@ server:
   #   send   outbound mail (send_message, POST .../messages/send)
   #   admin  webhooks, /api/query, sync and enrichment triggers
   #
-  # Token values must be ${secret:name} (datawatch block below) or ${ENV}
-  # references, at least 32 characters. Generate one with:
+  # Each token must resolve to at least 32 characters and have at least one
+  # scope; names must match [A-Za-z0-9._-]{1,64}. A literal value is accepted,
+  # but use a ${secret:name} (datawatch block below) or ${ENV} reference so the
+  # secret never sits in this file. Generate one with:
   #   openssl rand -hex 32
   # An unresolvable reference always stops startup (fails closed), even when
   # auth is disabled. The token name is logged; the value never is.
@@ -186,7 +194,8 @@ server:
         scopes: [read, send]
 
 # Two SQLite files (pure-Go driver, no cgo):
-#   path        state DB: rules, webhooks, inbound nonces. Not rebuildable — back it up.
+#   path        state DB: rules, webhooks, webhook_deliveries (outbox), inbound
+#               nonces. Not rebuildable — back it up.
 #   cache.path  mail cache: messages, full-text index, vectors, sender profiles,
 #               knowledge graph, sync state. Disposable: rebuilt from IMAP.
 # Upgrading from <0.6.0 splits a single-file imap.db automatically: it is backed
@@ -194,8 +203,8 @@ server:
 # unchanged, and the cache tables are dropped (cache.db is rebuilt from IMAP).
 #
 # Optional at-rest encryption, per file (whole-file, adiantum + Argon2id).
-# Keys must be ${secret:name} or ${ENV} passphrase references. A key is never
-# generated: a missing, unresolvable or wrong key refuses to open the file.
+# Use ${secret:name} or ${ENV} references (a literal passphrase also works but
+# then sits in this file). A key is never generated: a missing, unresolvable or wrong key refuses to open the file.
 # run-rules only opens the state DB, so it needs only db.encryption_key.
 # Env overrides: IMAP_MCP_DB_PATH, IMAP_MCP_DB_ENCRYPTION_KEY,
 #                IMAP_MCP_DB_CACHE_PATH, IMAP_MCP_DB_CACHE_ENCRYPTION_KEY.
@@ -225,7 +234,7 @@ enrichment:
   embed_model: nomic-embed-text        # default embed.model
   llm_model: qwen3:1.7b                # default classify.model
   batch_size: 20
-  auto_sync: true
+  auto_sync: true                      # (reserved; currently unused)
   # Embeddings always go straight to an Ollama (any node's URL).
   # embed:
   #   url: http://localhost:11434

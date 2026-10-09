@@ -1,7 +1,7 @@
 // Package db manages the local SQLite databases (AGENT.md D1, D1a, D1b):
 //
-//   - the state DB (imap.db): rules, webhooks and inbound nonces. Not
-//     rebuildable from IMAP.
+//   - the state DB (imap.db): rules, webhooks, webhook deliveries and inbound
+//     nonces. Not rebuildable from IMAP.
 //   - the cache DB (cache.db): message cache, FTS5, vectors, sender profiles,
 //     temporal knowledge graph, anomalies, sync state and the enrichment queue.
 //     Disposable: every row can be rebuilt from IMAP.
