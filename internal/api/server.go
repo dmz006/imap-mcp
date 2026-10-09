@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"github.com/dmz006/imap-mcp/internal/mcp/tools"
 	"log/slog"
@@ -31,6 +32,7 @@ type Server struct {
 	syncer *imapsync.Syncer
 	log    *slog.Logger
 	authn  *httpauth.Authenticator // nil = auth disabled
+	enrich *enrichment.Pipeline    // nil when not running
 
 	// SSE fan-out: one bus subscription drives N connected clients.
 	sseMu    sync.RWMutex
@@ -39,8 +41,9 @@ type Server struct {
 
 // NewServer builds the REST API. authn may be nil when auth is disabled; every
 // route except /api/health declares the scope it requires (AGENT.md D13a).
-func NewServer(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus, syncer *imapsync.Syncer, log *slog.Logger, authn *httpauth.Authenticator) *Server {
+func NewServer(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus, syncer *imapsync.Syncer, pipeline *enrichment.Pipeline, log *slog.Logger, authn *httpauth.Authenticator) *Server {
 	s := &Server{
+		enrich: pipeline,
 		authn:  authn,
 		cfg:    cfg,
 		pool:   pool,
@@ -178,6 +181,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"vacuum_interval_hours": s.cfg.Sync.VacuumIntervalHours,
 			"folders":               s.cfg.SyncFolders(nil),
 		},
+		"enrichment": s.enrichmentHealth(r),
 		"storage": map[string]bool{
 			"state_encrypted": s.cfg.DB.EncryptionKey != "",
 			"cache_encrypted": s.cfg.DB.Cache.EncryptionKey != "",
@@ -198,6 +202,67 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		result = append(result, info{Name: a.Name, Default: a.Default, Connected: s.pool.Probe(a.Name)})
 	}
 	writeJSON(w, result)
+}
+
+// enrichmentHealth summarises enrichment config and queue state for /api/health.
+func (s *Server) enrichmentHealth(r *http.Request) any {
+	e := s.cfg.Enrichment
+	out := map[string]any{
+		"enabled":             e.Enabled,
+		"concurrency":         e.Concurrency,
+		"backfill_per_minute": e.BackfillPerMinute,
+		"backfill_window":     e.BackfillWindow,
+		"max_attempts":        e.MaxAttempts,
+		"backoff_max_seconds": e.BackoffMaxSeconds,
+		"yield":               e.Yield.Enabled,
+	}
+	if s.enrich != nil {
+		if st, err := s.enrich.Stats(r.Context()); err == nil {
+			out["embed_provider"], out["classify_provider"] = st.Embed, st.Classify
+			out["pending"], out["done_last_hour"], out["errors"] = st.Pending, st.DoneLastHour, st.Errors
+			out["oldest_pending_seconds"] = st.OldestPendingSecs
+			if st.BackfillPaused != "" {
+				out["backfill_paused"] = st.BackfillPaused
+			}
+			if st.BackoffSeconds > 0 {
+				out["backoff_seconds"] = st.BackoffSeconds
+			}
+		}
+	}
+	return out
+}
+
+// handleEnrichmentStatus: GET /api/enrichment/status
+func (s *Server) handleEnrichmentStatus(w http.ResponseWriter, r *http.Request) {
+	if s.enrich == nil {
+		http.Error(w, "enrichment not running", http.StatusServiceUnavailable)
+		return
+	}
+	st, err := s.enrich.Stats(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, st)
+}
+
+// handleTriggerEnrichment: POST /api/enrichment/trigger  Body: {"limit": 50}
+func (s *Server) handleTriggerEnrichment(w http.ResponseWriter, r *http.Request) {
+	if s.enrich == nil || !s.cfg.Enrichment.Enabled {
+		http.Error(w, "enrichment not running", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Limit int `json:"limit"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 50
+	}
+	writeJSON(w, map[string]any{"triggered": s.enrich.Trigger(req.Limit), "limit": req.Limit})
 }
 
 // handleCacheSweep is the REST form of cache_sweep (D7).
@@ -233,24 +298,21 @@ func notImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"error": "not yet implemented — coming in iteration 2"})
 }
 
-func (s *Server) handleSyncAccount(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request)       { notImplemented(w, r) }
-func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleSetFlags(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
-func (s *Server) handleMoveMessage(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request)           { notImplemented(w, r) }
-func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
-func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleGetSender(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
-func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request)          { notImplemented(w, r) }
-func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleEnrichmentStatus(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
-func (s *Server) handleTriggerEnrichment(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, r)
-}
+func (s *Server) handleSyncAccount(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
+func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
+func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
+func (s *Server) handleSetFlags(w http.ResponseWriter, r *http.Request)       { notImplemented(w, r) }
+func (s *Server) handleMoveMessage(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
+func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
+func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
+func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleGetSender(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
+func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
+func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
+
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
 func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }

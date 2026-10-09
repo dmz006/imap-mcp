@@ -377,6 +377,15 @@ func (s *Syncer) syncFolder(ctx context.Context, src Source, st *FolderStats) er
 		return err
 	}
 
+	// Lane (D11b): UIDs above the previous high-water mark of a folder we had
+	// already synced are new mail; everything else (first sync, rebuild,
+	// window growth) is backfill.
+	var prevMax uint32
+	for u := range cached {
+		prevMax = max(prevMax, u)
+	}
+	hadState := prev.UIDValidity != 0
+
 	onServer := make(map[uint32]bool, len(server))
 	var fresh, existing []uint32
 	for _, u := range server {
@@ -445,6 +454,7 @@ func (s *Syncer) syncFolder(ctx context.Context, src Source, st *FolderStats) er
 		}
 		for i := range msgs {
 			cm := toCached(account, folder, &msgs[i])
+			cm.Backfill = !hadState || cm.UID <= prevMax
 			res, err := s.db.Messages.Insert(ctx, cm)
 			if err != nil {
 				return err

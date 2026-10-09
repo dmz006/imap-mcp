@@ -40,9 +40,3 @@ func (h *Handlers) KGQuery(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallT
 func (h *Handlers) GetAnomalies(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return stub("get_anomalies")
 }
-func (h *Handlers) EnrichmentStatus(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return stub("enrichment_status")
-}
-func (h *Handlers) TriggerEnrichment(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return stub("trigger_enrichment")
-}

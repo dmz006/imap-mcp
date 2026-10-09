@@ -79,6 +79,8 @@ type CachedMessage struct {
 	BodyHTML     string
 	BodySkipped  bool
 	Attachments  []Attachment
+	// Backfill queues enrichment in the backfill lane instead of new mail.
+	Backfill bool
 }
 
 // CachedUIDs returns the cached UIDs of a folder with their stored flags.
@@ -160,7 +162,7 @@ func (r *MessageRepo) Insert(ctx context.Context, m *CachedMessage) (InsertResul
 	}
 	res.ID, _ = out.LastInsertId()
 	if !dup {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO enrichment_queue(message_id) VALUES(?)`, res.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO enrichment_queue(message_id, lane) VALUES(?, ?)`, res.ID, boolInt(m.Backfill)); err != nil {
 			return res, err
 		}
 		res.Queued = true

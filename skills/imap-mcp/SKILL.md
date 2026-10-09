@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: "0.4.0"
+version: "0.5.0"
 tags:
   - email
   - imap
@@ -152,6 +152,13 @@ how many messages are cached, new or removed. Cache-backed tools
 (`semantic_search` and the intelligence tools) only see mail inside that
 window. For older mail, use the live IMAP tools (`search_messages`,
 `list_messages`).
+
+Enrichment (embeddings and classification) runs in the background. New mail
+is always processed first; older "backfill" mail is rate-limited and pauses
+while the GPU is busy with other work. `enrichment_status` shows queue depth,
+throughput and any pause or backoff reason. Use it to explain why semantic
+results are incomplete before blaming the data. `trigger_enrichment` (admin)
+forces a run.
 
 Some intelligence tools require the optional Ollama-backed enrichment pipeline.
 If one returns "not yet implemented," fall back to the IMAP-level tools

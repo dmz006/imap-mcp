@@ -536,3 +536,33 @@ func TestSweepThroughSyncer(t *testing.T) {
 		t.Fatal("sweep touched the mailbox")
 	}
 }
+
+func TestEnrichmentLaneAssignment(t *testing.T) {
+	h := newHarness(t, false, func(c *config.Config) { c.Sync.WindowDays = 10 })
+	h.add("INBOX", 5, 1, "first@x")
+	h.sync(t) // first sync of the folder → backfill
+	h.add("INBOX", 6, 0, "arrived@x")
+	h.add("INBOX", 2, 20, "older@x") // outside the 10-day window for now
+	h.sync(t)                         // uid 6 > previous max 5 → new mail
+	h.s.cfg.Sync.WindowDays = 30
+	h.sync(t) // window grew: uid 2 ≤ max → backfill
+
+	lanes := map[string]int{}
+	rows, err := h.db.SQL().Query(`SELECT m.message_id, q.lane FROM enrichment_queue q JOIN messages m ON m.id = q.message_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var lane int
+		rows.Scan(&id, &lane)
+		lanes[id] = lane
+	}
+	want := map[string]int{"first@x": 1, "arrived@x": 0, "older@x": 1}
+	for id, l := range want {
+		if lanes[id] != l {
+			t.Errorf("%s lane = %d, want %d (all: %v)", id, lanes[id], l, lanes)
+		}
+	}
+}

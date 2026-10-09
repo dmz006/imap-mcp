@@ -64,9 +64,9 @@ func New(
 // handler assembles the full HTTP handler: browserGuard → auth → MCP at /mcp
 // and REST at /api.
 func (s *Server) handler() http.Handler {
-	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer, s.out, s.authn != nil)
+	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer, s.out, s.pipeline, s.authn != nil)
 	streamable := mcpgo.NewStreamableHTTPServer(mcpSrv)
-	apiSrv := api.NewServer(s.cfg, s.pool, s.db, s.bus, s.syncer, s.log, s.authn)
+	apiSrv := api.NewServer(s.cfg, s.pool, s.db, s.bus, s.syncer, s.pipeline, s.log, s.authn)
 
 	r := chi.NewRouter()
 	r.Mount("/mcp", streamable)

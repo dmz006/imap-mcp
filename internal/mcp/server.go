@@ -4,6 +4,7 @@ package mcp
 import (
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
+	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/mcp/tools"
 	"github.com/dmz006/imap-mcp/internal/output"
@@ -20,6 +21,7 @@ func NewServer(
 	database *db.DB,
 	syncer *sync.Syncer,
 	out *output.Writer,
+	pipeline *enrichment.Pipeline,
 	enforceScopes bool,
 ) *server.MCPServer {
 	opts := []server.ServerOption{server.WithToolCapabilities(true)}
@@ -32,6 +34,7 @@ func NewServer(
 	s := server.NewMCPServer("imap-mcp", config.Version, opts...)
 
 	h := tools.NewHandlers(cfg, pool, database, syncer, out)
+	h.SetPipeline(pipeline)
 
 	// ── Account & connection ─────────────────────────────────────────────────
 	s.AddTool(tools.ListAccountsTool(), h.ListAccounts)

@@ -76,7 +76,7 @@ func runStdio() error {
 	}
 	defer cleanup()
 
-	mcpSrv := mcpserver.NewServer(cfg, deps.pool, deps.db, deps.syncer, deps.out, false)
+	mcpSrv := mcpserver.NewServer(cfg, deps.pool, deps.db, deps.syncer, deps.out, deps.pipeline, false)
 	stdio := mcpgo.NewStdioServer(mcpSrv)
 
 	log.Info("imap-mcp running in stdio mode", "version", Version)
@@ -275,7 +275,11 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	log.Info("working directory", "path", out.Root())
 
 	syncer := sync.New(cfg, pool, database, b, log)
-	pipeline := enrichment.NewPipeline(cfg.Enrichment, database, b, log)
+	var popts []enrichment.Option
+	if cfg.Datawatch != nil {
+		popts = append(popts, enrichment.WithDatawatch(cfg.Datawatch.APIURL, cfg.Datawatch.Token))
+	}
+	pipeline := enrichment.NewPipeline(cfg.Enrichment, database, b, log, popts...)
 
 	// Inbound command channel (trust-gated). The watcher is a no-op unless an
 	// account enables inbound, so it is always safe to start.

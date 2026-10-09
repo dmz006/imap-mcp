@@ -9,11 +9,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.8.0"
+var Version = "0.9.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -155,6 +156,9 @@ type CacheDBConfig struct {
 	EncryptionKey string `yaml:"encryption_key"`
 }
 
+// EnrichmentConfig controls background enrichment (AGENT.md D11a, D11b).
+// OllamaURL/EmbedModel/LLMModel are the defaults for the per-call-type
+// provider settings below.
 type EnrichmentConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	OllamaURL  string `yaml:"ollama_url"`
@@ -162,6 +166,76 @@ type EnrichmentConfig struct {
 	LLMModel   string `yaml:"llm_model"`
 	BatchSize  int    `yaml:"batch_size"`
 	AutoSync   bool   `yaml:"auto_sync"`
+
+	// Embed always calls Ollama directly (the datawatch proxy has no embeddings).
+	Embed EmbedProviderConfig `yaml:"embed"`
+	// Classify picks the classification provider.
+	Classify ClassifyProviderConfig `yaml:"classify"`
+
+	// Concurrency caps in-flight calls per provider (default 2).
+	Concurrency int `yaml:"concurrency"`
+	// BackfillPerMinute rate-limits the backfill lane (default 30; 0 = unlimited).
+	// New mail is never rate-limited.
+	BackfillPerMinute int `yaml:"backfill_per_minute"`
+	// MaxAttempts before a message is marked error (default 3).
+	MaxAttempts int `yaml:"max_attempts"`
+	// BackoffMaxSeconds caps the exponential backoff after provider errors (default 300).
+	BackoffMaxSeconds int `yaml:"backoff_max_seconds"`
+	// BackfillWindow restricts backfill to local hours "HH:MM-HH:MM" (may wrap
+	// midnight). Empty = no restriction. New mail is never restricted.
+	BackfillWindow string `yaml:"backfill_window"`
+	// Yield pauses backfill while datawatch or Ollama is busy.
+	Yield YieldConfig `yaml:"yield"`
+}
+
+// EmbedProviderConfig is the embedding provider (direct Ollama).
+type EmbedProviderConfig struct {
+	URL   string `yaml:"url"`   // default: enrichment.ollama_url
+	Model string `yaml:"model"` // default: enrichment.embed_model
+}
+
+// ClassifyProviderConfig is the classification provider.
+type ClassifyProviderConfig struct {
+	// Provider is "ollama" (direct, default) or "datawatch" (POST
+	// /api/proxy/llm/<datawatch_llm> using the datawatch block's api_url/token).
+	Provider     string `yaml:"provider"`
+	URL          string `yaml:"url"`           // ollama: default enrichment.ollama_url
+	Model        string `yaml:"model"`         // ollama: default enrichment.llm_model
+	DatawatchLLM string `yaml:"datawatch_llm"` // datawatch: LLM registry name
+}
+
+// YieldConfig makes backfill yield to other GPU work (D11b). It never pauses
+// new-mail enrichment.
+type YieldConfig struct {
+	// Enabled turns yielding on (default true). The datawatch capacity check
+	// needs a datawatch block; the Ollama check always applies.
+	Enabled bool `yaml:"enabled"`
+	// MaxForeignResidentGB pauses backfill while models other than ours occupy
+	// more than this much memory on the target Ollama (default 8).
+	MaxForeignResidentGB float64 `yaml:"max_foreign_resident_gb"`
+	// DatawatchPools are datawatch capacity pools to respect, e.g.
+	// "node:<compute-node>" for the node running our Ollama. With the
+	// datawatch classify provider, "llm:<datawatch_llm>" is added automatically.
+	DatawatchPools []string `yaml:"datawatch_pools"`
+}
+
+// EmbedURL, EmbedModelName, ClassifyURL, ClassifyModel resolve provider
+// settings against the legacy top-level defaults.
+func (e EnrichmentConfig) EmbedURL() string       { return firstNonEmpty(e.Embed.URL, e.OllamaURL) }
+func (e EnrichmentConfig) EmbedModelName() string { return firstNonEmpty(e.Embed.Model, e.EmbedModel) }
+func (e EnrichmentConfig) ClassifyURL() string    { return firstNonEmpty(e.Classify.URL, e.OllamaURL) }
+func (e EnrichmentConfig) ClassifyModel() string  { return firstNonEmpty(e.Classify.Model, e.LLMModel) }
+func (e EnrichmentConfig) ClassifyProvider() string {
+	return firstNonEmpty(e.Classify.Provider, "ollama")
+}
+
+func firstNonEmpty(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // SyncConfig controls the background mail cache sync (AGENT.md D8, D10).
@@ -270,12 +344,17 @@ func defaults() *Config {
 			Path: "~/.local/share/imap-mcp/imap.db",
 		},
 		Enrichment: EnrichmentConfig{
-			Enabled:    true,
-			OllamaURL:  "http://localhost:11434",
-			EmbedModel: "nomic-embed-text",
-			LLMModel:   "qwen3:1.7b",
-			BatchSize:  20,
-			AutoSync:   true,
+			Enabled:           true,
+			OllamaURL:         "http://localhost:11434",
+			EmbedModel:        "nomic-embed-text",
+			LLMModel:          "qwen3:1.7b",
+			BatchSize:         20,
+			AutoSync:          true,
+			Concurrency:       2,
+			BackfillPerMinute: 30,
+			MaxAttempts:       3,
+			BackoffMaxSeconds: 300,
+			Yield:             YieldConfig{Enabled: true, MaxForeignResidentGB: 8},
 		},
 		Sync: SyncConfig{
 			IntervalMinutes:     15,
@@ -365,6 +444,28 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("IMAP_MCP_OLLAMA_URL"); v != "" {
 		cfg.Enrichment.OllamaURL = v
 	}
+	envInt := func(key string, dst *int) {
+		if v := os.Getenv(key); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				*dst = n
+			}
+		}
+	}
+	envInt("IMAP_MCP_ENRICHMENT_CONCURRENCY", &cfg.Enrichment.Concurrency)
+	envInt("IMAP_MCP_ENRICHMENT_BACKFILL_PER_MINUTE", &cfg.Enrichment.BackfillPerMinute)
+	envInt("IMAP_MCP_ENRICHMENT_MAX_ATTEMPTS", &cfg.Enrichment.MaxAttempts)
+	envInt("IMAP_MCP_ENRICHMENT_BACKOFF_MAX_SECONDS", &cfg.Enrichment.BackoffMaxSeconds)
+	if v := os.Getenv("IMAP_MCP_ENRICHMENT_BACKFILL_WINDOW"); v != "" {
+		cfg.Enrichment.BackfillWindow = v
+	}
+	if v := os.Getenv("IMAP_MCP_ENRICHMENT_CLASSIFY_PROVIDER"); v != "" {
+		cfg.Enrichment.Classify.Provider = v
+	}
+	if v := os.Getenv("IMAP_MCP_ENRICHMENT_YIELD"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Enrichment.Yield.Enabled = b
+		}
+	}
 	if v := os.Getenv("IMAP_MCP_LOG_LEVEL"); v != "" {
 		cfg.Log.Level = v
 	}
@@ -391,6 +492,9 @@ func expandPaths(cfg *Config) {
 }
 
 func validate(cfg *Config) error {
+	if err := validateEnrichment(cfg); err != nil {
+		return err
+	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")
 	}
@@ -471,4 +575,53 @@ func (c *Config) Account(name string) (*AccountConfig, error) {
 		}
 	}
 	return nil, fmt.Errorf("account %q not found", name)
+}
+
+func validateEnrichment(cfg *Config) error {
+	e := cfg.Enrichment
+	switch e.ClassifyProvider() {
+	case "ollama":
+	case "datawatch":
+		if cfg.Datawatch == nil || cfg.Datawatch.APIURL == "" {
+			return fmt.Errorf("enrichment.classify.provider datawatch needs a datawatch block with api_url and token")
+		}
+		if e.Classify.DatawatchLLM == "" {
+			return fmt.Errorf("enrichment.classify.datawatch_llm is required for provider datawatch")
+		}
+	default:
+		return fmt.Errorf("enrichment.classify.provider must be ollama or datawatch, got %q", e.Classify.Provider)
+	}
+	if _, _, err := ParseWindow(e.BackfillWindow); err != nil {
+		return fmt.Errorf("enrichment.backfill_window: %w", err)
+	}
+	return nil
+}
+
+// ParseWindow parses "HH:MM-HH:MM" into minutes after midnight. An empty
+// string is valid and means "no restriction" (start == end == -1).
+func ParseWindow(w string) (start, end int, err error) {
+	if strings.TrimSpace(w) == "" {
+		return -1, -1, nil
+	}
+	parts := strings.Split(w, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("want HH:MM-HH:MM, got %q", w)
+	}
+	parse := func(s string) (int, error) {
+		t, err := time.Parse("15:04", strings.TrimSpace(s))
+		if err != nil {
+			return 0, fmt.Errorf("bad time %q", s)
+		}
+		return t.Hour()*60 + t.Minute(), nil
+	}
+	if start, err = parse(parts[0]); err != nil {
+		return
+	}
+	if end, err = parse(parts[1]); err != nil {
+		return
+	}
+	if start == end {
+		return 0, 0, fmt.Errorf("empty window %q", w)
+	}
+	return start, end, nil
 }

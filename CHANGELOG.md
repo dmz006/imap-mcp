@@ -7,6 +7,35 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Enrichment load handling (v0.9.0, D11a/D11b).**
+  - **Providers per call type.** Embeddings always go straight to Ollama
+    (`enrichment.embed.url/model`). Classification uses either `ollama`
+    (direct, the default) or `datawatch`, which goes through
+    `POST /api/proxy/llm/<datawatch_llm>` for LLM-registry routing and failover.
+  - **Two queue lanes.** New mail (UIDs above a synced folder's previous
+    high-water mark) is always processed before backfill (first sync, window
+    growth).
+  - **Load caps.**
+    - Each provider has a concurrency cap (`concurrency`, default 2).
+    - Backfill has a token-bucket rate limit (`backfill_per_minute`, default 30).
+    - Transient provider errors (5xx, 429, network) trigger exponential
+      backoff (`backoff_max_seconds`). A message is retried up to
+      `max_attempts` times, then marked as an error.
+    - Rows left `processing` by a restart are requeued.
+  - **Yielding.** Backfill pauses while models other than ours exceed
+    `yield.max_foreign_resident_gb` on the embed Ollama (`/api/ps`), or while
+    any `yield.datawatch_pools` capacity pool is full or has waiters
+    (`GET /api/capacity`). Optional `backfill_window` "quiet hours" restrict
+    when backfill runs. New mail is never paused by any of these. Unreachable
+    sources never block.
+  - **Status and triggers.**
+    - `enrichment_status` and `trigger_enrichment` are implemented: MCP tools
+      plus `GET /api/enrichment/status` and `POST /api/enrichment/trigger`.
+      A trigger bypasses gating and the rate limit, but not backoff or caps.
+    - `/api/health` reports queue depth per lane, done in the last hour,
+      oldest pending age, pause reason and backoff.
+  - The cache schema moves to v3 (queue lane). The cache is rebuilt from IMAP
+    on first start.
 - **Cache cleaning (v0.8.0).** Cleaning touches the cache only, never the
   mailbox.
   - **After every sync cycle:**

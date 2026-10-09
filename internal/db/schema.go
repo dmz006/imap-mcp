@@ -6,7 +6,7 @@ package db
 // row can be rebuilt from IMAP.
 // cacheSchemaVersion is stored in cache.db's user_version. A mismatch drops
 // and recreates the cache (it is disposable); bump it on any cache change.
-const cacheSchemaVersion = 2
+const cacheSchemaVersion = 3
 
 const cacheSchema = `
 -- ─── Messages ────────────────────────────────────────────────────────────────
@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS enrichment_queue (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id   INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     status       TEXT DEFAULT 'pending',  -- pending|processing|done|error
+    lane         INTEGER NOT NULL DEFAULT 1, -- 0 = new mail, 1 = backfill (D11b)
     attempts     INTEGER DEFAULT 0,
     last_error   TEXT,
     queued_at    INTEGER DEFAULT (unixepoch()),
@@ -202,7 +203,7 @@ CREATE TABLE IF NOT EXISTS enrichment_queue (
     UNIQUE(message_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_enrich_status ON enrichment_queue(status, queued_at);
+CREATE INDEX IF NOT EXISTS idx_enrich_status ON enrichment_queue(status, lane, queued_at);
 `
 
 // stateSchema holds operator state that cannot be rebuilt from IMAP: rules,

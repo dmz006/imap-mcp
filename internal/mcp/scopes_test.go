@@ -10,7 +10,7 @@ import (
 )
 
 func TestEveryToolHasScope(t *testing.T) {
-	s := NewServer(&config.Config{}, nil, nil, nil, nil, true)
+	s := NewServer(&config.Config{}, nil, nil, nil, nil, nil, true)
 	registered := s.ListTools()
 	for name := range registered {
 		if _, ok := toolScopes[name]; !ok {

@@ -4,6 +4,7 @@ package tools
 import (
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
+	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/sync"
@@ -16,7 +17,12 @@ type Handlers struct {
 	db     *db.DB
 	syncer *sync.Syncer
 	out    *output.Writer
+	enrich *enrichment.Pipeline // nil when not running (e.g. run-rules)
 }
+
+// SetPipeline attaches the enrichment pipeline for enrichment_status and
+// trigger_enrichment.
+func (h *Handlers) SetPipeline(p *enrichment.Pipeline) { h.enrich = p }
 
 func NewHandlers(cfg *config.Config, pool *imap.Pool, database *db.DB, syncer *sync.Syncer, out *output.Writer) *Handlers {
 	return &Handlers{

@@ -31,7 +31,7 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.8.0 |
+| Current version | 0.9.0 |
 | Location | `/home/dmz/workspace/imap-mcp` |
 | Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
 
@@ -201,7 +201,10 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 | `internal/db/schema.go` | SQLite schemas: `cacheSchema` (cache.db) and `stateSchema` (imap.db) |
 | `internal/db/migrate.go` | One-time verified split of a pre-0.6.0 single-file imap.db |
 | `internal/db/db.go` | Opens state + cache DBs (ncruces driver, optional adiantum encryption); repository types |
-| `internal/enrichment/pipeline.go` | Background enrichment worker; cosine similarity |
+| `internal/enrichment/pipeline.go` | Enrichment worker: new/backfill lanes, per-provider caps, backfill rate limit, backoff, stats (D11b) |
+| `internal/enrichment/providers.go` | `Embedder`/`Classifier` interfaces: direct Ollama, datawatch LLM proxy (D11a) |
+| `internal/enrichment/gates.go` | `LoadGate`s pausing backfill: window, Ollama residency, datawatch capacity |
+| `internal/enrichment/cleaner.go` | `Cleaner` hook for content cleaning before models (iteration 3) |
 | `internal/enrichment/ollama.go` | Ollama embed + generate API client |
 | `internal/sync/syncer.go` | Cache sync engine: window, UID diff, CONDSTORE flags, UIDVALIDITY rebuild (D8–D10) |
 | `internal/sync/source.go` | `Source` interface (read-only mailbox view) + IMAP implementation; SPECIAL-USE resolution |
@@ -290,8 +293,8 @@ Memory patterns borrowed from datawatch:
 ## Enrichment Pipeline
 
 ```
-Sync writes message → status: pending → enrichment_queue
-Pipeline (10s tick):
+Sync writes message → status: pending → enrichment_queue (lane: new | backfill)
+Pipeline (10s tick, new lane first; backfill rate-limited and gated):
   1. nomic-embed-text → message_vectors (768-dim float32 blob)
   2. qwen3:1.7b → hall/wing/room classification (JSON from prompt)
   3. bus.Publish(EventEnrichmentDone)

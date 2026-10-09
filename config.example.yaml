@@ -207,13 +207,52 @@ db:
     path: ~/.local/share/imap-mcp/cache.db   # default: cache.db next to path
     # encryption_key: ${secret:imap_mcp_cache_key}
 
+# Background enrichment of cached mail: embeddings (semantic search) and
+# hall/wing/room classification. Queue lanes: NEW mail (arrived since the last
+# sync) is always served before BACKFILL (first sync, window growth); only
+# backfill is ever rate-limited, windowed or paused for other GPU work.
+# Queue depth, throughput, lag and pause/backoff state: /api/health
+# "enrichment", the enrichment_status tool, GET /api/enrichment/status.
 enrichment:
   enabled: true
-  ollama_url: http://localhost:11434
-  embed_model: nomic-embed-text
-  llm_model: qwen3:1.7b
+  ollama_url: http://localhost:11434   # default URL for both providers below
+  embed_model: nomic-embed-text        # default embed.model
+  llm_model: qwen3:1.7b                # default classify.model
   batch_size: 20
   auto_sync: true
+  # Embeddings always go straight to an Ollama (any node's URL).
+  # embed:
+  #   url: http://localhost:11434
+  #   model: nomic-embed-text
+  # Classification: provider "ollama" (direct, default) or "datawatch" (POST
+  # /api/proxy/llm/<datawatch_llm> via the datawatch block's api_url + token;
+  # the token needs the sessions:input capability) for registry routing and
+  # node failover.
+  # classify:
+  #   provider: ollama
+  #   url: http://localhost:11434
+  #   model: qwen3:1.7b
+  #   datawatch_llm: fast-small
+  concurrency: 2              # max in-flight calls per provider
+  backfill_per_minute: 30     # backfill rate limit (0 = unlimited); new mail is never limited
+  max_attempts: 3             # then the message is marked error (see cache_sweep errors_only)
+  backoff_max_seconds: 300    # exponential backoff cap after transient provider errors (5xx, 429, network)
+  # Optional local-time window for backfill ("quiet hours"), may wrap midnight.
+  # Empty = backfill any time. New mail is always enriched immediately.
+  backfill_window: ""         # e.g. "22:00-07:00"
+  # Pause BACKFILL (never new mail) while the GPU is busy with other work:
+  #  - models other than ours resident on the embed Ollama above the threshold
+  #  - any listed datawatch capacity pool full or with waiters (needs the
+  #    datawatch block; token needs autonomous:read). With classify provider
+  #    datawatch, "llm:<datawatch_llm>" is watched automatically.
+  # Unreachable sources never block (degrades to the caps above).
+  yield:
+    enabled: true
+    max_foreign_resident_gb: 8
+    # datawatch_pools: ["node:my-gpu-node"]
+  # Env overrides: IMAP_MCP_ENRICHMENT_CONCURRENCY, _BACKFILL_PER_MINUTE,
+  # _MAX_ATTEMPTS, _BACKOFF_MAX_SECONDS, _BACKFILL_WINDOW, _CLASSIFY_PROVIDER,
+  # _YIELD (all prefixed IMAP_MCP_ENRICHMENT_), IMAP_MCP_OLLAMA_URL.
 
 # Background mail cache (cache.db). Read-only against the server: folders are
 # EXAMINEd and bodies fetched with BODY.PEEK, so no flag (not even \Seen) changes.

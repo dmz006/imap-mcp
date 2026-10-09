@@ -4,7 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
-| 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P3 built (0.5.3–0.8.0) |
+| 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P4 built (0.5.3–0.9.0) |
 
 ## Bugs
 
