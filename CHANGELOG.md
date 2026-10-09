@@ -6,6 +6,13 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`docs/examples.md`.** Runnable recipes for the 0.5–0.10 features: agent
+  prompts, `/api/query` snapshots, a cron digest, rules, a signed-webhook
+  receiver that forwards `rule.fired` to a push service, semantic search, the
+  SSE stream, cache tuning and encryption. Queries were checked against a live
+  instance and the webhook receiver against signed and forged requests.
+
 ## [0.10.4] - 2026-10-09
 
 ### Fixed

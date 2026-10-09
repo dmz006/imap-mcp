@@ -229,6 +229,7 @@ These `IMAP_MCP_*` variables override YAML values (see [.env.example](.env.examp
 | Doc | Contents |
 |-----|----------|
 | [docs/README.md](docs/README.md) | Docs index |
+| [docs/examples.md](docs/examples.md) | **Start here:** runnable recipes: ask-your-agent prompts, `/api/query` snapshots, a cron digest, rules, webhook notifications, semantic search, live events, cache tuning, encryption |
 | [docs/auth-tokens.md](docs/auth-tokens.md) | Token auth and scopes, generating tokens, client headers, `headersHelper`, datawatch-held tokens, opt-out |
 | [docs/rest-api.md](docs/rest-api.md) | Every REST route, `/api/health` fields, `/api/events` SSE format and event types |
 | [docs/webhooks.md](docs/webhooks.md) | Registering webhooks, delivery, retries, signatures |

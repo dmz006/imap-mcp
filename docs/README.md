@@ -1,6 +1,8 @@
 # imap-mcp documentation
 
 Start with the project [README](../README.md) for an overview and quick start.
+Then see **[examples.md](examples.md)** for runnable recipes that show what the
+features are for.
 
 ## Setup and operations
 
