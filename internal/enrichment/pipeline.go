@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -594,4 +595,27 @@ func (p *Pipeline) EmbedQuery(ctx context.Context, text string) ([]float32, erro
 	p.embedSem <- struct{}{}
 	defer func() { <-p.embedSem }()
 	return p.embedder.Embed(ctx, text)
+}
+
+// ErrIdleGated is returned by ClassifyWhenIdle when the backfill gates (quiet
+// hours, GPU yield, datawatch capacity) or a provider backoff say the model
+// should not take optional work now.
+var ErrIdleGated = errors.New("classifier busy: backfill gates closed or provider backing off")
+
+// ClassifyWhenIdle runs an optional classify prompt for another subsystem
+// (sender roles, D20) under the same rules as backfill enrichment: it is
+// refused while a gate is closed or the provider is backing off, and it
+// shares the classify concurrency cap. It never delays new-mail enrichment
+// beyond one cap slot.
+func (p *Pipeline) ClassifyWhenIdle(ctx context.Context, prompt string) (string, error) {
+	now := p.now()
+	p.mu.Lock()
+	backingOff := p.backoffUntil.After(now)
+	p.mu.Unlock()
+	if backingOff || !p.backfillAllowed(ctx, now) {
+		return "", ErrIdleGated
+	}
+	p.classifySem <- struct{}{}
+	defer func() { <-p.classifySem }()
+	return p.classify.Classify(ctx, prompt)
 }

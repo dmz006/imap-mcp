@@ -1,0 +1,217 @@
+package intel
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+)
+
+// maxReplyGap bounds what counts as a reply time: a "reply" weeks later is a
+// new conversation, not a slow answer, and would skew the average.
+const maxReplyGap = 30 * 24 * time.Hour
+
+// store writes the scan into imap.db.
+type store struct{ db *sql.DB }
+
+// scanState is one folder's progress.
+type scanState struct {
+	UIDValidity uint32
+	LastUID     uint32
+	Complete    bool
+}
+
+func (st *store) state(ctx context.Context, account, folder string) (scanState, error) {
+	var s scanState
+	var completed sql.NullInt64
+	err := st.db.QueryRowContext(ctx, `SELECT uidvalidity, last_uid, completed_at FROM intel_scan WHERE account=? AND folder=?`,
+		account, folder).Scan(&s.UIDValidity, &s.LastUID, &completed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s, nil
+	}
+	s.Complete = completed.Valid
+	return s, err
+}
+
+// applied reports what one batch changed.
+type applied struct {
+	New, Duplicate int
+}
+
+// apply records one batch and the folder's new progress in a single
+// transaction, so a crash between batches never counts a message twice:
+// either the batch and its progress are both stored, or neither is.
+func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool) (applied, error) {
+	var res applied
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var last uint32
+	for _, h := range b.Headers {
+		last = max(last, h.UID)
+		if h.From.Addr == "" || h.Date.IsZero() {
+			continue
+		}
+		hash := msgHash(h.MessageID)
+		if hash == 0 {
+			hash = keyHash(folder, h)
+		}
+		outgoing := own[h.From.Addr]
+		var senderID sql.NullInt64
+		var replyHash sql.NullInt64
+		if outgoing {
+			if rh := msgHash(h.InReplyTo); rh != 0 {
+				replyHash = sql.NullInt64{Int64: rh, Valid: true}
+			}
+		}
+		r, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO intel_messages(account, msg_hash, date, outgoing, reply_hash)
+			VALUES(?,?,?,?,?)`, account, hash, h.Date.Unix(), boolInt(outgoing), replyHash)
+		if err != nil {
+			return res, err
+		}
+		if n, _ := r.RowsAffected(); n == 0 {
+			res.Duplicate++ // already seen in another folder or label (D28)
+			continue
+		}
+		res.New++
+		when := h.Date.Unix()
+		if outgoing {
+			seen := map[string]bool{}
+			for _, a := range append(append([]Address{}, h.To...), h.Cc...) {
+				if a.Addr == "" || own[a.Addr] || seen[a.Addr] {
+					continue
+				}
+				seen[a.Addr] = true
+				if _, err := tx.ExecContext(ctx, `INSERT INTO senders(address, name, domain, first_seen, last_seen, sent_count, dirty)
+					VALUES(?,?,?,?,?,1,1)
+					ON CONFLICT(address) DO UPDATE SET
+						name = COALESCE(NULLIF(senders.name,''), excluded.name),
+						first_seen = MIN(COALESCE(senders.first_seen, excluded.first_seen), excluded.first_seen),
+						last_seen = MAX(COALESCE(senders.last_seen, excluded.last_seen), excluded.last_seen),
+						sent_count = senders.sent_count + 1, dirty = 1, updated_at = unixepoch()`,
+					a.Addr, a.Name, domainOf(a.Addr), when, when); err != nil {
+					return res, err
+				}
+			}
+			continue
+		}
+		dkimP, dkimF := passFail(h.DKIM)
+		dmarcP, dmarcF := passFail(h.DMARC)
+		err = tx.QueryRowContext(ctx, `INSERT INTO senders(address, name, domain, first_seen, last_seen, message_count,
+				list_count, bulk_count, auto_count, dkim_pass, dkim_fail, dmarc_pass, dmarc_fail, dirty)
+			VALUES(?,?,?,?,?,1,?,?,?,?,?,?,?,1)
+			ON CONFLICT(address) DO UPDATE SET
+				name = CASE WHEN excluded.name <> '' THEN excluded.name ELSE senders.name END,
+				first_seen = MIN(COALESCE(senders.first_seen, excluded.first_seen), excluded.first_seen),
+				last_seen = MAX(COALESCE(senders.last_seen, excluded.last_seen), excluded.last_seen),
+				message_count = senders.message_count + 1,
+				list_count = senders.list_count + excluded.list_count,
+				bulk_count = senders.bulk_count + excluded.bulk_count,
+				auto_count = senders.auto_count + excluded.auto_count,
+				dkim_pass = senders.dkim_pass + excluded.dkim_pass,
+				dkim_fail = senders.dkim_fail + excluded.dkim_fail,
+				dmarc_pass = senders.dmarc_pass + excluded.dmarc_pass,
+				dmarc_fail = senders.dmarc_fail + excluded.dmarc_fail,
+				dirty = 1, updated_at = unixepoch()
+			RETURNING id`,
+			h.From.Addr, h.From.Name, domainOf(h.From.Addr), when, when,
+			boolInt(h.List), boolInt(h.Bulk), boolInt(h.Auto), dkimP, dkimF, dmarcP, dmarcF).Scan(&senderID)
+		if err != nil {
+			return res, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE intel_messages SET sender_id=? WHERE account=? AND msg_hash=?`,
+			senderID, account, hash); err != nil {
+			return res, err
+		}
+	}
+
+	complete := !b.More
+	if _, err := tx.ExecContext(ctx, `INSERT INTO intel_scan(account, folder, uidvalidity, last_uid, scanned, completed_at, updated_at)
+		VALUES(?,?,?,?,?,CASE WHEN ? THEN unixepoch() END, unixepoch())
+		ON CONFLICT(account, folder) DO UPDATE SET
+			uidvalidity = excluded.uidvalidity,
+			last_uid = MAX(intel_scan.last_uid, excluded.last_uid),
+			scanned = intel_scan.scanned + excluded.scanned,
+			completed_at = COALESCE(intel_scan.completed_at, excluded.completed_at),
+			updated_at = unixepoch()`,
+		account, folder, validity, last, len(b.Headers), complete); err != nil {
+		return res, err
+	}
+	return res, tx.Commit()
+}
+
+// resetFolder restarts a folder's scan after a UIDVALIDITY change. The D28
+// index keeps the rescan from counting any message twice.
+func (st *store) resetFolder(ctx context.Context, account, folder string, validity uint32) error {
+	_, err := st.db.ExecContext(ctx, `UPDATE intel_scan SET uidvalidity=?, last_uid=0, updated_at=unixepoch() WHERE account=? AND folder=?`,
+		validity, account, folder)
+	return err
+}
+
+// pairReplies matches our outgoing replies with the incoming message they
+// answer (In-Reply-To hash) and adds the gap to that sender's reply stats.
+// Each outgoing message is paired at most once. It returns how many were paired.
+func (st *store) pairReplies(ctx context.Context, account string) (int, error) {
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	rows, err := tx.QueryContext(ctx, `SELECT o.msg_hash, o.date - i.date, i.sender_id
+		FROM intel_messages o JOIN intel_messages i ON i.account = o.account AND i.msg_hash = o.reply_hash
+		WHERE o.account = ? AND o.outgoing = 1 AND o.paired = 0 AND i.outgoing = 0 AND i.sender_id IS NOT NULL`, account)
+	if err != nil {
+		return 0, err
+	}
+	type pair struct {
+		hash, gap, sender int64
+	}
+	var pairs []pair
+	for rows.Next() {
+		var p pair
+		if err := rows.Scan(&p.hash, &p.gap, &p.sender); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		pairs = append(pairs, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, p := range pairs {
+		if _, err := tx.ExecContext(ctx, `UPDATE intel_messages SET paired=1 WHERE account=? AND msg_hash=?`, account, p.hash); err != nil {
+			return 0, err
+		}
+		if p.gap < 0 || time.Duration(p.gap)*time.Second > maxReplyGap {
+			continue // clock skew or a much later follow-up: not a reply time
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE senders SET reply_count = reply_count + 1,
+				reply_total_secs = reply_total_secs + ?,
+				avg_reply_time = (reply_total_secs + ?) / (reply_count + 1), updated_at = unixepoch()
+			WHERE id = ?`, p.gap, p.gap, p.sender); err != nil {
+			return 0, err
+		}
+	}
+	return len(pairs), tx.Commit()
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func passFail(r string) (int, int) {
+	switch r {
+	case "pass":
+		return 1, 0
+	case "fail":
+		return 0, 1
+	}
+	return 0, 0
+}

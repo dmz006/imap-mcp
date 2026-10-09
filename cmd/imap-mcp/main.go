@@ -21,6 +21,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/imap/auth"
 	"github.com/dmz006/imap-mcp/internal/inbound"
+	"github.com/dmz006/imap-mcp/internal/intel"
 	mcpserver "github.com/dmz006/imap-mcp/internal/mcp"
 	"github.com/dmz006/imap-mcp/internal/mcp/tools"
 	"github.com/dmz006/imap-mcp/internal/output"
@@ -383,9 +384,24 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	verifier := trust.NewVerifier(database.Nonces)
 	watcher := inbound.NewWatcher(cfg, pool, inbound.NewProcessor(b, verifier), log)
 
+	// Sender intelligence (D19, D20, D28): header scan + roles. Model-assigned
+	// roles go through the enrichment gates and only when enrichment is on.
+	var classify intel.ClassifyFunc
+	if cfg.Enrichment.Enabled {
+		classify = func(ctx context.Context, prompt string) (string, error) {
+			out, err := pipeline.ClassifyWhenIdle(ctx, prompt)
+			if errors.Is(err, enrichment.ErrIdleGated) {
+				return "", intel.ErrGated
+			}
+			return out, err
+		}
+	}
+	scanner := intel.New(cfg, intel.NewIMAPSource(pool), database.StateSQL(), database.SQL(), classify, log)
+
 	// Start background workers
 	go syncer.Run(ctx)
 	go pipeline.Run(ctx)
+	go scanner.Run(ctx)
 	go watcher.Run(ctx)
 	go pool.StartKeepalive(ctx, 4*time.Minute) // keep IMAP connections warm + self-heal
 
