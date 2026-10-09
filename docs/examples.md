@@ -2,7 +2,8 @@
 
 Short, runnable recipes for the features added in 0.5–0.10: scoped tokens, the
 sync cache, `/api/query`, rules, webhooks, semantic search and the event stream.
-Each one links to the reference page with the details.
+Each one links to the reference page with the details. [Section 10](#10-agent-workflows)
+puts them together: multi-step workflows an agent runs for you.
 
 All addresses are `example.com` placeholders and every output is illustrative.
 The recipes assume `serve` is running on `127.0.0.1:8765` and that these
@@ -36,7 +37,8 @@ ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-44
 | "Forget the cached copies of Archive older than 90 days." | `cache_sweep` (dry run first) |
 
 The [inbox-cleanup cookbook](cookbook-inbox-cleanup.md) walks through a full
-cleanup session end to end.
+cleanup session end to end, and [section 10](#10-agent-workflows) has eleven
+more multi-step workflows.
 
 ---
 
@@ -339,3 +341,259 @@ curl -sS "$IMAP_MCP/api/health" | jq .storage
 
 `db encrypt` lists any plaintext backups it finds. Delete them yourself once
 you're satisfied.
+
+---
+
+## 10. Agent workflows
+
+Sections 1–9 show single features. This section shows what an agent can do
+when it chains the tools together under the
+[companion skill](../skills/imap-mcp/SKILL.md). Each workflow gives the prompt
+you type, the tool calls the agent makes, and what you get back. They work in
+Claude Code with imap-mcp attached, or in a datawatch session that loads the
+`imap-mcp` skill from the community registry.
+
+The same rules apply to every workflow:
+
+- **Count before you change anything.** The agent searches or dry-runs first,
+  shows you the number, and waits for a yes before it moves, trashes or sends.
+- **Reading is safe.** Reads use `BODY.PEEK`, so the agent looking at a
+  message never marks it read.
+- **Reports go to `working_dir`.** `write_file` is the only way the agent saves
+  to disk, and it can't write outside that directory. Keep mailbox-derived
+  reports out of git.
+- **Scope the token to the job.** A reporting agent needs only `read`. Its
+  `tools/list` then hides every tool that changes mail, so it can't change
+  mail even by mistake ([auth-tokens.md](auth-tokens.md)).
+
+Outputs below are illustrative, with `example.com` senders.
+
+### 10.1 Morning briefing
+
+> "Give me a briefing on what came in since yesterday: what needs me, what's
+> noise, and anything from someone I haven't heard from before. Save it as
+> `briefings/today.md`."
+
+1. `search_messages` with `since` and `flags: "Unseen"` lists the new mail.
+2. `top_senders` with `group_by: "domain"` separates the bulk senders from the
+   people.
+3. `get_sender_history` on each unfamiliar sender. It reads the cache, so an
+   empty history means nothing from them within the sync window, which is a
+   good first-time-sender signal.
+4. `get_message` only on the messages that look like they need a person, so the
+   agent can say what each one asks for.
+5. `write_file` saves the briefing.
+
+```markdown
+## Needs you (3)
+- alice@example.com: contract redline, wants comments by Friday
+- billing@example.net: card on file expires this month
+- school@example.org: permission slip for the 14th
+
+## First-time senders (1)
+- partnerships@example.io: cold outreach, no prior history
+
+## Noise (41): 6 domains, all newsletters or promos
+```
+
+Pair it with a token that has only the `read` scope and the briefing agent can
+look at everything and change nothing.
+
+### 10.2 Subscription audit with a keep/kill list
+
+> "Find every mailing list I'm on, tell me which ones I actually read, and give
+> me a table to decide what to keep."
+
+1. `detect_subscriptions` finds senders with a `List-Unsubscribe` header and
+   their unsubscribe links.
+2. For each candidate, the agent counts its messages and how many you opened
+   with two `/api/query` calls (`group_by: ["from_addr"]`, one with `seen`
+   `eq true`). `get_sender_history` lists the subjects if it needs a closer
+   look.
+3. `write_file` saves `subscriptions.md`:
+
+```markdown
+| Sender                  | Last 90 days | Opened | Suggest     | Unsubscribe |
+|-------------------------|-------------:|-------:|-------------|-------------|
+| news@deals.example.com  |           88 |     0% | purge+rule  | https://... |
+| digest@example.org      |           12 |    92% | keep        | https://... |
+| promo@shop.example.net  |           30 |     3% | unsubscribe | mailto:...  |
+```
+
+4. You edit the "Suggest" column and say "do it". The agent re-reads the file
+   with `read_file`, then for each row runs `purge_sender` (after a
+   `search_messages` count) and `create_rule` so the sender doesn't come back.
+
+imap-mcp never follows unsubscribe links on its own. The agent gives you the
+link, and you decide whether to open it.
+
+### 10.3 Teach by example
+
+> "These two messages are receipts (UIDs 4411 and 4502 in INBOX). Find
+> everything else like them, file them under Receipts, and keep doing that."
+
+1. `semantic_search` with `folder: "INBOX"`, `reference_uid: 4411`,
+   `threshold: 0.8`, then again for 4502. The matches are mail that *means* the same thing, even when the
+   wording and senders differ.
+2. The agent groups the matches by sender and shows you the groups with
+   counts. You drop the false positives.
+3. `label_bulk` (or `move_bulk` into `Receipts`) per sender.
+4. Rules match text, not meaning, so the agent turns each confirmed sender
+   into a `create_rule` with `action: "move"` and `dest: "Receipts"`, then
+   runs `run_rules` with `dry_run: true` to show what they'd catch.
+
+Semantic search finds the pattern once. Rules then apply it every hour at no
+cost. This needs enrichment to have embedded the folder: check
+`enrichment_status` first.
+
+### 10.4 Rule review
+
+> "Review my rules. Which ones haven't matched anything lately, which ones
+> overlap, and would any of them trash something I flagged?"
+
+1. `list_rules` gets every rule with its matchers and actions.
+2. `run_rules` with `dry_run: true` gets each rule's current match count.
+3. For the risky ones, `search_messages` with the rule's `from` and
+   `flags: "Flagged"` checks whether they'd hit flagged mail.
+4. The agent reports:
+   - dead rules (zero matches);
+   - overlapping rules (one sender caught by two rules);
+   - rules whose dry run includes flagged mail;
+   - and a proposed `delete_rule` list for you to approve.
+
+A long-running rule set picks up dead and contradictory rules. This keeps the
+hourly job lean ([rules.md](rules.md)).
+
+### 10.5 "Did I drop anything?"
+
+> "Find mail from real people in the last two weeks that I never answered."
+
+The agent queries the cache through the REST API. Classification adds a `hall`
+tag to each message, and `answered` tracks the `\Answered` flag:
+
+```bash
+curl -sS -X POST "$IMAP_MCP/api/query" \
+  -H "Authorization: Bearer $READ_TOKEN" -H "Content-Type: application/json" \
+  -d '{"view":"messages",
+       "where":[{"field":"date","op":"gte","value":"-14d"},
+                {"field":"hall","op":"in","value":["personal","conversation"]},
+                {"field":"answered","op":"eq","value":false}],
+       "fields":["uid","folder","date","from_addr","subject"],
+       "order_by":[{"field":"date","desc":true}]}'
+```
+
+It then reads the top few with `get_message` and drafts replies (10.7). Mail
+classified before tagging worked has an empty `hall`. If the list looks thin,
+drop that filter and let the agent judge from the sender.
+
+### 10.6 Is this one phishing?
+
+> "The 'password reset' mail in INBOX, UID 9120: is it real?"
+
+1. `get_headers` returns `Authentication-Results` (SPF, DKIM, DMARC),
+   `Return-Path`, `Reply-To` and the `Received` chain.
+2. `get_sender_history` shows whether this address has written before (within
+   the cache window).
+3. `semantic_search` with `folder: "INBOX"`, `reference_uid: 9120` compares it with the real
+   resets from that service, if any are in the cache.
+4. The agent gives a verdict with reasons, for example:
+   - DMARC failed;
+   - `Reply-To` goes to a different domain;
+   - first message from this address in the cache;
+   - the link host doesn't match the brand.
+
+   On a "yes, it's bad", it moves the message to Junk with `move_message`.
+
+The agent reads the link text but never follows links. That's the point of
+asking it.
+
+### 10.7 Draft replies you send yourself
+
+> "Draft replies to the three unanswered messages from 10.5. Don't send them."
+
+The agent writes each reply as a raw RFC 2822 message and uses
+`append_message` with `folder: "Drafts"` (`[Gmail]/Drafts` on Gmail) and
+`flags: "Draft"`. The drafts then show up in your normal mail client, ready to
+edit and send. No `send` scope is needed and nothing leaves the server.
+
+If you do want the agent to send, give it a token with the `send` scope and an
+account with an `smtp:` block. It then calls `send_message`, and the skill
+tells it to show you the final text and wait for your go-ahead.
+
+### 10.8 Build a dossier
+
+> "Pull together everything about my October trip: flights, hotel,
+> car, confirmation numbers, into one page."
+
+1. `semantic_search` with queries like "flight confirmation", "hotel
+   reservation" and "rental car", in all accounts (omit `account`).
+2. `get_message` on each hit pulls out dates, times and confirmation numbers.
+3. `write_file` saves `trips/october.md`: one dated itinerary with a link
+   back (folder and UID) to each source message.
+
+The same pattern works for:
+- "every invoice from example.net this year, with totals";
+- "all the mail about the kitchen remodel, as a timeline";
+- "what did legal@example.com and I agree on, and when?".
+
+### 10.9 A scheduled agent, not just a scheduled job
+
+`imap-mcp run-rules` on a schedule handles the deterministic part
+([cookbook phase 5](cookbook-inbox-cleanup.md)). For the judgment calls, have
+datawatch schedule an **agent session** that loads the `imap-mcp` skill, with
+a prompt such as:
+
+> "Run the morning briefing (10.1) and save it. Then look at senders that
+> landed in INBOX 5+ times this week and weren't opened, and draft rules for
+> them, but don't create them. Write the proposals to `proposals/rules.md`."
+
+You review `proposals/rules.md` when convenient and say "create the ones I
+kept". The agent proposes, you decide, the hourly rules job applies.
+
+Give the scheduled session a token with only the scopes it needs. A briefing
+needs `read`. Proposing rules needs `read` as well, because it only writes
+files.
+
+### 10.10 Email as a remote control
+
+With the inbound command channel enabled
+([datawatch-integration.md § 3b](datawatch-integration.md)), imap-mcp watches a
+folder for signed command envelopes. Every gate you configure has to pass:
+- sender allowlist;
+- DKIM and DMARC;
+- HMAC;
+- replay window.
+
+Verified commands go to datawatch's `imap_mcp` backend, which decides what each
+verb may do and replies through imap-mcp.
+
+For example, you send a signed `status` command from your phone's mail app. A
+minute later the reply lands with datawatch's status. A `mail.archive` command
+archives a sender's mail without you opening a laptop. Ordinary mail is never
+touched. Anything that fails a gate is logged as `inbound.rejected` and does
+nothing.
+
+### 10.11 Close the loop with events
+
+Rules and agents can feed each other:
+
+- A rule fires, and the `rule.fired` webhook (section 5) posts to a receiver.
+  That receiver can push a notification, or queue a follow-up task for an
+  agent: "a new sender hit the catch-all rule; decide whether it deserves its
+  own".
+- A dashboard or script listens on `/api/events` (section 7) for
+  `enrichment.done`, so new mail shows up in semantic search as soon as it's
+  embedded.
+
+### Not there yet
+
+Some tools exist but have nothing to return yet:
+- `get_sender_profile`, `kg_query` and `get_anomalies` work, but nothing fills
+  sender profiles, the knowledge graph or anomalies yet.
+- `get_thread`, `get_attachments`, `export_message` and
+  `cross_account_search` are stubs.
+
+An agent that calls one of these gets an empty result or "not yet
+implemented". The workflows above avoid them: for example, 10.6 reconstructs
+sender history with `get_sender_history` instead of `get_sender_profile`. See
+[known-limitations.md](known-limitations.md).

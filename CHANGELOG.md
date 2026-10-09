@@ -7,6 +7,12 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Agent workflows in `docs/examples.md` (section 10).** Eleven multi-step
+  workflows an agent runs with the tools and the companion skill: morning
+  briefing, subscription audit, teach-by-example filing, rule review, unanswered
+  mail, phishing check, drafts to the Drafts folder, dossiers, scheduled agent
+  sessions, the inbound command channel and event loops. A "Not there yet"
+  list names the empty and stub tools.
 - **`docs/examples.md`.** Runnable recipes for the 0.5–0.10 features: agent
   prompts, `/api/query` snapshots, a cron digest, rules, a signed-webhook
   receiver that forwards `rule.fired` to a push service, semantic search, the
