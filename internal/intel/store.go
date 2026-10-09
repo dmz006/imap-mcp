@@ -191,12 +191,11 @@ func (st *store) resetFolder(ctx context.Context, account, folder string, validi
 // answer (In-Reply-To hash) and adds the gap to that sender's reply stats.
 // Each outgoing message is paired at most once. It returns how many were paired.
 func (st *store) pairReplies(ctx context.Context, account string) (int, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback() //nolint:errcheck
-	rows, err := tx.QueryContext(ctx, `SELECT o.msg_hash, o.date - i.date, i.sender_id
+	// Read first, outside the write transaction: in WAL mode a transaction
+	// that reads and then writes can fail with SQLITE_BUSY if another process
+	// (run-rules) commits in between. The write transaction below starts with
+	// a write and re-checks paired = 0, so a concurrent pass can't double-count.
+	rows, err := st.db.QueryContext(ctx, `SELECT o.msg_hash, o.date - i.date, i.sender_id
 		FROM intel_messages o JOIN intel_messages i ON i.account = o.account AND i.msg_hash = o.reply_hash
 		WHERE o.account = ? AND o.outgoing = 1 AND o.paired = 0 AND i.outgoing = 0 AND i.sender_id IS NOT NULL`, account)
 	if err != nil {
@@ -218,10 +217,24 @@ func (st *store) pairReplies(ctx context.Context, account string) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	done := 0
 	for _, p := range pairs {
-		if _, err := tx.ExecContext(ctx, `UPDATE intel_messages SET paired=1 WHERE account=? AND msg_hash=?`, account, p.hash); err != nil {
+		r, err := tx.ExecContext(ctx, `UPDATE intel_messages SET paired=1 WHERE account=? AND msg_hash=? AND paired=0`, account, p.hash)
+		if err != nil {
 			return 0, err
 		}
+		if n, _ := r.RowsAffected(); n == 0 {
+			continue // paired meanwhile
+		}
+		done++
 		if p.gap < 0 || time.Duration(p.gap)*time.Second > maxReplyGap {
 			continue // clock skew or a much later follow-up: not a reply time
 		}
@@ -232,7 +245,7 @@ func (st *store) pairReplies(ctx context.Context, account string) (int, error) {
 			return 0, err
 		}
 	}
-	return len(pairs), tx.Commit()
+	return done, tx.Commit()
 }
 
 func boolInt(b bool) int {
