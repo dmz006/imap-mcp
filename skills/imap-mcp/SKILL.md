@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: "0.2.0"
+version: "0.3.0"
 tags:
   - email
   - imap
@@ -141,6 +141,14 @@ export_message / write_file           → save to working_dir for the record
 - **Search:** `search_messages`, `cross_account_search`, `semantic_search`
 - **Intelligence:** `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status`, `trigger_enrichment`
 - **File output (sandbox):** `write_file`, `read_file`, `list_files`, `delete_file`
+
+imap-mcp 0.7.0+ keeps a local cache of recent mail: by default INBOX and Sent
+for the last 30 days, configured by the operator. Sync is read-only against
+the server. `sync_account` refreshes it immediately and reports, per folder,
+how many messages are cached, new or removed. Cache-backed tools
+(`semantic_search` and the intelligence tools) only see mail inside that
+window. For older mail, use the live IMAP tools (`search_messages`,
+`list_messages`).
 
 Some intelligence tools require the optional Ollama-backed enrichment pipeline.
 If one returns "not yet implemented," fall back to the IMAP-level tools

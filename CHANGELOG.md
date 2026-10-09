@@ -6,6 +6,41 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **Mail cache sync (v0.7.0).** The background sync now fills `cache.db`.
+  Before, it only stamped `sync_state`. Per account and per configured folder:
+  - **Folders:** `sync.folders` takes SPECIAL-USE tokens (`\Sent`, `\Archive`,
+    …) or literal names. The default is `INBOX` + `\Sent`; an account's
+    `sync.folders` replaces the global list.
+  - **Window:** `sync.window_days` (default 30) is a rolling window by IMAP
+    INTERNALDATE. Overrides go in `sync.folder_window_days`, `accounts[].sync.window_days`
+    or `accounts[].sync.folder_window_days`. Shrinking the window purges the
+    cache; growing it backfills.
+  - **Change detection:** a UID diff each cycle. New mail is fetched newest-first
+    in batches (envelope, flags, size, INTERNALDATE, full body via `BODY.PEEK[]`).
+    Expunged, moved or aged-out mail is removed from the cache only. Flags
+    refresh via CONDSTORE `CHANGEDSINCE` where available, otherwise by
+    re-fetching the window. A UIDVALIDITY change rebuilds the folder.
+  - **Read-only:** folders are opened with EXAMINE, so no flag changes on the
+    server, not even `\Seen`. The connection lock is released between
+    batches, so MCP tools stay responsive during a backfill.
+  - **MIME:** decoded with go-message (transfer encodings and charsets). The
+    first text/plain and text/html parts are kept; attachments are recorded as
+    name, type and size only. Messages over `sync.max_message_mb` (default 25)
+    are cached headers-only.
+  - **Enrichment:** new messages are queued, de-duplicated by Message-ID
+    across folders. Thread IDs come from References / In-Reply-To.
+  - **Events:** `message.synced`, `message.updated`, `message.deleted`,
+    `folder.synced` and `sync.complete` on the bus and `/api/events`.
+  - `sync_account` now returns per-folder results: cached, new, removed and
+    flag updates, plus CONDSTORE use and any errors.
+  - Sync settings appear in `/api/health`. New env overrides:
+    `IMAP_MCP_SYNC_WINDOW_DAYS`, `IMAP_MCP_SYNC_MAX_MESSAGE_MB` and
+    `IMAP_MCP_SYNC_INTERVAL_MINUTES`.
+
+  The cache schema is versioned (`PRAGMA user_version`). A cache from 0.6.0 is
+  dropped and rebuilt from IMAP on first start.
+
 ### Changed
 - **Storage (v0.6.0).** The SQLite driver is now `github.com/ncruces/go-sqlite3`
   (pure Go, no cgo), replacing `modernc.org/sqlite`. Data now lives in two files:
@@ -74,7 +109,9 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ### Fixed
 - Database files and their WAL/SHM sidecars are created and kept at mode 0600
-  (v0.6.0). Before, the WAL/SHM files followed the umask.
+  (v0.7.0). Before, the WAL/SHM files followed the umask.
+- Enrichment no longer leaves rows with a NULL body, subject or sender name
+  stuck in `pending` forever, which could starve the queue (v0.7.0).
 - `Rules.List` no longer fails on rules with NULL description, priority or
   run count (v0.6.0).
 - `GET /api/events` (SSE) now sends its 200 headers immediately, instead of at

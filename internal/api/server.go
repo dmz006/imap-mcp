@@ -166,6 +166,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":  config.Version,
 		"accounts": len(accounts),
 		"auth":     map[bool]string{true: "enabled", false: "disabled"}[s.authn != nil],
+		"sync": map[string]any{
+			"interval_minutes": s.cfg.Sync.IntervalMinutes,
+			"window_days":      s.cfg.WindowDays(nil, ""),
+			"max_message_mb":   s.cfg.Sync.MaxMessageMB,
+			"folders":          s.cfg.SyncFolders(nil),
+		},
 		"storage": map[string]bool{
 			"state_encrypted": s.cfg.DB.EncryptionKey != "",
 			"cache_encrypted": s.cfg.DB.Cache.EncryptionKey != "",

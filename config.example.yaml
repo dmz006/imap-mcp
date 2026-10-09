@@ -35,6 +35,13 @@ accounts:
       from: "Me <user@example.com>"
       # username: user@example.com         # defaults to auth.username
       # password: ${secret:personal_smtp}  # defaults to auth.password
+    # ── Cache sync overrides (OPTIONAL) ───────────────────────────────────
+    # Replace the global sync.folders list and/or window for this account.
+    # sync:
+    #   folders: [INBOX, \Sent, \Archive]
+    #   window_days: 60
+    #   folder_window_days:
+    #     \Archive: 365
     # ── Inbound command channel (OPTIONAL, default-deny) ──────────────────
     # Turns this account into a TRUST-GATED control channel: a command in a
     # watched message is acted on ONLY if every required gate passes. Email
@@ -208,13 +215,31 @@ enrichment:
   batch_size: 20
   auto_sync: true
 
+# Background mail cache (cache.db). Read-only against the server: folders are
+# EXAMINEd and bodies fetched with BODY.PEEK, so no flag (not even \Seen) changes.
+# Each cycle: UID SEARCH SINCE <window> by INTERNALDATE; new mail is fetched
+# newest-first; mail that left the window (or was expunged/moved) is removed from
+# the CACHE ONLY; flags refresh via CONDSTORE CHANGEDSINCE where the server
+# supports it. A UIDVALIDITY change rebuilds that folder.
+# Env overrides: IMAP_MCP_SYNC_INTERVAL_MINUTES, IMAP_MCP_SYNC_WINDOW_DAYS,
+#                IMAP_MCP_SYNC_MAX_MESSAGE_MB. Settings appear in /api/health.
 sync:
   interval_minutes: 15
   full_sync_on_start: true
+  # SPECIAL-USE tokens (\Sent, \Archive, \Drafts, \Junk, \All, \Flagged) or
+  # literal names. Tokens resolve per server (e.g. Gmail \Sent = "[Gmail]/Sent Mail").
+  # \All caches every message (copies are enrichment-deduplicated by Message-ID).
   folders:
     - INBOX
-    - Sent
-    - Archive
+    - \Sent
+  # Rolling window in days, by IMAP INTERNALDATE (server arrival time).
+  # Shrinking it purges the cache on the next cycle; growing it backfills.
+  window_days: 30
+  # Per-folder overrides (key = the entry as written in folders):
+  # folder_window_days:
+  #   \Sent: 90
+  # Messages larger than this are cached headers-only (no body).
+  max_message_mb: 25
 
 log:
   level: info

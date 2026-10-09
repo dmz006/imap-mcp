@@ -63,8 +63,13 @@ func Open(state, cache Options) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := openFile(cache, cacheSchema)
+	c, err := openFile(cache, "")
 	if err != nil {
+		d.Close()
+		return nil, fmt.Errorf("cache db: %w", err)
+	}
+	if err := ensureCacheSchema(c); err != nil {
+		c.Close()
 		d.Close()
 		return nil, fmt.Errorf("cache db: %w", err)
 	}
@@ -178,6 +183,11 @@ func openFile(o Options, schema string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s: %w", o.Path, err)
 	}
+	// Private before first use: SQLite derives the -wal/-shm modes from the
+	// database file, so create it 0600 rather than chmod-ing afterwards.
+	if err := restrictFiles(o.Path); err != nil {
+		return nil, err
+	}
 	switch {
 	case kind == filePlain && o.Key != "":
 		return nil, fmt.Errorf("%s is not encrypted but an encryption key is configured; "+
@@ -192,17 +202,66 @@ func openFile(o Options, schema string) (*sql.DB, error) {
 	}
 	conn.SetMaxOpenConns(1) // SQLite WAL: one writer per process
 
-	if _, err := conn.Exec(schema); err != nil {
+	// Read the schema first so a wrong key surfaces as such, then apply ours.
+	if _, err := conn.Exec(`SELECT count(*) FROM sqlite_master`); err != nil {
 		conn.Close()
 		if o.Key != "" && strings.Contains(err.Error(), "not a database") {
 			return nil, fmt.Errorf("%s: wrong encryption key or corrupt file", o.Path)
 		}
-		return nil, fmt.Errorf("apply schema to %s: %w", o.Path, err)
+		return nil, fmt.Errorf("open %s: %w", o.Path, err)
 	}
-	if o.Path != "" {
-		_ = os.Chmod(o.Path, 0o600)
+	if schema != "" {
+		if _, err := conn.Exec(schema); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("apply schema to %s: %w", o.Path, err)
+		}
 	}
+	_ = restrictFiles(o.Path) // WAL/SHM now exist; tighten any created earlier
 	return conn, nil
+}
+
+// restrictFiles creates path (if missing) and sets it and any existing
+// -wal/-shm sidecars to 0600.
+func restrictFiles(path string) error {
+	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	f.Close()
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(p, 0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("chmod %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// ensureCacheSchema creates the cache schema, or drops and recreates it when
+// the stored user_version differs from cacheSchemaVersion. Only cache.db is
+// ever rebuilt this way: its contents come back from IMAP on the next sync.
+func ensureCacheSchema(conn *sql.DB) error {
+	var v int
+	if err := conn.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		return err
+	}
+	if v != cacheSchemaVersion {
+		var n int
+		if err := conn.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'`).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			for _, obj := range legacyCacheObjects {
+				if _, err := conn.Exec(`DROP ` + strings.Replace(obj, " ", " IF EXISTS ", 1)); err != nil {
+					return fmt.Errorf("rebuild cache: drop %s: %w", obj, err)
+				}
+			}
+		}
+	}
+	if _, err := conn.Exec(cacheSchema); err != nil {
+		return fmt.Errorf("apply cache schema: %w", err)
+	}
+	_, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, cacheSchemaVersion))
+	return err
 }
 
 // Repository types — each will be expanded with query methods.

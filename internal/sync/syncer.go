@@ -1,10 +1,28 @@
-// Package sync handles IMAP synchronization: fetching new messages,
-// updating flags, and maintaining sync state per account/folder.
+// Package sync maintains the local mail cache (cache.db) from IMAP
+// (AGENT.md D6, D8, D9, D10).
+//
+// Each cycle, per account and per configured folder:
+//
+//   - resolve the folder (SPECIAL-USE token such as \Sent, or a literal name)
+//   - EXAMINE it (read-only); a changed UIDVALIDITY drops that folder's cache
+//   - UID SEARCH SINCE <now - window_days> (INTERNALDATE) gives the server set
+//   - new = server − cached: fetched newest-first in batches (envelope, flags,
+//     size, INTERNALDATE, full body via BODY.PEEK[] under the size cap) and
+//     queued for enrichment, de-duplicated by Message-ID
+//   - gone = cached − server: expunged, moved or aged out of the window;
+//     removed from the cache only, never from the mailbox
+//   - flags: FETCH CHANGEDSINCE <modseq> where CONDSTORE is available, else a
+//     FLAGS re-fetch of the window
+//
+// Every change is published on the bus (message.synced / message.updated /
+// message.deleted, folder.synced, sync.complete).
 package sync
 
 import (
 	"context"
 	"log/slog"
+	"slices"
+	gosync "sync"
 	"time"
 
 	"github.com/dmz006/imap-mcp/internal/bus"
@@ -13,22 +31,52 @@ import (
 	"github.com/dmz006/imap-mcp/internal/imap"
 )
 
-// Syncer periodically fetches new messages from all accounts and folders.
+// fetchBatch is how many new messages are fetched per lock hold.
+const fetchBatch = 25
+
+// Syncer periodically refreshes the cache for all accounts and folders.
 type Syncer struct {
 	cfg  *config.Config
 	pool *imap.Pool
 	db   *db.DB
 	bus  *bus.Bus
 	log  *slog.Logger
+
+	// newSource builds the mailbox view for a connection (overridable in tests).
+	newSource func(*imap.Conn) Source
+	// now is the clock (overridable in tests).
+	now func() time.Time
+
+	mu    gosync.Mutex
+	stats map[string]FolderStats // key: account + "\x00" + folder entry
+}
+
+// FolderStats is the outcome of the last sync of one folder entry.
+type FolderStats struct {
+	Account    string    `json:"account"`
+	Entry      string    `json:"entry"`  // config entry, e.g. \Sent
+	Folder     string    `json:"folder"` // resolved mailbox name
+	WindowDays int       `json:"window_days"`
+	Cached     int       `json:"cached"`
+	New        int       `json:"new"`
+	Removed    int       `json:"removed"`
+	FlagsDone  int       `json:"flags_updated"`
+	CondStore  bool      `json:"condstore"`
+	Rebuilt    bool      `json:"rebuilt,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	At         time.Time `json:"at"`
 }
 
 func New(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus, log *slog.Logger) *Syncer {
 	return &Syncer{
-		cfg:  cfg,
-		pool: pool,
-		db:   database,
-		bus:  b,
-		log:  log,
+		cfg:       cfg,
+		pool:      pool,
+		db:        database,
+		bus:       b,
+		log:       log,
+		newSource: NewIMAPSource,
+		now:       time.Now,
+		stats:     map[string]FolderStats{},
 	}
 }
 
@@ -64,7 +112,40 @@ func (s *Syncer) SyncAccount(ctx context.Context, accountName string) error {
 	if err != nil {
 		return err
 	}
-	return s.syncAccount(ctx, conn)
+	return s.syncAccount(ctx, conn.Account(), s.newSource(conn))
+}
+
+// Stats returns the last sync outcome of every folder entry, sorted.
+func (s *Syncer) Stats() []FolderStats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]FolderStats, 0, len(s.stats))
+	for _, st := range s.stats {
+		out = append(out, st)
+	}
+	slices.SortFunc(out, func(a, b FolderStats) int {
+		if a.Account != b.Account {
+			return compare(a.Account, b.Account)
+		}
+		return compare(a.Entry, b.Entry)
+	})
+	return out
+}
+
+func compare(a, b string) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+func (s *Syncer) record(st FolderStats) {
+	s.mu.Lock()
+	s.stats[st.Account+"\x00"+st.Entry] = st
+	s.mu.Unlock()
 }
 
 func (s *Syncer) syncAll(ctx context.Context) {
@@ -77,7 +158,7 @@ func (s *Syncer) syncAll(ctx context.Context) {
 			s.log.Error("get connection for sync", "account", name, "err", err)
 			continue
 		}
-		if err := s.syncAccount(ctx, conn); err != nil {
+		if err := s.syncAccount(ctx, name, s.newSource(conn)); err != nil {
 			s.log.Error("sync account failed", "account", name, "err", err)
 			s.bus.PublishAsync(bus.Event{
 				Type:    bus.EventSyncError,
@@ -88,64 +169,209 @@ func (s *Syncer) syncAll(ctx context.Context) {
 	}
 }
 
-func (s *Syncer) syncAccount(ctx context.Context, conn *imap.Conn) error {
-	folders := s.cfg.Sync.Folders
-	if len(folders) == 0 {
-		folders = []string{"INBOX"}
-	}
+func (s *Syncer) syncAccount(ctx context.Context, account string, src Source) error {
+	acct, _ := s.cfg.Account(account)
+	entries := s.cfg.SyncFolders(acct)
 
-	for _, folder := range folders {
+	folders, err := src.Folders(ctx)
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := s.syncFolder(ctx, conn, folder); err != nil {
-			s.log.Warn("sync folder failed", "account", conn.Account(), "folder", folder, "err", err)
+		name, ok := resolveFolder(entry, folders)
+		st := FolderStats{Account: account, Entry: entry, Folder: name, WindowDays: s.cfg.WindowDays(acct, entry), At: s.now()}
+		if !ok {
+			st.Error = "folder not found on server"
+			s.log.Warn("sync folder not found", "account", account, "entry", entry)
+			s.record(st)
+			continue
 		}
+		if seen[name] {
+			continue // two entries resolved to the same mailbox
+		}
+		seen[name] = true
+		if entry == `\All` {
+			s.log.Warn(`\All selected: every message is cached (copies in other folders are de-duplicated for enrichment)`, "account", account)
+		}
+		if err := s.syncFolder(ctx, src, &st); err != nil {
+			st.Error = err.Error()
+			s.log.Warn("sync folder failed", "account", account, "folder", name, "err", err)
+		}
+		s.record(st)
+		s.bus.PublishAsync(bus.Event{Type: bus.EventFolderSynced, Account: account, Payload: st})
 	}
 
-	s.bus.PublishAsync(bus.Event{
-		Type:    bus.EventSyncComplete,
-		Account: conn.Account(),
-	})
+	s.bus.PublishAsync(bus.Event{Type: bus.EventSyncComplete, Account: account})
 	return nil
 }
 
-func (s *Syncer) syncFolder(ctx context.Context, conn *imap.Conn, folder string) error {
-	s.log.Debug("syncing folder", "account", conn.Account(), "folder", folder)
+// syncFolder brings one folder's cache in line with the server inside the
+// window. st carries the folder identity in and the counters out.
+func (s *Syncer) syncFolder(ctx context.Context, src Source, st *FolderStats) error {
+	account, folder := st.Account, st.Folder
 
-	conn.Lock()
-	defer conn.Unlock()
+	status, err := src.Status(ctx, folder)
+	if err != nil {
+		return err
+	}
+	st.CondStore = status.CondStore
+	prev, err := s.db.Sync.Get(ctx, account, folder)
+	if err != nil {
+		return err
+	}
+	if prev.UIDValidity != 0 && prev.UIDValidity != status.UIDValidity {
+		n, err := s.db.Messages.DeleteFolder(ctx, account, folder)
+		if err != nil {
+			return err
+		}
+		s.log.Info("uidvalidity changed; folder cache rebuilt", "account", account, "folder", folder, "dropped", n)
+		prev = db.FolderSyncState{}
+		st.Rebuilt = true
+	}
 
-	client := conn.Client()
-
-	// Select the mailbox
-	_, err := client.Select(folder, nil).Wait()
+	y, m, d := s.now().AddDate(0, 0, -st.WindowDays).Date()
+	since := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	server, err := src.SearchSince(ctx, folder, status.UIDValidity, since)
+	if err != nil {
+		return err
+	}
+	cached, err := s.db.Messages.CachedUIDs(ctx, account, folder)
 	if err != nil {
 		return err
 	}
 
-	// Get last synced UID from state
-	var lastUID uint32
-	s.db.SQL().QueryRowContext(ctx, `
-		SELECT COALESCE(last_uid, 0) FROM sync_state WHERE account=? AND folder=?
-	`, conn.Account(), folder).Scan(&lastUID) //nolint:errcheck
+	onServer := make(map[uint32]bool, len(server))
+	var fresh, existing []uint32
+	for _, u := range server {
+		onServer[u] = true
+		if _, ok := cached[u]; ok {
+			existing = append(existing, u)
+		} else {
+			fresh = append(fresh, u)
+		}
+	}
+	var gone []uint32
+	for u := range cached {
+		if !onServer[u] {
+			gone = append(gone, u)
+		}
+	}
 
-	// Fetch messages newer than lastUID
-	// Full implementation: use IMAP UID FETCH with UID range lastUID+1:*
-	// This is the scaffold — the full fetch loop will be implemented in iteration 2
-	s.log.Debug("sync state", "account", conn.Account(), "folder", folder, "last_uid", lastUID)
+	// Gone: expunged, moved, or aged out of the window. Cache only.
+	if len(gone) > 0 {
+		n, err := s.db.Messages.DeleteUIDs(ctx, account, folder, gone)
+		if err != nil {
+			return err
+		}
+		st.Removed = int(n)
+		for _, u := range gone {
+			s.bus.PublishAsync(bus.Event{Type: bus.EventMessageDeleted, Account: account, Payload: map[string]any{"folder": folder, "uid": u}})
+		}
+	}
 
-	// Update sync state
-	s.db.SQL().ExecContext(ctx, `
-		INSERT INTO sync_state(account, folder, last_synced)
-		VALUES(?, ?, unixepoch())
-		ON CONFLICT(account, folder) DO UPDATE SET last_synced=unixepoch()
-	`, conn.Account(), folder) //nolint:errcheck
+	// Flags on messages we already have.
+	changedSince := uint64(0)
+	if status.CondStore && prev.HighestModSeq > 0 {
+		changedSince = prev.HighestModSeq
+	}
+	updates, err := src.Flags(ctx, folder, status.UIDValidity, existing, changedSince)
+	if err != nil {
+		return err
+	}
+	for _, up := range updates {
+		if sameFlags(cached[up.UID], up.Flags) {
+			continue
+		}
+		ok, err := s.db.Messages.UpdateFlags(ctx, account, folder, up.UID, up.Flags)
+		if err != nil {
+			return err
+		}
+		if ok {
+			st.FlagsDone++
+			s.bus.PublishAsync(bus.Event{Type: bus.EventMessageUpdated, Account: account, Payload: map[string]any{"folder": folder, "uid": up.UID, "flags": up.Flags}})
+		}
+	}
 
-	s.bus.PublishAsync(bus.Event{
-		Type:    bus.EventFolderSynced,
-		Account: conn.Account(),
-		Payload: folder,
-	})
-	return nil
+	// New mail first: highest UIDs are the newest.
+	slices.SortFunc(fresh, func(a, b uint32) int { return int(int64(b) - int64(a)) })
+	maxBytes := int64(s.cfg.Sync.MaxMessageMB) << 20
+	for len(fresh) > 0 {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		n := min(fetchBatch, len(fresh))
+		batch := fresh[:n]
+		fresh = fresh[n:]
+		msgs, err := src.Fetch(ctx, folder, status.UIDValidity, batch, maxBytes)
+		if err != nil {
+			return err
+		}
+		for i := range msgs {
+			cm := toCached(account, folder, &msgs[i])
+			res, err := s.db.Messages.Insert(ctx, cm)
+			if err != nil {
+				return err
+			}
+			st.New++
+			s.bus.PublishAsync(bus.Event{Type: bus.EventMessageSynced, Account: account, Payload: map[string]any{
+				"folder": folder, "uid": cm.UID, "id": res.ID, "queued": res.Queued,
+			}})
+		}
+	}
+
+	st.Cached = len(existing) + st.New
+	return s.db.Sync.Put(ctx, account, folder, db.FolderSyncState{UIDValidity: status.UIDValidity, HighestModSeq: status.HighestModSeq})
+}
+
+func sameFlags(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	x := slices.Clone(a)
+	y := slices.Clone(b)
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(x, y)
+}
+
+// toCached converts a fetched message into a cache row.
+func toCached(account, folder string, f *Fetched) *db.CachedMessage {
+	cm := &db.CachedMessage{
+		Account:      account,
+		Folder:       folder,
+		UID:          f.UID,
+		Flags:        f.Flags,
+		Size:         f.Size,
+		InternalDate: f.InternalDate,
+		BodySkipped:  f.Raw == nil,
+	}
+	var refs []string
+	if f.Raw != nil {
+		body := parseBody(f.Raw)
+		cm.BodyText, cm.BodyHTML, cm.Attachments, refs = body.Text, body.HTML, body.Attachments, body.References
+	}
+	if env := f.Envelope; env != nil {
+		cm.MessageID = env.MessageID
+		cm.Subject = decodeWord(env.Subject)
+		cm.Date = env.Date
+		if len(env.From) > 0 {
+			cm.FromAddr = env.From[0].Addr()
+			cm.FromName = decodeWord(env.From[0].Name)
+		}
+		for _, a := range env.To {
+			cm.To = append(cm.To, a.Addr())
+		}
+		for _, a := range env.Cc {
+			cm.Cc = append(cm.Cc, a.Addr())
+		}
+		if len(env.ReplyTo) > 0 {
+			cm.ReplyTo = env.ReplyTo[0].Addr()
+		}
+		cm.ThreadID = threadID(refs, env.InReplyTo, env.MessageID)
+	}
+	return cm
 }

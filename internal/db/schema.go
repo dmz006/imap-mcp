@@ -4,6 +4,10 @@ package db
 // messages, FTS5, vectors, and the datawatch-inspired memory patterns
 // (wing/room/hall tagging, temporal KG, sender profiles, anomaly log). Every
 // row can be rebuilt from IMAP.
+// cacheSchemaVersion is stored in cache.db's user_version. A mismatch drops
+// and recreates the cache (it is disposable); bump it on any cache change.
+const cacheSchemaVersion = 2
+
 const cacheSchema = `
 -- ─── Messages ────────────────────────────────────────────────────────────────
 
@@ -20,11 +24,13 @@ CREATE TABLE IF NOT EXISTS messages (
     to_addrs        TEXT,               -- JSON array
     cc_addrs        TEXT,               -- JSON array
     reply_to        TEXT,
-    date            INTEGER NOT NULL,   -- unix timestamp
+    date            INTEGER NOT NULL,   -- unix timestamp (Date header, else INTERNALDATE)
+    internal_date   INTEGER,            -- IMAP INTERNALDATE; drives the cache window
     flags           TEXT,               -- JSON array: \Seen \Answered \Flagged etc
     size            INTEGER,
     body_text       TEXT,
     body_html       TEXT,
+    body_skipped    INTEGER DEFAULT 0,  -- 1 = over sync.max_message_mb, headers only
     has_attachments INTEGER DEFAULT 0,
     attachments     TEXT,               -- JSON array of {name, mime, size}
 
@@ -51,6 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_thread         ON messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_hall           ON messages(hall);
 CREATE INDEX IF NOT EXISTS idx_messages_wing           ON messages(wing);
 CREATE INDEX IF NOT EXISTS idx_messages_enrichment     ON messages(enrichment_status);
+CREATE INDEX IF NOT EXISTS idx_messages_message_id     ON messages(message_id);
 
 -- Full-text search over subject + body
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -176,6 +183,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
     account      TEXT NOT NULL,
     folder       TEXT NOT NULL,
     uid_validity INTEGER,
+    highest_modseq INTEGER DEFAULT 0,  -- CONDSTORE; 0 = unknown/unsupported
     last_uid     INTEGER DEFAULT 0,
     last_synced  INTEGER,
     UNIQUE(account, folder)

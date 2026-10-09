@@ -42,5 +42,12 @@ func (h *Handlers) SyncAccount(ctx context.Context, req mcp.CallToolRequest) (*m
 	if err := h.syncer.SyncAccount(ctx, account); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("sync failed: %v", err)), nil
 	}
-	return mcp.NewToolResultText(fmt.Sprintf("sync triggered for account %q", account)), nil
+	var folders []any
+	for _, st := range h.syncer.Stats() {
+		if st.Account == account {
+			folders = append(folders, st)
+		}
+	}
+	data, _ := json.Marshal(map[string]any{"account": account, "folders": folders})
+	return mcp.NewToolResultText(string(data)), nil
 }

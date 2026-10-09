@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.6.0"
+var Version = "0.7.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -42,6 +42,8 @@ type AccountConfig struct {
 	// configured gates and, only if all required gates pass, emitted as a
 	// verified command event. Absent = no command channel (read/manage only).
 	Inbound *InboundConfig `yaml:"inbound,omitempty"`
+	// Sync optionally overrides the global sync settings for this account.
+	Sync *AccountSyncConfig `yaml:"sync,omitempty"`
 }
 
 // SMTPConfig is per-account outbound mail. Each receiving domain sends through
@@ -162,10 +164,59 @@ type EnrichmentConfig struct {
 	AutoSync   bool   `yaml:"auto_sync"`
 }
 
+// SyncConfig controls the background mail cache sync (AGENT.md D8, D10).
 type SyncConfig struct {
-	IntervalMinutes int      `yaml:"interval_minutes"`
-	FullSyncOnStart bool     `yaml:"full_sync_on_start"`
-	Folders         []string `yaml:"folders"`
+	IntervalMinutes int  `yaml:"interval_minutes"`
+	FullSyncOnStart bool `yaml:"full_sync_on_start"`
+	// Folders to cache: SPECIAL-USE tokens (\Sent, \Archive, \Drafts,
+	// \Junk, \All, \Flagged) or literal names. Default INBOX + \Sent.
+	Folders []string `yaml:"folders"`
+	// WindowDays is the rolling cache window by IMAP INTERNALDATE (default 30).
+	WindowDays int `yaml:"window_days"`
+	// FolderWindowDays overrides WindowDays per folder entry (token or name).
+	FolderWindowDays map[string]int `yaml:"folder_window_days"`
+	// MaxMessageMB caps the size of a message whose full body is fetched;
+	// larger messages are cached headers-only (default 25).
+	MaxMessageMB int `yaml:"max_message_mb"`
+}
+
+// AccountSyncConfig overrides SyncConfig for one account. Folders replaces
+// the global list; zero values inherit.
+type AccountSyncConfig struct {
+	Folders          []string       `yaml:"folders"`
+	WindowDays       int            `yaml:"window_days"`
+	FolderWindowDays map[string]int `yaml:"folder_window_days"`
+}
+
+// SyncFolders returns the folder entries to cache for an account.
+func (c *Config) SyncFolders(a *AccountConfig) []string {
+	if a != nil && a.Sync != nil && len(a.Sync.Folders) > 0 {
+		return a.Sync.Folders
+	}
+	if len(c.Sync.Folders) > 0 {
+		return c.Sync.Folders
+	}
+	return []string{"INBOX", `\Sent`}
+}
+
+// WindowDays resolves the cache window for one folder entry of an account:
+// account folder override > global folder override > account > global > 30.
+func (c *Config) WindowDays(a *AccountConfig, folder string) int {
+	if a != nil && a.Sync != nil {
+		if d := a.Sync.FolderWindowDays[folder]; d > 0 {
+			return d
+		}
+	}
+	if d := c.Sync.FolderWindowDays[folder]; d > 0 {
+		return d
+	}
+	if a != nil && a.Sync != nil && a.Sync.WindowDays > 0 {
+		return a.Sync.WindowDays
+	}
+	if c.Sync.WindowDays > 0 {
+		return c.Sync.WindowDays
+	}
+	return 30
 }
 
 type LogConfig struct {
@@ -223,7 +274,9 @@ func defaults() *Config {
 		Sync: SyncConfig{
 			IntervalMinutes: 15,
 			FullSyncOnStart: true,
-			Folders:         []string{"INBOX"},
+			Folders:         []string{"INBOX", `\Sent`},
+			WindowDays:      30,
+			MaxMessageMB:    25,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -263,6 +316,21 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("IMAP_MCP_SERVER_AUTH_DISABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			cfg.Server.Auth.Disabled = b
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_SYNC_WINDOW_DAYS"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil {
+			cfg.Sync.WindowDays = d
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_SYNC_MAX_MESSAGE_MB"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil {
+			cfg.Sync.MaxMessageMB = d
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_SYNC_INTERVAL_MINUTES"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil {
+			cfg.Sync.IntervalMinutes = d
 		}
 	}
 	if v := os.Getenv("IMAP_MCP_DB_PATH"); v != "" {

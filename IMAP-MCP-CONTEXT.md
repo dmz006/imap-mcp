@@ -31,7 +31,7 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.6.0 |
+| Current version | 0.7.0 |
 | Location | `/home/dmz/workspace/imap-mcp` |
 | Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
 
@@ -203,7 +203,11 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 | `internal/db/db.go` | Opens state + cache DBs (ncruces driver, optional adiantum encryption); repository types |
 | `internal/enrichment/pipeline.go` | Background enrichment worker; cosine similarity |
 | `internal/enrichment/ollama.go` | Ollama embed + generate API client |
-| `internal/sync/syncer.go` | IMAP sync engine |
+| `internal/sync/syncer.go` | Cache sync engine: window, UID diff, CONDSTORE flags, UIDVALIDITY rebuild (D8–D10) |
+| `internal/sync/source.go` | `Source` interface (read-only mailbox view) + IMAP implementation; SPECIAL-USE resolution |
+| `internal/sync/mime.go` | MIME decode (go-message): text/html parts, attachment metadata, thread ID |
+| `internal/db/cache.go` | Cache repositories: sync state, message insert/flags/delete, Message-ID de-dup |
+| `internal/httpauth/` | Named, scoped bearer-token auth for /api and /mcp (D13a) |
 | `internal/mcp/server.go` | MCP server; all 28 tools registered |
 | `internal/mcp/tools/definitions.go` | All tool definitions (names, params, descriptions) |
 | `internal/mcp/tools/impl_accounts.go` | list_accounts, sync_account ✅ |

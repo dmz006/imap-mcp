@@ -232,3 +232,24 @@ func TestDSNDoesNotBreakOnSpecialPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFilesArePrivate(t *testing.T) {
+	dir := t.TempDir()
+	st, ca := Options{Path: filepath.Join(dir, "imap.db")}, Options{Path: filepath.Join(dir, "cache.db"), Key: "k"}
+	d, err := Open(st, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, d.SQL(), `INSERT INTO sync_state(account, folder) VALUES('a','b')`)
+	mustExec(t, d.StateSQL(), `INSERT INTO inbound_nonces(account, nonce) VALUES('a','n')`)
+	defer d.Close()
+	for _, f := range []string{st.Path, st.Path + "-wal", st.Path + "-shm", ca.Path, ca.Path + "-wal", ca.Path + "-shm"} {
+		fi, err := os.Stat(f)
+		if err != nil {
+			continue
+		}
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode = %v, want 0600", filepath.Base(f), fi.Mode().Perm())
+		}
+	}
+}
