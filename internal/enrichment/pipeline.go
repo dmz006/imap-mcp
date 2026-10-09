@@ -126,7 +126,7 @@ func (p *Pipeline) processBatch(ctx context.Context) error {
 		result, err := p.enrich(ctx, it.messageID, it.subject, it.body, it.fromAddr, it.fromName)
 		if err != nil {
 			p.log.Warn("enrich message failed", "message_id", it.messageID, "err", err)
-			p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='error', last_error=? WHERE id=?`, err.Error(), it.queueID) //nolint:errcheck
+			p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='error', last_error=? WHERE id=?`, err.Error(), it.queueID)            //nolint:errcheck
 			p.db.SQL().ExecContext(ctx, `UPDATE messages SET enrichment_status='error', enrichment_error=? WHERE id=?`, err.Error(), it.messageID) //nolint:errcheck
 			continue
 		}
@@ -136,8 +136,8 @@ func (p *Pipeline) processBatch(ctx context.Context) error {
 			continue
 		}
 
-		p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='done', processed_at=unixepoch() WHERE id=?`, it.queueID)         //nolint:errcheck
-		p.db.SQL().ExecContext(ctx, `UPDATE messages SET enrichment_status='done', enriched_at=unixepoch() WHERE id=?`, it.messageID)     //nolint:errcheck
+		p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='done', processed_at=unixepoch() WHERE id=?`, it.queueID)     //nolint:errcheck
+		p.db.SQL().ExecContext(ctx, `UPDATE messages SET enrichment_status='done', enriched_at=unixepoch() WHERE id=?`, it.messageID) //nolint:errcheck
 
 		p.bus.PublishAsync(bus.Event{
 			Type:    bus.EventEnrichmentDone,

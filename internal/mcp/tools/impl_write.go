@@ -38,7 +38,7 @@ func (h *Handlers) MoveMessage(ctx context.Context, req mcp.CallToolRequest) (*m
 		}
 		storeFlags := &imaplib.StoreFlags{Op: imaplib.StoreFlagsAdd, Flags: []imaplib.Flag{imaplib.FlagDeleted}}
 		conn.Client().Store(uidSet, storeFlags, nil).Close() //nolint:errcheck
-		conn.Client().Expunge().Close()                       //nolint:errcheck
+		conn.Client().Expunge().Close()                      //nolint:errcheck
 	}
 	return mcp.NewToolResultText(fmt.Sprintf("moved uid=%d from %s to %s", uid, folder, dest)), nil
 }

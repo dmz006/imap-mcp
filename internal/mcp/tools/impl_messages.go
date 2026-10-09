@@ -113,11 +113,11 @@ func (h *Handlers) ListMessages(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 
 	result, err := mcp.NewToolResultJSON(map[string]any{
-		"folder":  folder,
-		"total":   total,
-		"offset":  offset,
-		"limit":   limit,
-		"count":   len(headers),
+		"folder":   folder,
+		"total":    total,
+		"offset":   offset,
+		"limit":    limit,
+		"count":    len(headers),
 		"messages": headers,
 	})
 	if err != nil {
