@@ -4,8 +4,18 @@
 |-------|-------|
 | Date | 2026-10-08 |
 | Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
-| Status | **Planned — decisions pending** (DIP in progress) |
+| Status | **Planned — D13 pending**, then P1 (0.6.0) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
+
+## Current status (2026-10-08)
+
+- Decided: D1, D1a, D1b, D5–D10, D11a, D11b, D12 (D2–D4 resolved by D1). Each is
+  recorded as a rule in `AGENT.md` § Recorded Decisions.
+- **Next: D13 (REST surface).** Fold in the token-auth question: v0.5.2 added
+  `browserGuard`, but `/api` and `/mcp` are still unauthenticated for local
+  processes.
+- Then implement P1 (0.6.0, storage) per the phase table and AGENT.md release
+  rules.
 
 ## Problem
 
