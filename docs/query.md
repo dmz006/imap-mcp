@@ -1,7 +1,7 @@
 # Query API
 
-`POST /api/query` answers ad-hoc questions about the local mail cache with a
-JSON query (AGENT.md D17). It never accepts SQL. Views, fields, operators and
+`POST /api/query` answers ad-hoc questions about the local mail cache and the
+sender profiles with a JSON query (AGENT.md D17). It never accepts SQL. Views, fields, operators and
 aggregate functions come from fixed allowlists, and every value is sent as a
 bound parameter. The query runs read-only with a 10-second timeout. It needs a
 token with the `admin` scope.
@@ -35,10 +35,11 @@ The response looks like this:
 
 - **`view`:** `messages`, `senders`, `anomalies` or `kg` (knowledge-graph
   relationships, with subject and object names).
-  > **Currently empty:** nothing populates the `senders`, `anomalies` or `kg`
-  > tables yet (that arrives with iteration-3 intelligence), so queries on
-  > those views return no rows. The `messages` view works today. See
-  > [known-limitations.md](known-limitations.md).
+  `messages` reads the cache (the sync window). `senders`, `anomalies` and
+  `kg` read `imap.db`, which covers all history ([intelligence.md](intelligence.md)).
+  > **Currently empty:** nothing builds the `anomalies` or `kg` tables yet,
+  > so queries on those views return no rows. `senders` is filled by the
+  > header scanner. See [known-limitations.md](known-limitations.md).
 - **`fields`:** columns to return. If omitted, a default set is returned. For
   `messages`, the default never includes bodies: `body_text` and `body_html`
   are returned only when named.
@@ -84,8 +85,8 @@ Unread, flagged mail per folder:
  "aggregate": [{"fn": "count", "as": "n"}]}
 ```
 
-The next three examples show the query shape for the intelligence views; they
-return no rows until those tables are populated.
+The next examples use the intelligence views. `senders` returns data; the
+`anomalies` and `kg` examples return no rows until those tables are built.
 
 Senders you have never replied to, ranked by volume:
 
@@ -94,6 +95,22 @@ Senders you have never replied to, ranked by volume:
  "fields": ["address", "message_count", "last_seen"],
  "where": [{"field": "sent_count", "op": "eq", "value": 0}],
  "order_by": [{"field": "message_count", "desc": true}]}
+```
+
+Senders whose mail sometimes fails DMARC, worst first (a P4 anomaly baseline):
+
+```json
+{"view": "senders",
+ "fields": ["address", "role", "dmarc_pass", "dmarc_fail"],
+ "where": [{"field": "dmarc_fail", "op": "gt", "value": 0}, {"field": "dmarc_pass", "op": "gt", "value": 0}],
+ "order_by": [{"field": "dmarc_fail", "desc": true}], "limit": 20}
+```
+
+Roles across all senders:
+
+```json
+{"view": "senders", "group_by": ["role", "role_source"], "aggregate": [{"fn": "count", "as": "n"}],
+ "order_by": [{"field": "n", "desc": true}]}
 ```
 
 Open high-severity anomalies:

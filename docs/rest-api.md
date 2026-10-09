@@ -109,6 +109,9 @@ No token needed.
     "backfill_paused": "backfill_window: outside backfill window 22:00-07:00",
     "backoff_seconds": 40
   },
+  "intelligence": {"enabled": true, "folders": 14, "folders_complete": 14, "backfill_complete": true,
+                   "messages_indexed": 48210, "senders": 3120, "replies_paired": 912,
+                   "roles": {"newsletter": 1210, "bot": 640, "personal": 380, "unknown": 890}, "last_scan": "2026-10-09T22:49:45Z"},
   "tools": {"attachment_inline_kb": 64, "attachment_max_mb": 25, "export_max_messages": 500, "export_max_mb": 100},
   "storage": {"state_encrypted": false, "cache_encrypted": false}
 }
@@ -123,6 +126,7 @@ No token needed.
 | `enrichment.embed_provider`, `classify_provider`, `pending`, `done_last_hour`, `errors`, `oldest_pending_seconds` | Live queue state. These appear only when the pipeline is running and its stats query succeeds. |
 | `enrichment.backfill_paused` | Present only while a gate pauses backfill. Gives the reason. |
 | `enrichment.backoff_seconds` | Present only during a provider backoff |
+| `intelligence.*` | Header-scan progress and the role breakdown (counts only). `backfill_complete` is true once every folder has been scanned once. See [intelligence.md](intelligence.md#watching-progress). |
 | `tools.*` | Limits for attachment downloads and exports (the `tools:` config block) |
 | `storage.*` | Whether each database has an encryption key configured. See [encryption.md](encryption.md). |
 
@@ -467,16 +471,17 @@ A selection over `tools.export_max_messages` messages or `tools.export_max_mb`
 in total is refused with 422 before any content is downloaded. It is never
 truncated. Messages are fetched with `BODY.PEEK[]`.
 
-## Intelligence (cache)
+## Intelligence
 
-Nothing populates the senders, knowledge-graph or anomalies tables yet, so
-these routes return empty lists. `GET /api/senders/{address}` still returns
-the count of cached messages from that address.
+These routes read `imap.db`. Sender profiles come from the header scanner and
+cover all history ([intelligence.md](intelligence.md)). Nothing builds the
+knowledge graph or anomalies yet, so `GET /api/kg` and `GET /api/anomalies`
+return empty lists.
 
 | Route | Scope | Query | Response |
 |-------|-------|-------|----------|
-| `GET /api/senders` | `read` | `role`, `domain`, `limit` (default 50, max 500) | `{count, senders: [...]}` |
-| `GET /api/senders/{address}` | `read` | | Sender fields plus `cached_messages`, `relationships`, `anomalies`. 404 when there is neither a profile nor cached mail. |
+| `GET /api/senders` | `read` | `role`, `domain`, `limit` (default 50, max 500) | `{count, senders: [...]}`, most messages first |
+| `GET /api/senders/{address}` | `read` | | Profile fields ([intelligence.md](intelligence.md#what-a-profile-holds)) plus `cached_messages`, `scan_complete`, `relationships`, `anomalies`. 404 when there is neither a profile nor cached mail. |
 | `GET /api/kg` | `read` | `entity`, `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence}]}` |
 | `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [...]}` |
 

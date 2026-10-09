@@ -1,13 +1,14 @@
 # Known limitations
 
-This page lists what imap-mcp does not do yet, as of 0.11.0, what you will see
+This page lists what imap-mcp does not do yet, as of 0.12.0, what you will see
 because of it, and how to work around it where possible. Planned work is
 tracked in [plans/README.md](plans/README.md).
 
 | Limitation | You will see | Workaround |
 |------------|--------------|------------|
 | [Cross-account search covers the cache window by default](#cross-account-search-covers-the-cache-window-by-default) | Older mail missing from `cross_account_search` | Pass `live: true` |
-| [Intelligence tables are never filled](#intelligence-tables-are-never-filled) | Empty sender profiles, knowledge graph and anomalies | Use `top_senders`, `get_sender_history`, `/api/query` on `messages` |
+| [Knowledge graph and anomalies are not built yet](#knowledge-graph-and-anomalies-are-not-built-yet) | `kg_query` and `get_anomalies` return nothing | `get_sender_profile` (counts, reply times, DKIM/DMARC results) |
+| [Sender profiles fill in during the first scan](#sender-profiles-fill-in-during-the-first-scan) | Partial counts and `unknown` roles for a while after first start | Wait for `scan_complete: true` |
 | [`search_messages` is plain IMAP SEARCH](#search_messages-is-plain-imap-search) | `hall`/`wing`/`room` have no effect; INBOX only unless a folder is given | `semantic_search`, or `/api/query` filtered on `hall`/`wing`/`room` |
 | [SMTP send uses password auth only](#smtp-send-uses-password-auth-only) | OAuth-only accounts cannot send | Configure a password or app password for SMTP |
 | [No IMAP IDLE](#no-imap-idle) | New mail shows up in the cache after the next sync, not instantly | Lower `sync.interval_minutes`, or call `sync_account` |
@@ -23,24 +24,35 @@ SEARCH on each account instead, which covers full history but only one folder
 per account (default INBOX). `get_thread` has no such gap: it searches the
 server automatically when a thread reaches outside the window.
 
-## Intelligence tables are never filled
+## Knowledge graph and anomalies are not built yet
 
-The cache has tables for sender profiles (`senders`), a knowledge graph
-(`kg_entities`, `kg_relationships`) and anomalies (`anomalies`), but nothing
-writes to them yet. The code that builds them is planned work.
+Sender profiles are built (see [intelligence.md](intelligence.md)). The
+knowledge graph (`kg_entities`, `kg_relationships`) and the anomaly log
+(`anomalies`) are not filled yet; that is planned work
+([plan](plans/2026-10-09-intelligence-and-stubs.md), P3 and P4).
 
 Effect:
 
-- `get_sender_profile`, `kg_query` and `get_anomalies` return empty results.
-- `GET /api/senders`, `/api/senders/{address}`, `/api/kg` and `/api/anomalies`
-  return empty results.
-- `/api/query` on the `senders`, `anomalies` and `kg` views returns no rows.
+- `kg_query` and `get_anomalies` return empty results, and so do
+  `GET /api/kg` and `GET /api/anomalies`.
+- The `relationships` and `anomalies` lists in a sender profile are empty.
+- `/api/query` on the `kg` and `anomalies` views returns no rows.
 - The `anomaly.detected` event is never published, so webhooks subscribed to
   it never fire.
 
-Workarounds: `top_senders` ranks a folder's senders, `get_sender_history`
-lists a sender's messages, and `/api/query` on the `messages` view can group
-and count by sender (see [query.md](query.md)).
+Workaround: a sender profile already carries the raw signals the anomaly
+detector will use: first contact, counts, reply times and DKIM/DMARC
+pass/fail counts.
+
+## Sender profiles fill in during the first scan
+
+After the first start (or an upgrade from 0.11), the scanner reads all of
+your history at `intelligence.backfill_per_minute` messages per minute. A
+large mailbox takes hours. Until it finishes, counts are partial and many
+roles are `unknown`. Each profile carries `scan_complete`, and
+`/api/health` shows progress under `intelligence`. Roles from the classify
+model arrive more slowly still: a few per tick, and only while the
+enrichment gates allow it.
 
 ## `search_messages` is plain IMAP SEARCH
 

@@ -316,6 +316,8 @@ to 0.10.4 or later.
 | 0.10.0 | `${secret:}` references resolve through datawatch's external-service endpoint: needs datawatch v8.75.0 or later, a service token from `datawatch secrets mint-service-token imap-mcp`, and every secret scoped `service:imap-mcp`. New: `datawatch.ca_file`, `imap-mcp db encrypt`, webhooks, `/api/query`. |
 | 0.10.3 | Clean exit on stop with streams open. |
 | 0.10.4 | Microsoft 365 / Outlook `xoauth2` requests the Microsoft IMAP scope, so Microsoft OAuth accounts work. `auth-setup` checks a random OAuth `state` and listens only on loopback (`127.0.0.1` and `::1`, port 8766). Reading mail (`get_message`, `get_headers`, `detect_subscriptions`, the inbound watcher) no longer marks it read. |
+| 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search` work. New `tools:` config block (defaults are fine). Attachment downloads and exports need the `write` scope. |
+| 0.12.0 | **Back up `imap.db` first.** The intelligence tables move from `cache.db` to `imap.db` (the empty cache copies are dropped; the cache is not rebuilt). A header scanner then reads all of your history once, at `intelligence.backfill_per_minute` (default 600 a minute). Expect a few hours for a large mailbox, with `/api/health` showing progress. Set `intelligence.enabled: false` to skip it. See [intelligence.md](intelligence.md). |
 
 ### The one-time 0.6.0 split
 

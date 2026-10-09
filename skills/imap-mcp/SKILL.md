@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.9.0"
+version: "0.10.0"
 tags:
   - email
   - imap
@@ -113,11 +113,14 @@ user wants gone:
 ### 3. Audit a sender
 
 ```
+get_sender_profile { address: "noreply@example.com" }                       → all history: role, first/last contact, counts each way, reply time, DKIM/DMARC
 search_messages { account, folder: "INBOX", from: "noreply@example.com" }   → live, with total_matches
-get_sender_history { address: "noreply@example.com" }                       → cached mail only (sync window)
+get_sender_history { address: "noreply@example.com" }                       → cached mail only (sync window): subjects
 ```
 
-Summarize volume over time, first/last seen and typical subjects.
+Summarize the role (and `role_source`), volume, first/last contact, whether
+the user ever replies, and typical subjects. If `scan_complete` is false, say
+the counts are still partial.
 
 ### 4. Bulk archive or purge
 
@@ -214,7 +217,7 @@ or dry-run first, get a yes, then change anything. Save reports with
 ```
 search_messages { folder: "INBOX", since: "<yesterday>", flags: "Unseen" }
 top_senders { folder: "INBOX", group_by: "domain" }     → split bulk senders from people
-get_sender_history { address }                          → empty = nothing from them in the cache window
+get_sender_profile { address }                          → 404 or first_seen in the last day = first-time sender
 get_message { folder, uid }                             → only for mail that looks like it needs a person
 write_file { filename: "briefings/<date>.md", content } → sections: Needs you / First-time senders / Noise
 ```
@@ -223,7 +226,7 @@ write_file { filename: "briefings/<date>.md", content } → sections: Needs you 
 
 ```
 detect_subscriptions { folder: "INBOX" }        → senders + unsubscribe links
-get_sender_history { address }                  → volume per sender (cache window)
+get_sender_profile { address }                  → all-history volume, role, whether the user ever replied (sent_count)
 write_file { filename: "subscriptions.md" }     → | sender | count | opened | suggest | unsubscribe |
 ```
 
@@ -262,11 +265,12 @@ Report:
 
 ```
 get_headers { folder, uid }                           → Authentication-Results, Return-Path, Reply-To, Received
-get_sender_history { address }                        → has this address written before?
+get_sender_profile { address }                        → new sender? did its mail use to pass DKIM/DMARC?
 semantic_search { folder, reference_uid: <uid> }      → compare with genuine mail from the brand
 ```
 
-Give a verdict with reasons: SPF/DKIM/DMARC results, a Reply-To domain that
+A known sender (`message_count` high, `dmarc_pass` high) whose message now
+fails DMARC is a strong warning. Give a verdict with reasons: SPF/DKIM/DMARC results, a Reply-To domain that
 doesn't match, a new sender, a link host that doesn't match the brand. Never
 follow links. On a confirmed "bad", `move_message` it to Junk (with approval).
 
@@ -346,6 +350,7 @@ When you run on a schedule with nobody watching:
 | Analytics | `top_senders` | `folder` (INBOX), `top` (30), `scan` (all), `group_by` (`address`/`domain`), `account` | read |
 | | `summarize_folder` | **`folder`**, `account`; returns only `total` and `recent` counts | read |
 | | `detect_subscriptions` | `folder` (INBOX), `limit`, `account` (omit for all accounts) | read |
+| | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |
 | | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
 | Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
 | | `list_rules` | none | read |
@@ -366,7 +371,7 @@ When you run on a schedule with nobody watching:
 
 | Tool | Status |
 |------|--------|
-| `get_sender_profile`, `kg_query`, `get_anomalies` | Registered and callable, but always empty: nothing fills sender profiles, the knowledge graph or anomalies yet |
+| `kg_query`, `get_anomalies` | Registered and callable, but always empty: nothing builds the knowledge graph or anomalies yet (the `relationships` and `anomalies` lists in a sender profile are empty too) |
 
 `search_messages` accepts `hall`, `wing` and `room` but ignores them.
 

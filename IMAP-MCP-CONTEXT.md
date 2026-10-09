@@ -32,9 +32,9 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.11.0 |
+| Current version | 0.12.0 |
 | Location | the repo root |
-| Status | 44 MCP tools registered (no stubs; 3 intelligence tools return empty data until P2–P4); all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
+| Status | 44 MCP tools registered (no stubs); sender profiles built by a header scanner; `kg_query`/`get_anomalies` empty until P3–P4; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
 
 ---
 
@@ -92,7 +92,8 @@ Defaults that matter: server `127.0.0.1:8765`; state DB
 `INBOX` + `\Sent`, 30-day window, every 15 minutes; Ollama at
 `http://localhost:11434` with `nomic-embed-text` (embed) and `qwen3:1.7b`
 (classify); `tools:` attachment inline 64 KB, attachment max 25 MB, export max
-500 messages / 100 MB.
+500 messages / 100 MB; `intelligence:` on, scan every 15 min, backfill
+600 messages/min, batch 200, model roles 20 per tick.
 
 Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
 `IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
@@ -196,6 +197,8 @@ The PGP inbound gate is declared but fails closed until implemented.
 | `internal/mcp/scopes.go` | Tool → scope table; middleware and `tools/list` filter |
 | `internal/mcp/tools/definitions.go` | All tool schemas (names, params, descriptions) |
 | `internal/mcp/tools/impl_*.go` | Tool handlers; `impl_content.go` holds threads, attachments, export, cross-account search |
+| `internal/intel/` | Header scanner (D19, D20, D28): resumable, rate-limited, PEEK-only scan of all folders; sender profiles, hashed per-message index, reply pairing, roles (signals → cached hall tags → classify model via `Pipeline.ClassifyWhenIdle`) |
+| `internal/service/intelstats.go` | Scan progress for `/api/health` |
 | `internal/service/thread.go`, `attachments.go`, `export.go`, `xsearch.go` | Thread lookup (cache + live fallback), attachment list/fetch, .eml/.mbox export, cross-account search (D23–D27) |
 | `internal/api/server.go` | REST router with per-route scopes; SSE `/api/events` |
 | `internal/server/server.go` | Combined HTTP server: `browserGuard` → auth → `/mcp` + `/api` |
@@ -232,7 +235,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Cache | `cache_sweep` (cache only, `dry_run` defaults to true) | admin |
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
 | Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
-| **Always empty** | `get_sender_profile`, `kg_query`, `get_anomalies` | read; nothing populates their tables yet |
+| Intelligence | `get_sender_profile` (built by `internal/intel`); `kg_query`, `get_anomalies` (empty until P3/P4) | read |
 
 Behaviour notes:
 
@@ -270,13 +273,19 @@ Two files since 0.6.0 (D1b), each optionally encrypted (adiantum, Argon2id
 key derivation). `imap-mcp db encrypt` converts an existing plaintext file
 (service stopped; verified before the original is replaced; D14).
 
-**`imap.db`** (state; cannot be rebuilt from IMAP):
+**`imap.db`** (state; cannot be rebuilt from the cache):
 
 ```sql
 rules              -- automation rules (conditions + actions JSON, run_count)
 webhooks           -- registered endpoints (signing secret, active, fail_count)
 webhook_deliveries -- durable outbox (metadata-only payloads, retries)
 inbound_nonces     -- replay protection for inbound commands (account, nonce)
+senders            -- sender profiles: counts each way, dates, reply stats, list/bulk/auto, DKIM/DMARC, role (D19, D20)
+intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash (no addresses/content)
+intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at)
+kg_entities        -- KG nodes                   (not populated yet: P3)
+kg_relationships   -- KG edges, valid_from/to    (not populated yet: P3)
+anomalies          -- anomaly log                (not populated yet: P4)
 ```
 
 **`cache.db`** (disposable; rebuilt from IMAP; dropped and recreated when its
@@ -286,10 +295,6 @@ schema version changes):
 messages          -- cached messages, bodies, flags, hall/wing/room tags, enrichment_status
 messages_fts      -- FTS5 over subject, body_text, from_addr, from_name (trigger-maintained)
 message_vectors   -- float32 embedding blobs (model, dims)
-senders           -- sender profiles            (not populated yet)
-kg_entities       -- KG nodes                   (not populated yet)
-kg_relationships  -- KG edges, valid_from/to    (not populated yet)
-anomalies         -- anomaly log                (not populated yet)
 folders           -- folder metadata
 sync_state        -- per account/folder: UIDVALIDITY, highest_modseq, last_uid
 enrichment_queue  -- pending/processing/done/error jobs, lane 0 = new, 1 = backfill
@@ -385,7 +390,7 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 
 | Item | Notes |
 |------|-------|
-| Intelligence (iteration 3) | Sender-profile builder, KG extractor, anomaly detector: nothing writes `senders`, `kg_*` or `anomalies`; `anomaly.detected` never fires. Content cleaning (`Cleaner`) |
+| Intelligence | KG extractor (P3) and anomaly detector (P4): nothing writes `kg_*` or `anomalies`; `anomaly.detected` never fires. Content cleaning (`Cleaner`) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

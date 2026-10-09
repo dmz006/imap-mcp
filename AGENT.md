@@ -349,6 +349,17 @@ they can be replaced or extended without touching call sites.
   `service:imap-mcp`), are never printed, and are referenced from the config as
   `${secret:…}`. A scheduled `run-rules` job needs the datawatch service token in
   its environment (e.g. a wrapper that loads a 0600 env file).
+- **2026-10-09 — D28 (per-message intelligence index):** `imap.db` keeps one
+  compact row per message seen by the header scan. The row holds:
+  - a hash of the Message-ID;
+  - the date;
+  - the sender id;
+  - the direction (in or out);
+  - a hash of In-Reply-To.
+
+  Rows hold no subjects, bodies or addresses; addresses live only in
+  `senders`. The index gives exact de-duplication across folders and labels,
+  and reply-time pairing over full history. P3 and P4 reuse it.
 - **2026-10-09 — D27 (REST for the P1 tools):** these routes are reads:
   - `GET /api/threads/{thread_id}`;
   - `GET …/messages/{uid}/attachments`;

@@ -6,6 +6,54 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-09
+
+### Added
+- **Sender profiles** (plan P2; D19, D20, D28). A background scanner reads the
+  headers of every folder and builds a profile per sender in `imap.db`. On
+  Gmail it reads All Mail only; elsewhere it skips `\Junk`, `\Drafts` and
+  `intelligence.exclude_folders`. Each profile holds:
+  - first and last contact;
+  - messages received and sent;
+  - list, bulk and auto-submitted counts;
+  - DKIM and DMARC pass/fail counts, from the receiving server's
+    `Authentication-Results` only;
+  - reply count and average reply time;
+  - a role.
+
+  The scanner opens folders read-only and fetches with `PEEK`. It never
+  reads bodies or subjects and never marks mail read. It is resumable and
+  rate-limited. The first pass covers all history, and roles and reply times
+  fill in every 5,000 messages; later ticks read only new UIDs.
+  `get_sender_profile`, `GET /api/senders` and the `/api/query` `senders`
+  view now return data. See [docs/intelligence.md](docs/intelligence.md).
+- **Roles** come from header signals, then the majority enrichment tag of the
+  sender's cached mail, then the classify model for senders still unknown.
+  The model sees only the address, the name and a few subjects, and runs
+  through the enrichment backfill gates. Each profile records its
+  `role_source`.
+- **Per-message hash index** (D28). One row per message in `imap.db`: a
+  Message-ID hash, the date, the sender id, the direction and an In-Reply-To
+  hash. It holds no addresses or content. It keeps a message counted once
+  across folders, labels and rescans after a UIDVALIDITY change, and pairs
+  replies over full history.
+- **`intelligence:` config block** (`enabled`, `scan_interval_minutes`,
+  `backfill_per_minute`, `batch_size`, `exclude_folders`, `llm_roles`,
+  `llm_roles_per_tick`) with `IMAP_MCP_INTELLIGENCE_*` overrides.
+  `/api/health` gains an `intelligence` block with scan progress and role
+  counts (no addresses). Sender profiles gain `scan_complete`.
+- `/api/query` `senders` view: new fields `role_source`, `reply_count`,
+  `list_count`, `bulk_count`, `auto_count`, `dkim_pass`, `dkim_fail`,
+  `dmarc_pass`, `dmarc_fail`.
+- Companion skill 0.10.0: the sender audit, briefing, subscription and
+  phishing workflows use `get_sender_profile`.
+
+### Changed
+- **The intelligence tables moved from `cache.db` to `imap.db`** (`senders`,
+  `kg_entities`, `kg_relationships`, `anomalies`). They were never filled in
+  `cache.db`, so the empty copies are dropped at open and the cache is kept
+  (no rebuild). Back up `imap.db` before upgrading.
+
 ## [0.11.0] - 2026-10-09
 
 The last four stub tools are implemented, so every registered tool now does

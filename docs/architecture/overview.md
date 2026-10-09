@@ -59,6 +59,7 @@ wins. Current gaps are listed in [known limitations](../known-limitations.md).
 | Sync engine | `internal/sync` | Per account and configured folder: resolve SPECIAL-USE (`\Sent`), EXAMINE (read-only), `UID SEARCH SINCE` the window, fetch new mail, drop gone mail from the cache, update flags with CONDSTORE where available, rebuild a folder on UIDVALIDITY change. Never changes the mailbox |
 | Cache | `internal/db` | `cache.db`: messages, FTS5, vectors, sync state, enrichment queue. Disposable |
 | Enrichment pipeline | `internal/enrichment` | Embeds and classifies cached mail. See below |
+| Sender intelligence | `internal/intel` | Resumable, PEEK-only header scan of all folders; sender profiles, hashed per-message index, reply pairing and roles in `imap.db`. See [intelligence.md](../intelligence.md) |
 | Service layer | `internal/service` | One implementation of each operation, called by MCP tools and REST handlers. Typed errors map to REST status codes and MCP tool errors. Some MCP cleanup tools (`move_bulk`, `flag_bulk`, `purge_sender`, `label_*`, `empty_trash`, `top_senders`, `summarize_folder`, `detect_subscriptions`) still call the IMAP pool directly |
 | MCP server | `internal/mcp` | Registers 44 tools; scope middleware and `tools/list` filter when HTTP auth is on |
 | REST API | `internal/api` | chi router, one scope per route, SSE at `/api/events` |
@@ -67,7 +68,7 @@ wins. Current gaps are listed in [known limitations](../known-limitations.md).
 | Event bus | `internal/bus` | In-process pub/sub; `Publish` is synchronous, `PublishAsync` uses a goroutine |
 | Webhooks | `internal/webhook` | Enqueuer writes one outbox row per matching webhook; Dispatcher (in `serve`) delivers with retries |
 | Rules | `internal/service/rules.go`, `internal/db/rules.go` | Persisted match → action rules (`trash`, `move`, `flag`, `seen`) run on demand or by `run-rules` |
-| Query DSL | `internal/query` | `/api/query` JSON compiled to parameterized SQL over read-only cache views |
+| Query DSL | `internal/query` | `/api/query` JSON compiled to parameterized SQL over read-only views (cache and state) |
 | Inbound trust and comm | `internal/inbound`, `internal/trust` | Watcher polls inbound-enabled folders every 60 s; gates decide whether a command email becomes `inbound.command` |
 | SMTP | `internal/smtp` | Per-account outbound mail, STARTTLS or implicit TLS, PLAIN auth, header-injection safe |
 | Output sandbox | `internal/output` | The only file writer in the MCP layer; confined to `working_dir` |
@@ -142,6 +143,11 @@ Operator data that cannot be rebuilt from IMAP. Default path
 | `webhooks` | URL, subscribed event types, signing secret, active, fail_count |
 | `webhook_deliveries` | Durable outbox: delivery id, event, metadata-only payload, status, attempts, next attempt |
 | `inbound_nonces` | `(account, nonce)` pairs already honoured, for replay protection |
+| `senders` | Sender profiles: contact dates, counts each way, reply stats, list/bulk/auto counts, DKIM/DMARC results, role and its source. Built by the header scanner |
+| `intel_messages` | D28 index: one row per message (Message-ID hash, date, sender id, direction, In-Reply-To hash); no addresses or content |
+| `intel_scan` | Header-scan progress per account and folder |
+| `kg_entities`, `kg_relationships` | Temporal knowledge graph (not populated yet: plan P3) |
+| `anomalies` | Anomaly log (not populated yet: plan P4) |
 
 ### `cache.db`: cache
 
@@ -156,12 +162,10 @@ version changes the file is dropped and recreated.
 | `folders` | Folder metadata | |
 | `sync_state` | Per account/folder: UIDVALIDITY, highest_modseq, last UID | By sync |
 | `enrichment_queue` | Status, lane (0 new, 1 backfill), attempts, last error | By sync and enrichment |
-| `senders` | Sender profiles | Not yet (iteration 3) |
-| `kg_entities`, `kg_relationships` | Temporal knowledge graph | Not yet (iteration 3) |
-| `anomalies` | Anomaly log | Not yet (iteration 3) |
 
-The `/api/query` DSL reads the views `messages`, `senders`, `anomalies` and
-`kg`; the last three return nothing until iteration 3 fills their tables.
+The `/api/query` DSL reads the view `messages` from `cache.db` and the views
+`senders`, `anomalies` and `kg` from `imap.db`; `anomalies` and `kg` return
+nothing until plan P3/P4 fill them.
 
 ---
 

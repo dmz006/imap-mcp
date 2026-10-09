@@ -35,6 +35,7 @@ ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-44
 | "Find mail similar to the invoice from yesterday." | `semantic_search` with `reference_uid` |
 | "Is enrichment caught up?" | `enrichment_status` |
 | "Forget the cached copies of Archive older than 90 days." | `cache_sweep` (dry run first) |
+| "Who is billing@example.com to me? Do I ever answer them?" | `get_sender_profile` (role, counts each way, average reply time) |
 | "Show me the whole conversation this came from." | `get_thread` with the message's `thread_id` |
 | "Search all my accounts for anything from example.net about the renewal." | `cross_account_search` (`live: true` for older mail) |
 | "Save the PDF from that invoice." | `get_attachments` to list, then with `part` to save |
@@ -381,9 +382,9 @@ Outputs below are illustrative, with `example.com` senders.
 1. `search_messages` with `since` and `flags: "Unseen"` lists the new mail.
 2. `top_senders` with `group_by: "domain"` separates the bulk senders from the
    people.
-3. `get_sender_history` on each unfamiliar sender. It reads the cache, so an
-   empty history means nothing from them within the sync window, which is a
-   good first-time-sender signal.
+3. `get_sender_profile` on each unfamiliar sender. A 404, or a `first_seen`
+   within the last day, means a first-time sender. The profile covers all of
+   your history, not just the cache window.
 4. `get_message` only on the messages that look like they need a person, so the
    agent can say what each one asks for.
 5. `write_file` saves the briefing.
@@ -410,10 +411,11 @@ look at everything and change nothing.
 
 1. `detect_subscriptions` finds senders with a `List-Unsubscribe` header and
    their unsubscribe links.
-2. For each candidate, the agent counts its messages and how many you opened
-   with two `/api/query` calls (`group_by: ["from_addr"]`, one with `seen`
-   `eq true`; this needs an `admin` token). Without one, it falls back to
-   `get_sender_history`, which lists each sender's cached mail.
+2. `get_sender_profile` on each candidate gives its all-history volume, its
+   role, and whether you have ever written to it (`sent_count`). For "how many
+   did I open", the agent counts with two `/api/query` calls on the
+   `messages` view (`group_by: ["from_addr"]`, one with `seen` `eq true`;
+   needs an `admin` token).
 3. `write_file` saves `subscriptions.md`:
 
 ```markdown
@@ -497,8 +499,10 @@ drop that filter and let the agent judge from the sender.
 
 1. `get_headers` returns `Authentication-Results` (SPF, DKIM, DMARC),
    `Return-Path`, `Reply-To` and the `Received` chain.
-2. `get_sender_history` shows whether this address has written before (within
-   the cache window).
+2. `get_sender_profile` shows whether this address has written before, over
+   all history, and how its mail usually authenticates. A sender whose mail
+   has always passed DMARC (`dmarc_pass` high, `dmarc_fail` 0) but whose
+   message now fails it is a strong warning.
 3. `semantic_search` with `folder: "INBOX"`, `reference_uid: 9120` compares it with the real
    resets from that service, if any are in the cache.
 4. `get_attachments` without `part` lists any attachments by name and type,
@@ -631,10 +635,10 @@ selection over a cap is refused with a clear message, never cut short.
 
 ### Not there yet
 
-`get_sender_profile`, `kg_query` and `get_anomalies` work, but nothing fills
-sender profiles, the knowledge graph or anomalies yet; they return empty
-results. Building them is planned
-([plans](plans/2026-10-09-intelligence-and-stubs.md), P2–P4). The workflows
-above avoid them: for example, 10.6 reconstructs
-sender history with `get_sender_history` instead of `get_sender_profile`. See
+`kg_query` and `get_anomalies` work, but nothing builds the knowledge graph or
+anomalies yet, so they return empty results. That is planned
+([plans](plans/2026-10-09-intelligence-and-stubs.md), P3–P4). Sender profiles
+are built ([intelligence.md](intelligence.md)), and the workflows above use
+them where they help. For example, 10.6 reads a sender's DMARC history from
+its profile instead of waiting for `get_anomalies`. See
 [known-limitations.md](known-limitations.md).
