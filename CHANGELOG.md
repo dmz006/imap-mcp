@@ -256,6 +256,12 @@ All notable changes to imap-mcp are documented here. The format is based on
   Non-browser clients (curl, datawatch, Claude Code) are unaffected.
 
 ### Fixed
+- **Clean stop with open streams (v0.10.3).** `serve` exited with status 1
+  ("context deadline exceeded") on every stop while a client held a long-lived
+  stream open (the datawatch `/api/events` SSE consumer, MCP streamable GET).
+  Requests now inherit the server context, so streams end as soon as shutdown
+  starts; any handler that still lingers past the 5 s grace period has its
+  connection closed instead of failing the stop.
 - **Permanent deletes now remove only the targeted messages (v0.10.0).** Before,
   `delete_message permanent`, `purge_sender permanent` and the move-by-copy
   fallback ran a folder-wide `EXPUNGE`. That also destroyed any other message

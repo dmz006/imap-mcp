@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -80,6 +81,9 @@ func (s *Server) handler() http.Handler {
 	return browserGuard(s.cfg.Server.Host, s.authn.Middleware(r))
 }
 
+// shutdownTimeout bounds graceful shutdown before connections are dropped.
+var shutdownTimeout = 5 * time.Second
+
 func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.Host, s.cfg.Server.Port)
 	s.http = &http.Server{
@@ -88,6 +92,9 @@ func (s *Server) Start(ctx context.Context) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// Requests inherit ctx, so long-lived streams (/api/events SSE, MCP
+		// streamable GET) end when shutdown starts instead of holding it open.
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 
 	s.log.Info("server listening",
@@ -102,9 +109,15 @@ func (s *Server) Start(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		return s.http.Shutdown(shutCtx)
+		if err := s.http.Shutdown(shutCtx); err != nil {
+			// A handler ignored cancellation; drop its connection rather
+			// than exit non-zero on a requested stop.
+			s.log.Warn("forcing open connections closed at shutdown", "err", err)
+			_ = s.http.Close()
+		}
+		return nil
 	case err := <-errCh:
 		if err != http.ErrServerClosed {
 			return err
