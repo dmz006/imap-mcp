@@ -83,7 +83,8 @@ func (p *Pipeline) Run(ctx context.Context) {
 
 func (p *Pipeline) processBatch(ctx context.Context) error {
 	rows, err := p.db.SQL().QueryContext(ctx, `
-		SELECT eq.id, eq.message_id, m.subject, m.body_text, m.from_addr, m.from_name, m.hall
+		SELECT eq.id, eq.message_id, COALESCE(m.subject, ''), COALESCE(m.body_text, ''), m.from_addr,
+		       COALESCE(m.from_name, ''), COALESCE(m.hall, 'unclassified')
 		FROM enrichment_queue eq
 		JOIN messages m ON m.id = eq.message_id
 		WHERE eq.status = 'pending'
