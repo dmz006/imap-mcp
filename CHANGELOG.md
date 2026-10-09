@@ -133,6 +133,13 @@ All notable changes to imap-mcp are documented here. The format is based on
   dropped and rebuilt from IMAP on first start.
 
 ### Changed
+- **datawatch secrets come from the external-service endpoint (D15).**
+  `${secret:name}` now resolves via `GET /api/external/secrets/{name}`
+  (datawatch v8.75.0 or later) with imap-mcp's service token, minted by the
+  operator with `datawatch secrets mint-service-token imap-mcp`. Secrets must
+  be scoped `service:imap-mcp`. The old `/api/agents/secrets/` path is no
+  longer used. Errors now say what to fix (401: re-mint the token; 403/404:
+  missing or unscoped secret).
 - **Storage (v0.6.0).** The SQLite driver is now `github.com/ncruces/go-sqlite3`
   (pure Go, no cgo), replacing `modernc.org/sqlite`. Data now lives in two files:
   - `db.path` (`imap.db`) is the state DB: rules, webhooks and inbound nonces.

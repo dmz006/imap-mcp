@@ -308,9 +308,13 @@ log:
 # no secret is ever written into a config file or committed to a repo.
 #
 #   export DATAWATCH_API_URL=http://localhost:7777
-#   export DATAWATCH_SECRETS_TOKEN=<datawatch agent-scoped secrets token>
+#   export IMAP_MCP_DATAWATCH_TOKEN=<imap-mcp service token>
+#
+# Mint the service token yourself in a terminal (datawatch v8.75.0+):
+#   datawatch secrets mint-service-token imap-mcp
+# and set every secret imap-mcp reads with --scope service:imap-mcp.
+# Secrets resolve via GET {api_url}/api/external/secrets/{name}.
 #
 # datawatch:
 #   api_url: ${DATAWATCH_API_URL}
-#   # Prefer an agent-scoped secrets token (least privilege) over the operator token.
-#   token: ${DATAWATCH_SECRETS_TOKEN}
+#   token: ${IMAP_MCP_DATAWATCH_TOKEN}

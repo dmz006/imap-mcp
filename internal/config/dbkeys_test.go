@@ -10,7 +10,7 @@ import (
 
 func TestResolveDBKeys(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/agents/secrets/cache_key" {
+		if r.URL.Path == "/api/external/secrets/cache_key" {
 			_, _ = w.Write([]byte(`{"name":"cache_key","value":"from-datawatch"}`))
 			return
 		}

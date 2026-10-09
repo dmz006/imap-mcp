@@ -43,7 +43,7 @@ func TestResolveSecrets_FetchesFromDatawatch(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("missing/wrong bearer token: %q", got)
 		}
-		if r.URL.Path != "/api/agents/secrets/mail_pw" {
+		if r.URL.Path != "/api/external/secrets/mail_pw" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -73,5 +73,46 @@ func TestResolveSecrets_DatawatchError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "404") {
 		t.Fatalf("error should surface status code, got: %v", err)
+	}
+}
+
+func TestResolveSecrets_ExternalEndpointErrors(t *testing.T) {
+	cases := []struct {
+		status int
+		body   string
+		want   string
+	}{
+		{http.StatusUnauthorized, "unauthorized", "mint-service-token imap-mcp"},
+		{http.StatusForbidden, "forbidden", "--scope service:imap-mcp"},
+		{http.StatusOK, `{"name":"mail_pw","value":""}`, "empty value"},
+	}
+	for _, c := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(c.status)
+			_, _ = w.Write([]byte(c.body))
+		}))
+		cfg := cfgWithPassword("${secret:mail_pw}", &DatawatchConfig{APIURL: srv.URL, Token: "service-token-value"})
+		err := resolveSecrets(cfg)
+		srv.Close()
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("status %d: got %v, want %q", c.status, err, c.want)
+		}
+		if err != nil && strings.Contains(err.Error(), "service-token-value") {
+			t.Errorf("status %d: error leaks the token", c.status)
+		}
+	}
+}
+
+func TestResolveSecrets_EscapesName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/api/external/secrets/a.b-c_d" {
+			t.Errorf("path = %s", r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"name":"a.b-c_d","value":"v"}`))
+	}))
+	defer srv.Close()
+	cfg := cfgWithPassword("${secret:a.b-c_d}", &DatawatchConfig{APIURL: srv.URL + "/", Token: "t"})
+	if err := resolveSecrets(cfg); err != nil {
+		t.Fatal(err)
 	}
 }

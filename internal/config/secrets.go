@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -33,8 +34,10 @@ import (
 type DatawatchConfig struct {
 	// APIURL is the base URL of the datawatch HTTP API, e.g. http://localhost:7777.
 	APIURL string `yaml:"api_url"`
-	// Token is a datawatch scoped secrets token (Bearer). Prefer an
-	// agent-scoped token over the operator token — least privilege.
+	// Token is imap-mcp's datawatch service token (Bearer), minted by the
+	// operator with `datawatch secrets mint-service-token imap-mcp`. It can
+	// read only secrets scoped service:imap-mcp (AGENT.md D15). Always an
+	// ${ENV} reference, never a literal.
 	Token string `yaml:"token"`
 }
 
@@ -145,14 +148,14 @@ func (r *secretResolver) expand(s string) (string, error) {
 	return out, nil
 }
 
-// fetch retrieves a single secret value from datawatch, using the
-// agent-scoped endpoint (least privilege). Results are cached per resolver.
+// fetch retrieves a single secret value from datawatch's external-service
+// endpoint (AGENT.md D15). Results are cached per resolver.
 func (r *secretResolver) fetch(name string) (string, error) {
 	if v, ok := r.cache[name]; ok {
 		return v, nil
 	}
-	url := fmt.Sprintf("%s/api/agents/secrets/%s", r.apiURL, name)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	endpoint := r.apiURL + "/api/external/secrets/" + url.PathEscape(name)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", fmt.Errorf("secret %q: build request: %w", name, err)
 	}
@@ -166,7 +169,13 @@ func (r *secretResolver) fetch(name string) (string, error) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return "", fmt.Errorf("secret %q: datawatch rejected the service token (401); mint one with `datawatch secrets mint-service-token imap-mcp`", name)
+	case http.StatusForbidden, http.StatusNotFound:
+		return "", fmt.Errorf("secret %q: not found or not scoped to this service (%d); set it with --scope service:imap-mcp", name, resp.StatusCode)
+	default:
 		return "", fmt.Errorf("secret %q: datawatch returned %d: %s", name, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
@@ -176,6 +185,9 @@ func (r *secretResolver) fetch(name string) (string, error) {
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return "", fmt.Errorf("secret %q: decode datawatch response: %w", name, err)
+	}
+	if out.Value == "" {
+		return "", fmt.Errorf("secret %q: datawatch returned an empty value", name)
 	}
 	r.cache[name] = out.Value
 	return out.Value, nil

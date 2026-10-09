@@ -53,8 +53,10 @@ plain value.
 
 1. Store the secret in datawatch (operator):
    ```
-   datawatch secrets set gmail_app_password
+   datawatch secrets set gmail_app_password --scope service:imap-mcp
    ```
+   Every secret imap-mcp reads must carry `--scope service:imap-mcp`; it cannot
+   read anything else.
 2. Reference it in the imap-mcp config and add a `datawatch:` block:
    ```yaml
    accounts:
@@ -66,22 +68,32 @@ plain value.
 
    datawatch:
      api_url: ${DATAWATCH_API_URL}        # e.g. http://localhost:7777
-     token: ${DATAWATCH_SECRETS_TOKEN}    # agent-scoped token (least privilege)
+     token: ${IMAP_MCP_DATAWATCH_TOKEN}   # imap-mcp service token (least privilege)
    ```
-3. Export the two refs and start imap-mcp:
+3. Mint imap-mcp's service token **yourself, in a real terminal** (never via an
+   agent or a chat passthrough; the token is shown once):
+   ```
+   datawatch secrets mint-service-token imap-mcp
+   ```
+4. Export the two refs (for a systemd service, put them in an `EnvironmentFile`
+   with mode 0600, outside any repo) and start imap-mcp:
    ```
    export DATAWATCH_API_URL=http://localhost:7777
-   export DATAWATCH_SECRETS_TOKEN=<datawatch agent-scoped secrets token>
+   export IMAP_MCP_DATAWATCH_TOKEN=<the service token>
    ./imap-mcp serve --config config.yaml
    ```
 
-**How it resolves:** imap-mcp calls `GET {api_url}/api/agents/secrets/{name}`
-with the bearer token at startup, once per secret (cached).
+**How it resolves:** imap-mcp calls datawatch's external-service endpoint
+`GET {api_url}/api/external/secrets/{name}` (datawatch v8.75.0 or later) with
+the service token, once per secret per process (cached). `serve` and
+`run-rules` use the same path (AGENT.md D15).
 
 **Failure modes (by design):**
 - `${secret:...}` used but no `datawatch:` block → startup error (no silent
   placeholder).
 - datawatch unreachable / secret missing → startup error naming the secret.
+- 401 → the service token is wrong or revoked: mint a new one.
+- 403/404 → the secret does not exist or is not scoped `service:imap-mcp`.
 
 **Security:** `api_url`/`token` must be `${ENV_VAR}` references — never write a
 literal token into a config file or repo.

@@ -59,7 +59,7 @@ func TestServeAuthResolvesSecret(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/api/agents/secrets/imap_mcp_token_datawatch":
+		case "/api/external/secrets/imap_mcp_token_datawatch":
 			_, _ = w.Write([]byte(`{"name":"imap_mcp_token_datawatch","value":"` + goodTok + `"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
