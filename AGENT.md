@@ -252,6 +252,8 @@ they can be replaced or extended without touching call sites.
   sync cache is **whole-database** (SQLCipher-style), not field-level. When it's on,
   every column, the FTS index, and the vectors live inside the encrypted file.
   See `docs/plans/2026-10-08-sync-cache.md`.
+- **2026-10-08 — D1a (encryption library):** use `github.com/ncruces/go-sqlite3`
+  with the `vfs/adiantum` VFS (pure Go, no cgo). Do not add cgo SQLite drivers.
 
 ---
 
