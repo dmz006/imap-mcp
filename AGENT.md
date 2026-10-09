@@ -325,6 +325,10 @@ they can be replaced or extended without touching call sites.
   (`datawatch secrets mint-service-token imap-mcp`), never through an agent; it
   reaches imap-mcp through an `${ENV}` reference only. Secrets are scoped
   `service:imap-mcp`. There is no fallback to the agent endpoint.
+- **2026-10-09 — D15a (datawatch TLS trust):** datawatch's self-signed
+  certificate is pinned with `datawatch.ca_file`, added to the system roots
+  for every imap-mcp → datawatch call. TLS verification is never disabled, and
+  there is no skip-verify option. A missing or unusable `ca_file` fails closed.
 
 ---
 
