@@ -7,7 +7,7 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
-- **`/api/query` JSON query DSL (D17).** `POST /api/query` answers ad-hoc
+- **`/api/query` JSON query DSL (v0.10.0, D17).** `POST /api/query` answers ad-hoc
   questions over fixed, read-only views of the cache: `messages`, `senders`,
   `anomalies` and `kg`.
   - A query can use allowlisted fields, filters
@@ -20,7 +20,7 @@ All notable changes to imap-mcp are documented here. The format is based on
   - Queries run read-only with a 10-second timeout and need the `admin`
     scope.
   - `GET /api/query` describes the views. See `docs/query.md`.
-- **Webhook delivery (D16).** `POST /api/webhooks {url, events}` registers an
+- **Webhook delivery (v0.10.0, D16).** `POST /api/webhooks {url, events}` registers an
   endpoint and returns its signing secret. The secret is shown only once.
   - **Durable outbox.** Deliveries are stored in `imap.db`
     (`webhook_deliveries`). They are retried with exponential backoff (30 s up
@@ -44,12 +44,12 @@ All notable changes to imap-mcp are documented here. The format is based on
     its events and `serve` delivers them.
   - The outbox prunes delivered rows after 7 days and failed rows after
     30 days.
-- **`datawatch.ca_file` (D15a).** Pins datawatch's self-signed TLS certificate
+- **`datawatch.ca_file` (v0.10.0, D15a).** Pins datawatch's self-signed TLS certificate
   (e.g. `~/.datawatch/tls/server/cert.pem`) for every call imap-mcp makes to
   datawatch: secrets, the capacity gate and the LLM proxy. It is trusted in
   addition to the system roots. Verification is never disabled, and a missing
   or invalid file fails startup.
-- **`imap-mcp db encrypt` (D14).** Encrypts an existing plaintext `imap.db`
+- **`imap-mcp db encrypt` (v0.10.0, D14).** Encrypts an existing plaintext `imap.db`
   and/or `cache.db` in place with the configured keys (`--only state|cache`).
   - It refuses while another process has the file open, so stop the service
     first.
@@ -59,7 +59,7 @@ All notable changes to imap-mcp are documented here. The format is based on
   - It lists other plaintext copies, such as the pre-0.6.0 backup, but never
     deletes them.
   - Re-running is safe: already-encrypted files are skipped.
-- **REST platform, in progress for v0.10.0 (D13).**
+- **REST platform (v0.10.0, D13).**
   - **Shared service layer.** Every operation is implemented once in
     `internal/service`, and both MCP tools and REST call it. Existing MCP
     output shapes are unchanged.
@@ -175,7 +175,7 @@ All notable changes to imap-mcp are documented here. The format is based on
   dropped and rebuilt from IMAP on first start.
 
 ### Changed
-- **datawatch secrets come from the external-service endpoint (D15).**
+- **datawatch secrets come from the external-service endpoint (v0.10.0, D15).**
   `${secret:name}` now resolves via `GET /api/external/secrets/{name}`
   (datawatch v8.75.0 or later) with imap-mcp's service token, minted by the
   operator with `datawatch secrets mint-service-token imap-mcp`. Secrets must

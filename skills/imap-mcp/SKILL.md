@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: "0.5.0"
+version: "0.6.0"
 tags:
   - email
   - imap
@@ -159,6 +159,18 @@ while the GPU is busy with other work. `enrichment_status` shows queue depth,
 throughput and any pause or backoff reason. Use it to explain why semantic
 results are incomplete before blaming the data. `trigger_enrichment` (admin)
 forces a run.
+
+**Access is token-scoped (0.5.3+).** Your token decides which tools you
+see: `read`, `write` (mailbox changes), `send` and `admin`. If a tool you
+expect is missing, the token lacks its scope. Say so; don't work around it.
+
+**REST-only features (admin token, 0.10.0+):**
+- `POST /api/query`: JSON questions over the cache, e.g. top sender domains or
+  unread-flagged counts per folder. See `docs/query.md`.
+- `/api/webhooks`: push notifications. Payloads carry IDs only; fetch details
+  with your own token. See `docs/webhooks.md`.
+
+Prefer the MCP tools when they cover the task.
 
 Some intelligence tools require the optional Ollama-backed enrichment pipeline.
 If one returns "not yet implemented," fall back to the IMAP-level tools

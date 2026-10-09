@@ -31,7 +31,7 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.9.0 |
+| Current version | 0.10.0 |
 | Location | `/home/dmz/workspace/imap-mcp` |
 | Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
 
