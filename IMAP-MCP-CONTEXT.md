@@ -317,33 +317,36 @@ Current event types: `message.synced`, `message.updated`, `message.deleted`,
 
 ---
 
-## REST API Endpoints (v0.1.0)
+## REST API Endpoints (v0.10.0, in progress)
 
-**Auth (v0.5.3):** every route except `/api/health`, and `/mcp`, requires
-`Authorization: Bearer <token>` with the route's scope (`read`, `write`,
-`send`, `admin`); see `server.auth` in `config.example.yaml`. The tool→scope
-table is `internal/mcp/scopes.go`; REST scopes are declared in
-`internal/api/server.go` `Router`.
+All routes except `/api/health` require a bearer token with the listed scope
+(`internal/api/server.go` `Router`). Every handler calls `internal/service`,
+which is shared with the MCP tools.
 
 ```
-GET  /api/health                          ✅ implemented
-GET  /api/accounts                        ✅ implemented
-GET  /api/events                          ✅ implemented (SSE; datawatch consumes inbound.command)
-POST /api/accounts/{account}/messages/send ✅ implemented (SMTP send; account may be _default)
-POST /api/accounts/{account}/sync         501 stub
-GET  /api/accounts/{account}/folders      501 stub
-GET  /api/accounts/{account}/folders/{folder}/messages   501 stub
-GET  /api/search                          501 stub
-POST /api/search/semantic                 501 stub
-GET  /api/senders                         501 stub
-GET  /api/kg                              501 stub
-GET  /api/anomalies                       501 stub
-POST /api/webhooks                        501 stub
-POST /api/rules                           501 stub
-POST /api/query                           501 stub  ← algorithmic layer entry point
+GET    /api/health                                         open
+GET    /api/accounts                                       read
+POST   /api/accounts/{account}/sync                        admin
+GET    /api/accounts/{account}/stats                       read
+GET    /api/accounts/{account}/folders                     read
+GET    /api/accounts/{account}/folders/{folder}/messages   read   (?limit&offset&order; folder %2F-encoded)
+GET    /api/accounts/{account}/folders/{folder}/messages/{uid}          read
+DELETE /api/accounts/{account}/folders/{folder}/messages/{uid}          write (?permanent=true)
+PUT    /api/accounts/{account}/folders/{folder}/messages/{uid}/flags    write
+POST   /api/accounts/{account}/folders/{folder}/messages/{uid}/move     write
+POST   /api/accounts/{account}/messages/send               send
+GET    /api/search                                         read
+POST   /api/search/semantic                                read
+GET    /api/senders, /api/senders/{address}                read
+GET    /api/kg, /api/anomalies                             read
+GET    /api/enrichment/status                              read
+POST   /api/enrichment/trigger                             admin
+POST   /api/cache/sweep                                    admin
+GET|POST /api/rules, PUT|DELETE /api/rules/{id}, POST /api/rules/{id}/test   read / write
+GET    /api/events                                         read (SSE)
+GET|POST /api/webhooks, DELETE /api/webhooks/{id}          admin — 501 pending webhook DIP
+POST   /api/query                                          admin — 501 pending query DSL DIP
 ```
-
----
 
 ## Next Iterations
 

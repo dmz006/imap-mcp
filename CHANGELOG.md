@@ -7,6 +7,31 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **REST platform, in progress for v0.10.0 (D13).**
+  - **Shared service layer.** Every operation is implemented once in
+    `internal/service`, and both MCP tools and REST call it. Existing MCP
+    output shapes are unchanged.
+  - **New REST routes:**
+    - Folders: `GET /api/accounts/{a}/folders`.
+    - Messages: paged `GET .../messages` (`limit`, `offset`, `order`),
+      `GET`/`DELETE .../messages/{uid}` (`?permanent=true`),
+      `PUT .../flags` and `POST .../move`.
+    - `GET /api/search`, `POST /api/accounts/{a}/sync`,
+      `GET /api/accounts/{a}/stats`.
+    - Rules CRUD: `GET`, `POST`, `PUT /api/rules/{id}` (full replace),
+      `DELETE`, and `POST /api/rules/{id}/test` (a dry run).
+    - Folder names containing `/` are passed as `%2F`.
+    - Errors map to 400, 404, 422, 502 and 503. The send endpoint keeps its
+      existing contract.
+  - **Semantic search.** The `semantic_search` tool and
+    `POST /api/search/semantic` rank cached, enriched mail by similarity to a
+    query or a reference message.
+  - **Intelligence reads.** `get_sender_profile`, `get_sender_history`,
+    `kg_query` and `get_anomalies`, plus `GET /api/senders[/{address}]`,
+    `/api/kg` and `/api/anomalies`, read the cache tables. They return data
+    once iteration-3 intelligence fills those tables.
+  - **Still pending:** webhooks and `/api/query`. Each waits on its own
+    decision.
 - **Enrichment load handling (v0.9.0, D11a/D11b).**
   - **Providers per call type.** Embeddings always go straight to Ollama
     (`enrichment.embed.url/model`). Classification uses either `ollama`
@@ -164,6 +189,18 @@ All notable changes to imap-mcp are documented here. The format is based on
   Non-browser clients (curl, datawatch, Claude Code) are unaffected.
 
 ### Fixed
+- **Permanent deletes now remove only the targeted messages (v0.10.0).** Before,
+  `delete_message permanent`, `purge_sender permanent` and the move-by-copy
+  fallback ran a folder-wide `EXPUNGE`. That also destroyed any other message
+  already marked `\Deleted` by a mail client. go-imap's own `Move` fallback
+  does the same on servers without UIDPLUS. Now:
+  - Servers with UIDPLUS use `UID EXPUNGE` on exactly the target messages.
+  - Without UIDPLUS, the operation refuses if any other message is already
+    `\Deleted`.
+  - All moves go through native MOVE, or COPY plus that same targeted delete.
+- **Enrichment ordering (v0.10.0).** Every new-mail item now finishes before
+  any backfill item in the same batch starts. Before, the concurrency cap
+  could let a backfill item go first.
 - Database files and their WAL/SHM sidecars are created and kept at mode 0600
   (v0.7.0). Before, the WAL/SHM files followed the umask.
 - Enrichment no longer leaves rows with a NULL body, subject or sender name
