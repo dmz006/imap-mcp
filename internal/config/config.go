@@ -24,6 +24,7 @@ type Config struct {
 	Enrichment EnrichmentConfig `yaml:"enrichment"`
 	Sync       SyncConfig       `yaml:"sync"`
 	Tools      ToolsConfig      `yaml:"tools"`
+	Intel      IntelConfig      `yaml:"intelligence"`
 	Log        LogConfig        `yaml:"log"`
 	// Datawatch is optional. When present, ${secret:name} references in
 	// credentials resolve against a datawatch secrets service. When absent,
@@ -315,6 +316,33 @@ type ToolsConfig struct {
 	ExportMaxMB int `yaml:"export_max_mb"`
 }
 
+// IntelConfig drives the header scanner that builds sender profiles (AGENT.md
+// D19, D20, D28). The scan reads headers only, never bodies, and never sets
+// \Seen.
+type IntelConfig struct {
+	// Enabled turns the scanner on. Pointer so an explicit false is kept.
+	Enabled *bool `yaml:"enabled"`
+	// ScanIntervalMinutes between scan ticks. Default 15.
+	ScanIntervalMinutes int `yaml:"scan_interval_minutes"`
+	// BackfillPerMinute caps messages scanned per minute across accounts. Default 600.
+	BackfillPerMinute int `yaml:"backfill_per_minute"`
+	// BatchSize is messages fetched per IMAP round trip. Default 200.
+	BatchSize int `yaml:"batch_size"`
+	// ExcludeFolders are skipped in addition to \Junk and \Drafts.
+	ExcludeFolders []string `yaml:"exclude_folders"`
+	// LLMRoles lets the classify model assign roles to senders the signals
+	// leave unknown (gated like backfill enrichment). Pointer: default true.
+	LLMRoles *bool `yaml:"llm_roles"`
+	// LLMRolesPerTick caps model calls per scan tick. Default 20.
+	LLMRolesPerTick int `yaml:"llm_roles_per_tick"`
+}
+
+// On reports whether the scanner runs (default true).
+func (c IntelConfig) On() bool { return c.Enabled == nil || *c.Enabled }
+
+// LLMRolesOn reports whether model-assigned roles are allowed (default true).
+func (c IntelConfig) LLMRolesOn() bool { return c.LLMRoles == nil || *c.LLMRoles }
+
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
@@ -385,6 +413,12 @@ func defaults() *Config {
 			AttachmentMaxMB:    25,
 			ExportMaxMessages:  500,
 			ExportMaxMB:        100,
+		},
+		Intel: IntelConfig{
+			ScanIntervalMinutes: 15,
+			BackfillPerMinute:   600,
+			BatchSize:           200,
+			LLMRolesPerTick:     20,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -481,6 +515,20 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_TOOLS_ATTACHMENT_MAX_MB", &cfg.Tools.AttachmentMaxMB)
 	envInt("IMAP_MCP_TOOLS_EXPORT_MAX_MESSAGES", &cfg.Tools.ExportMaxMessages)
 	envInt("IMAP_MCP_TOOLS_EXPORT_MAX_MB", &cfg.Tools.ExportMaxMB)
+	envInt("IMAP_MCP_INTELLIGENCE_SCAN_INTERVAL_MINUTES", &cfg.Intel.ScanIntervalMinutes)
+	envInt("IMAP_MCP_INTELLIGENCE_BACKFILL_PER_MINUTE", &cfg.Intel.BackfillPerMinute)
+	envInt("IMAP_MCP_INTELLIGENCE_BATCH_SIZE", &cfg.Intel.BatchSize)
+	envInt("IMAP_MCP_INTELLIGENCE_LLM_ROLES_PER_TICK", &cfg.Intel.LLMRolesPerTick)
+	for key, dst := range map[string]**bool{
+		"IMAP_MCP_INTELLIGENCE_ENABLED":   &cfg.Intel.Enabled,
+		"IMAP_MCP_INTELLIGENCE_LLM_ROLES": &cfg.Intel.LLMRoles,
+	} {
+		if v := os.Getenv(key); v != "" {
+			if b, err := strconv.ParseBool(v); err == nil {
+				*dst = &b
+			}
+		}
+	}
 	if v := os.Getenv("IMAP_MCP_ENRICHMENT_BACKFILL_WINDOW"); v != "" {
 		cfg.Enrichment.BackfillWindow = v
 	}
@@ -532,6 +580,9 @@ func validate(cfg *Config) error {
 	t := cfg.Tools
 	if t.AttachmentInlineKB < 0 || t.AttachmentMaxMB < 1 || t.ExportMaxMessages < 1 || t.ExportMaxMB < 1 {
 		return fmt.Errorf("tools: attachment_inline_kb must be >= 0; attachment_max_mb, export_max_messages and export_max_mb must be >= 1")
+	}
+	if in := cfg.Intel; in.ScanIntervalMinutes < 1 || in.BackfillPerMinute < 1 || in.BatchSize < 1 || in.BatchSize > 1000 || in.LLMRolesPerTick < 0 {
+		return fmt.Errorf("intelligence: scan_interval_minutes, backfill_per_minute must be >= 1; batch_size 1-1000; llm_roles_per_tick >= 0")
 	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")

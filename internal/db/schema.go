@@ -1,11 +1,16 @@
 package db
 
+// droppedCacheTables moved to imap.db in 0.12.0 (D19). They were never
+// populated in cache.db, so dropping them loses nothing; children first.
+var droppedCacheTables = []string{"anomalies", "kg_relationships", "kg_entities", "senders"}
+
 // cacheSchema defines the disposable mail cache (cache.db, AGENT.md D1b):
-// messages, FTS5, vectors, and the datawatch-inspired memory patterns
-// (wing/room/hall tagging, temporal KG, sender profiles, anomaly log). Every
-// row can be rebuilt from IMAP.
+// messages, FTS5, vectors, wing/room/hall tags, sync state and the enrichment
+// queue. Every row can be rebuilt from IMAP.
 // cacheSchemaVersion is stored in cache.db's user_version. A mismatch drops
-// and recreates the cache (it is disposable); bump it on any cache change.
+// and recreates the cache (it is disposable); bump it on any change to a
+// cache table's shape. Removing a table does not need a bump: list it in
+// droppedCacheTables instead, so the cache is kept.
 const cacheSchemaVersion = 3
 
 const cacheSchema = `
@@ -95,73 +100,6 @@ CREATE TABLE IF NOT EXISTS message_vectors (
     created_at  INTEGER DEFAULT (unixepoch())
 );
 
--- ─── Senders (entity profiles) ───────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS senders (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    address          TEXT UNIQUE NOT NULL,
-    name             TEXT,
-    domain           TEXT,
-    role             TEXT DEFAULT 'unknown', -- colleague|vendor|newsletter|bot|personal|unknown
-    first_seen       INTEGER,
-    last_seen        INTEGER,
-    message_count    INTEGER DEFAULT 0,
-    sent_count       INTEGER DEFAULT 0,     -- messages we sent to them
-    avg_reply_time   INTEGER,               -- seconds
-    anomaly_score    REAL DEFAULT 0.0,
-    profile_json     TEXT,                  -- enriched profile blob
-    updated_at       INTEGER DEFAULT (unixepoch())
-);
-
-CREATE INDEX IF NOT EXISTS idx_senders_domain ON senders(domain);
-CREATE INDEX IF NOT EXISTS idx_senders_role   ON senders(role);
-
--- ─── Temporal Knowledge Graph ─────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS kg_entities (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type    TEXT NOT NULL,   -- person|organization|topic|project|thread
-    name           TEXT NOT NULL,
-    properties     TEXT,            -- JSON
-    created_at     INTEGER DEFAULT (unixepoch()),
-    UNIQUE(entity_type, name)
-);
-
-CREATE TABLE IF NOT EXISTS kg_relationships (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject_id  INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
-    predicate   TEXT NOT NULL,      -- manages|reports_to|belongs_to|is_subscription|sent_to etc
-    object_id   INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
-    valid_from  INTEGER,            -- unix timestamp, null = always
-    valid_to    INTEGER,            -- null = still valid
-    confidence  REAL DEFAULT 1.0,
-    properties  TEXT,               -- JSON
-    created_at  INTEGER DEFAULT (unixepoch())
-);
-
-CREATE INDEX IF NOT EXISTS idx_kg_rel_subject   ON kg_relationships(subject_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rel_object    ON kg_relationships(object_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rel_predicate ON kg_relationships(predicate);
-
--- ─── Anomalies (episodic pattern log) ────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS anomalies (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    account      TEXT NOT NULL,
-    message_id   INTEGER REFERENCES messages(id) ON DELETE SET NULL,
-    sender       TEXT,
-    anomaly_type TEXT NOT NULL,  -- behavior_change|silence|reply_spike|new_sender|role_shift
-    description  TEXT,
-    severity     TEXT DEFAULT 'low', -- low|medium|high
-    detected_at  INTEGER DEFAULT (unixepoch()),
-    resolved     INTEGER DEFAULT 0,
-    resolved_at  INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_anomalies_account ON anomalies(account);
-CREATE INDEX IF NOT EXISTS idx_anomalies_sender  ON anomalies(sender);
-CREATE INDEX IF NOT EXISTS idx_anomalies_type    ON anomalies(anomaly_type);
-
 -- ─── Folders ─────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS folders (
@@ -206,8 +144,10 @@ CREATE TABLE IF NOT EXISTS enrichment_queue (
 CREATE INDEX IF NOT EXISTS idx_enrich_status ON enrichment_queue(status, lane, queued_at);
 `
 
-// stateSchema holds operator state that cannot be rebuilt from IMAP: rules,
-// webhooks and inbound replay nonces. It lives in imap.db (AGENT.md D1b).
+// stateSchema holds state that cannot be rebuilt from the cache: rules,
+// webhooks, inbound replay nonces and the intelligence tables (sender
+// profiles, knowledge graph, anomalies, the D28 index and scan progress). It
+// lives in imap.db (AGENT.md D1b, D19).
 const stateSchema = `
 -- ─── Webhooks ────────────────────────────────────────────────────────────────
 
@@ -267,4 +207,110 @@ CREATE TABLE IF NOT EXISTS inbound_nonces (
     seen_at   INTEGER DEFAULT (unixepoch()),
     PRIMARY KEY (account, nonce)
 );
+
+-- ─── Intelligence (AGENT.md D19, D20, D28) ──────────────────────────────────
+-- Durable: built from a header scan of all history plus enriched cache
+-- signals, so it survives the cache window and cache rebuilds.
+
+CREATE TABLE IF NOT EXISTS senders (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    address          TEXT UNIQUE NOT NULL,
+    name             TEXT,
+    domain           TEXT,
+    role             TEXT DEFAULT 'unknown', -- colleague|vendor|newsletter|bot|personal|unknown
+    role_source      TEXT,                   -- signal:<kind> | hall | llm
+    role_checked_at  INTEGER,
+    first_seen       INTEGER,
+    last_seen        INTEGER,
+    message_count    INTEGER DEFAULT 0,     -- messages received from them
+    sent_count       INTEGER DEFAULT 0,     -- messages we sent to them
+    list_count       INTEGER DEFAULT 0,     -- received with List-Id / List-Unsubscribe
+    bulk_count       INTEGER DEFAULT 0,     -- received with Precedence: bulk/list/junk
+    auto_count       INTEGER DEFAULT 0,     -- received with Auto-Submitted (not "no")
+    dkim_pass        INTEGER DEFAULT 0,
+    dkim_fail        INTEGER DEFAULT 0,
+    dmarc_pass       INTEGER DEFAULT 0,
+    dmarc_fail       INTEGER DEFAULT 0,
+    reply_count      INTEGER DEFAULT 0,     -- our replies paired to their messages
+    reply_total_secs INTEGER DEFAULT 0,
+    avg_reply_time   INTEGER,               -- seconds (reply_total_secs / reply_count)
+    anomaly_score    REAL DEFAULT 0.0,
+    profile_json     TEXT,
+    dirty            INTEGER DEFAULT 1,     -- role needs recomputing
+    updated_at       INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_senders_domain ON senders(domain);
+CREATE INDEX IF NOT EXISTS idx_senders_role   ON senders(role);
+CREATE INDEX IF NOT EXISTS idx_senders_dirty  ON senders(dirty) WHERE dirty = 1;
+
+-- One row per message seen by the header scan (D28): hashes only, no
+-- subjects, bodies or addresses. De-duplicates across folders and labels and
+-- pairs our replies with the message they answer.
+CREATE TABLE IF NOT EXISTS intel_messages (
+    account    TEXT NOT NULL,
+    msg_hash   INTEGER NOT NULL,  -- Message-ID hash
+    date       INTEGER NOT NULL,
+    sender_id  INTEGER,           -- senders.id for incoming mail
+    outgoing   INTEGER NOT NULL DEFAULT 0,
+    reply_hash INTEGER,           -- In-Reply-To hash (outgoing only)
+    paired     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account, msg_hash)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS idx_intel_messages_unpaired ON intel_messages(account, reply_hash) WHERE outgoing = 1 AND paired = 0;
+
+-- Header-scan progress per folder.
+CREATE TABLE IF NOT EXISTS intel_scan (
+    account      TEXT NOT NULL,
+    folder       TEXT NOT NULL,
+    uidvalidity  INTEGER NOT NULL DEFAULT 0,
+    last_uid     INTEGER NOT NULL DEFAULT 0,
+    scanned      INTEGER NOT NULL DEFAULT 0,  -- messages processed in this folder
+    completed_at INTEGER,                     -- first time the folder was fully scanned
+    updated_at   INTEGER DEFAULT (unixepoch()),
+    PRIMARY KEY (account, folder)
+);
+
+CREATE TABLE IF NOT EXISTS kg_entities (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type    TEXT NOT NULL,   -- person|organization|topic|project|thread
+    name           TEXT NOT NULL,
+    properties     TEXT,            -- JSON
+    created_at     INTEGER DEFAULT (unixepoch()),
+    UNIQUE(entity_type, name)
+);
+
+CREATE TABLE IF NOT EXISTS kg_relationships (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_id  INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+    predicate   TEXT NOT NULL,      -- manages|reports_to|belongs_to|is_subscription|sent_to etc
+    object_id   INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+    valid_from  INTEGER,            -- unix timestamp, null = always
+    valid_to    INTEGER,            -- null = still valid
+    confidence  REAL DEFAULT 1.0,
+    properties  TEXT,               -- JSON
+    created_at  INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_rel_subject   ON kg_relationships(subject_id);
+CREATE INDEX IF NOT EXISTS idx_kg_rel_object    ON kg_relationships(object_id);
+CREATE INDEX IF NOT EXISTS idx_kg_rel_predicate ON kg_relationships(predicate);
+
+CREATE TABLE IF NOT EXISTS anomalies (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    account      TEXT NOT NULL,
+    message_id   INTEGER,           -- cache row id when the message is cached (no FK: other file)
+    sender       TEXT,
+    anomaly_type TEXT NOT NULL,     -- see AGENT.md D22
+    description  TEXT,
+    severity     TEXT DEFAULT 'low', -- low|medium|high
+    detected_at  INTEGER DEFAULT (unixepoch()),
+    resolved     INTEGER DEFAULT 0,
+    resolved_at  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_anomalies_account ON anomalies(account);
+CREATE INDEX IF NOT EXISTS idx_anomalies_sender  ON anomalies(sender);
+CREATE INDEX IF NOT EXISTS idx_anomalies_type    ON anomalies(anomaly_type);
 `

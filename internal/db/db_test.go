@@ -1,9 +1,11 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestOpenAppliesPragmas guards against DSN params the driver silently ignores:
@@ -81,5 +83,47 @@ func TestConcurrentOpenersShareFile(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Errorf("concurrent write: %v", err)
+	}
+}
+
+// TestIntelTablesMoveToState (D19): opening a cache.db that still has the old,
+// empty intelligence tables drops them without rebuilding the cache, and the
+// state DB gains them.
+func TestIntelTablesMoveToState(t *testing.T) {
+	dir := t.TempDir()
+	st, ca := Options{Path: filepath.Join(dir, "imap.db")}, Options{Path: filepath.Join(dir, "cache.db")}
+	d, err := Open(st, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Messages.Insert(context.Background(), &CachedMessage{Account: "a", Folder: "INBOX", UID: 1, FromAddr: "x@example.com",
+		InternalDate: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a 0.11 cache that still carries the tables.
+	for _, q := range []string{`CREATE TABLE senders (id INTEGER PRIMARY KEY, address TEXT)`, `CREATE TABLE anomalies (id INTEGER PRIMARY KEY)`} {
+		if _, err := d.SQL().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.Close()
+
+	d, err = Open(st, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var n int
+	d.SQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships')`).Scan(&n) //nolint:errcheck
+	if n != 0 {
+		t.Errorf("%d intelligence tables left in cache.db", n)
+	}
+	d.SQL().QueryRow(`SELECT count(*) FROM messages`).Scan(&n) //nolint:errcheck
+	if n != 1 {
+		t.Errorf("cache was rebuilt: %d messages", n)
+	}
+	d.StateSQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships','intel_messages','intel_scan')`).Scan(&n) //nolint:errcheck
+	if n != 6 {
+		t.Errorf("state DB has %d of 6 intelligence tables", n)
 	}
 }

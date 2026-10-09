@@ -198,7 +198,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"vacuum_interval_hours": s.cfg.Sync.VacuumIntervalHours,
 			"folders":               s.cfg.SyncFolders(nil),
 		},
-		"enrichment": s.enrichmentHealth(r),
+		"enrichment":   s.enrichmentHealth(r),
+		"intelligence": s.intelHealth(r),
 		"tools": map[string]int{
 			"attachment_inline_kb": s.cfg.Tools.AttachmentInlineKB,
 			"attachment_max_mb":    s.cfg.Tools.AttachmentMaxMB,
@@ -382,4 +383,13 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v) //nolint:errcheck
+}
+
+// intelHealth is the header scanner's progress for /api/health (counts only).
+func (s *Server) intelHealth(r *http.Request) any {
+	st, err := s.svc.IntelStats(r.Context())
+	if err != nil {
+		return map[string]any{"enabled": s.cfg.Intel.On()}
+	}
+	return st
 }

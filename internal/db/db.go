@@ -1,10 +1,10 @@
 // Package db manages the local SQLite databases (AGENT.md D1, D1a, D1b):
 //
-//   - the state DB (imap.db): rules, webhooks, webhook deliveries and inbound
-//     nonces. Not rebuildable from IMAP.
-//   - the cache DB (cache.db): message cache, FTS5, vectors, sender profiles,
-//     temporal knowledge graph, anomalies, sync state and the enrichment queue.
-//     Disposable: every row can be rebuilt from IMAP.
+//   - the state DB (imap.db): rules, webhooks, webhook deliveries, inbound
+//     nonces, and intelligence (sender profiles, knowledge graph, anomalies,
+//     the per-message hash index and header-scan progress; D19, D28).
+//   - the cache DB (cache.db): message cache, FTS5, vectors, sync state and
+//     the enrichment queue. Disposable: every row can be rebuilt from IMAP.
 //
 // Both use the pure-Go ncruces/go-sqlite3 driver. Each file is independently
 // and optionally encrypted at rest with the adiantum VFS, keyed by an operator
@@ -41,19 +41,19 @@ type DB struct {
 	cache *sql.DB
 
 	// cache.db
-	Messages  *MessageRepo
-	Senders   *SenderRepo
-	KG        *KGRepo
-	Vectors   *VectorRepo
-	Folders   *FolderRepo
-	Anomalies *AnomalyRepo
-	Sync      *SyncRepo
-	Enrich    *EnrichRepo
+	Messages *MessageRepo
+	Vectors  *VectorRepo
+	Folders  *FolderRepo
+	Sync     *SyncRepo
+	Enrich   *EnrichRepo
 
 	// imap.db
-	Webhooks *WebhookRepo
-	Rules    *RuleRepo
-	Nonces   *NonceRepo
+	Webhooks  *WebhookRepo
+	Rules     *RuleRepo
+	Nonces    *NonceRepo
+	Senders   *SenderRepo
+	KG        *KGRepo
+	Anomalies *AnomalyRepo
 }
 
 // Open opens (creating if needed) the state and cache databases. A legacy
@@ -75,11 +75,8 @@ func Open(state, cache Options) (*DB, error) {
 	}
 	d.cache = c
 	d.Messages = &MessageRepo{db: c}
-	d.Senders = &SenderRepo{db: c}
-	d.KG = &KGRepo{db: c}
 	d.Vectors = &VectorRepo{db: c}
 	d.Folders = &FolderRepo{db: c}
-	d.Anomalies = &AnomalyRepo{db: c}
 	d.Sync = &SyncRepo{db: c}
 	d.Enrich = &EnrichRepo{db: c}
 	return d, nil
@@ -96,10 +93,13 @@ func OpenState(state Options) (*DB, error) {
 		return nil, fmt.Errorf("state db: %w", err)
 	}
 	return &DB{
-		state:    s,
-		Webhooks: &WebhookRepo{db: s},
-		Rules:    &RuleRepo{db: s},
-		Nonces:   &NonceRepo{db: s},
+		state:     s,
+		Webhooks:  &WebhookRepo{db: s},
+		Rules:     &RuleRepo{db: s},
+		Nonces:    &NonceRepo{db: s},
+		Senders:   &SenderRepo{db: s},
+		KG:        &KGRepo{db: s},
+		Anomalies: &AnomalyRepo{db: s},
 	}, nil
 }
 
@@ -259,6 +259,11 @@ func ensureCacheSchema(conn *sql.DB) error {
 	}
 	if _, err := conn.Exec(cacheSchema); err != nil {
 		return fmt.Errorf("apply cache schema: %w", err)
+	}
+	for _, t := range droppedCacheTables {
+		if _, err := conn.Exec(`DROP TABLE IF EXISTS ` + t); err != nil {
+			return fmt.Errorf("drop moved table %s: %w", t, err)
+		}
 	}
 	_, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, cacheSchemaVersion))
 	return err

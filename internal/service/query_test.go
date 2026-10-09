@@ -78,3 +78,15 @@ func TestQueryRuns(t *testing.T) {
 		t.Errorf("bad query kind = %v", KindOf(err))
 	}
 }
+
+// TestQueryIntelViewsUseStateDB: senders, kg and anomalies live in imap.db (D19).
+func TestQueryIntelViewsUseStateDB(t *testing.T) {
+	s := querySvc(t)
+	if _, err := s.db.StateSQL().Exec(`INSERT INTO senders(address, domain, role, message_count) VALUES('a@example.com','example.com','vendor',3)`); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Query(context.Background(), query.Query{View: "senders", Fields: []string{"address", "role", "message_count"}})
+	if err != nil || r.Count != 1 || r.Rows[0][1] != "vendor" {
+		t.Fatalf("senders view = %+v %v", r, err)
+	}
+}

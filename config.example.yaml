@@ -313,6 +313,18 @@ tools:
   export_max_messages: 500     # most messages in one .mbox export (refused, not truncated, above this)
   export_max_mb: 100           # largest total export size
 
+# Sender intelligence (AGENT.md D19, D20, D28). A header-only scan of all
+# history (never bodies, never marks mail read) builds sender profiles in
+# imap.db: counts, first/last seen, reply times and a role per sender.
+intelligence:
+  enabled: true
+  scan_interval_minutes: 15    # how often new mail in every folder is scanned
+  backfill_per_minute: 600     # messages scanned per minute during the first full scan
+  batch_size: 200              # messages per IMAP fetch
+  exclude_folders: []          # skipped in addition to \Junk and \Drafts
+  llm_roles: true              # let the classify model name roles the header signals leave unknown
+  llm_roles_per_tick: 20       # model calls per tick; only when enrichment backfill gates allow
+
 log:
   level: info
   format: text

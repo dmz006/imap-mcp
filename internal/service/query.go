@@ -20,18 +20,27 @@ type QueryResult struct {
 // queryTimeout bounds every query (D17).
 const queryTimeout = 10 * time.Second
 
-// Query runs a JSON DSL query (AGENT.md D17) against the cache, read-only.
+// Query runs a JSON DSL query (AGENT.md D17), read-only, against the cache
+// (messages) or the state DB (senders, kg, anomalies).
 func (s *Service) Query(ctx context.Context, q query.Query) (*QueryResult, error) {
 	c, err := query.Compile(q, time.Now())
 	if err != nil {
 		return nil, invalid("%v", err)
 	}
-	if s.db == nil || s.db.SQL() == nil {
-		return nil, unavailable("the cache is not open in this mode")
+	// messages lives in the cache; senders, kg and anomalies in the state DB (D19).
+	conn := (*sql.DB)(nil)
+	if s.db != nil {
+		conn = s.db.SQL()
+		if q.View != "messages" {
+			conn = s.db.StateSQL()
+		}
+	}
+	if conn == nil {
+		return nil, unavailable("the database for this view is not open in this mode")
 	}
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	tx, err := s.db.SQL().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}

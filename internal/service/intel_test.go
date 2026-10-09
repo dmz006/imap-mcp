@@ -75,7 +75,7 @@ func intelSvc(t *testing.T) (*Service, *db.DB) {
 		`INSERT INTO kg_relationships(subject_id, predicate, object_id) VALUES(1,'belongs_to',2)`,
 		`INSERT INTO anomalies(account, sender, anomaly_type, severity, resolved) VALUES('personal','alice@example.com','reply_spike','high',0),('personal','bob@example.com','silence','low',1)`,
 	} {
-		if _, err := d.SQL().Exec(q); err != nil {
+		if _, err := d.StateSQL().Exec(q); err != nil { // intelligence lives in imap.db (D19)
 			t.Fatal(err)
 		}
 	}
@@ -154,5 +154,34 @@ func TestSenderKGAnomalies(t *testing.T) {
 	}
 	if _, err := s.Anomalies(ctx, AnomalyParams{Severity: "extreme"}); KindOf(err) != KindInvalid {
 		t.Errorf("bad severity: %v", err)
+	}
+}
+
+func TestIntelStats(t *testing.T) {
+	s, d := intelSvc(t)
+	s.cfg = &config.Config{}
+	ctx := context.Background()
+	st, err := s.IntelStats(ctx)
+	if err != nil || st.Folders != 0 || st.BackfillComplete || st.Senders != 2 || st.Roles["colleague"] != 1 || !st.Enabled {
+		t.Fatalf("empty scan = %+v %v", st, err)
+	}
+	for _, q := range []string{
+		`INSERT INTO intel_scan(account, folder, uidvalidity, last_uid, scanned, completed_at) VALUES('a','INBOX',1,10,10,unixepoch()),('a','Sent',1,4,4,NULL)`,
+		`INSERT INTO intel_messages(account, msg_hash, date, outgoing, paired) VALUES('a',1,0,0,0),('a',2,0,1,1)`,
+	} {
+		if _, err := d.StateSQL().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, _ = s.IntelStats(ctx)
+	if st.Folders != 2 || st.FoldersComplete != 1 || st.BackfillComplete || st.MessagesIndexed != 2 || st.RepliesPaired != 1 || st.LastScan == "" {
+		t.Fatalf("partial scan = %+v", st)
+	}
+	d.StateSQL().Exec(`UPDATE intel_scan SET completed_at = unixepoch()`) //nolint:errcheck
+	if st, _ = s.IntelStats(ctx); !st.BackfillComplete {
+		t.Error("all folders complete must report backfill_complete")
+	}
+	if p, err := s.GetSenderProfile(ctx, "alice@example.com"); err != nil || !p.ScanComplete {
+		t.Errorf("profile scan_complete = %+v %v", p.ScanComplete, err)
 	}
 }

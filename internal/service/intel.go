@@ -134,29 +134,41 @@ func (s *Service) accountName(account string) string {
 	return account
 }
 
-// Sender is a sender profile row (populated by iteration-3 intelligence).
+// Sender is a sender profile row, built by the header scanner (internal/intel).
 type Sender struct {
 	Address      string          `json:"address"`
 	Name         string          `json:"name,omitempty"`
 	Domain       string          `json:"domain,omitempty"`
 	Role         string          `json:"role"`
+	RoleSource   string          `json:"role_source,omitempty"`
 	FirstSeen    int64           `json:"first_seen,omitempty"`
 	LastSeen     int64           `json:"last_seen,omitempty"`
 	MessageCount int             `json:"message_count"`
 	SentCount    int             `json:"sent_count"`
 	AvgReplySecs int64           `json:"avg_reply_seconds,omitempty"`
+	ReplyCount   int             `json:"reply_count"`
+	ListCount    int             `json:"list_count"`
+	BulkCount    int             `json:"bulk_count"`
+	AutoCount    int             `json:"auto_count"`
+	DKIMPass     int             `json:"dkim_pass"`
+	DKIMFail     int             `json:"dkim_fail"`
+	DMARCPass    int             `json:"dmarc_pass"`
+	DMARCFail    int             `json:"dmarc_fail"`
 	AnomalyScore float64         `json:"anomaly_score"`
 	Profile      json.RawMessage `json:"profile,omitempty"`
 }
 
-const senderCols = `address, COALESCE(name,''), COALESCE(domain,''), COALESCE(role,'unknown'), COALESCE(first_seen,0),
-	COALESCE(last_seen,0), COALESCE(message_count,0), COALESCE(sent_count,0), COALESCE(avg_reply_time,0),
+const senderCols = `address, COALESCE(name,''), COALESCE(domain,''), COALESCE(role,'unknown'), COALESCE(role_source,''),
+	COALESCE(first_seen,0), COALESCE(last_seen,0), COALESCE(message_count,0), COALESCE(sent_count,0), COALESCE(avg_reply_time,0),
+	reply_count, list_count, bulk_count, auto_count, dkim_pass, dkim_fail, dmarc_pass, dmarc_fail,
 	COALESCE(anomaly_score,0), COALESCE(profile_json,'')`
 
 func scanSender(sc interface{ Scan(...any) error }) (Sender, error) {
 	var x Sender
 	var profile string
-	err := sc.Scan(&x.Address, &x.Name, &x.Domain, &x.Role, &x.FirstSeen, &x.LastSeen, &x.MessageCount, &x.SentCount, &x.AvgReplySecs, &x.AnomalyScore, &profile)
+	err := sc.Scan(&x.Address, &x.Name, &x.Domain, &x.Role, &x.RoleSource, &x.FirstSeen, &x.LastSeen, &x.MessageCount, &x.SentCount,
+		&x.AvgReplySecs, &x.ReplyCount, &x.ListCount, &x.BulkCount, &x.AutoCount, &x.DKIMPass, &x.DKIMFail, &x.DMARCPass, &x.DMARCFail,
+		&x.AnomalyScore, &profile)
 	if profile != "" && json.Valid([]byte(profile)) {
 		x.Profile = json.RawMessage(profile)
 	}
@@ -165,8 +177,8 @@ func scanSender(sc interface{ Scan(...any) error }) (Sender, error) {
 
 // ListSenders returns sender profiles, most active first.
 func (s *Service) ListSenders(ctx context.Context, role, domain string, limit int) ([]Sender, error) {
-	if s.db.SQL() == nil {
-		return nil, unavailable("the mail cache is not open in this mode")
+	if s.db == nil || s.db.StateSQL() == nil {
+		return nil, unavailable("the state database is not open in this mode")
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 50
@@ -178,7 +190,7 @@ func (s *Service) ListSenders(ctx context.Context, role, domain string, limit in
 	if domain != "" {
 		where, args = append(where, "domain = ?"), append(args, strings.ToLower(domain))
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `SELECT `+senderCols+` FROM senders WHERE `+strings.Join(where, " AND ")+
+	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT `+senderCols+` FROM senders WHERE `+strings.Join(where, " AND ")+
 		` ORDER BY message_count DESC, address LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, err
@@ -198,9 +210,12 @@ func (s *Service) ListSenders(ctx context.Context, role, domain string, limit in
 // SenderProfile is a sender with its relationships, anomalies and cached mail count.
 type SenderProfile struct {
 	Sender
-	CachedMessages int       `json:"cached_messages"`
-	Relationships  []KGEdge  `json:"relationships"`
-	Anomalies      []Anomaly `json:"anomalies"`
+	CachedMessages int `json:"cached_messages"`
+	// ScanComplete is false while the first header scan of all history is
+	// still running: counts and roles are partial until then.
+	ScanComplete  bool      `json:"scan_complete"`
+	Relationships []KGEdge  `json:"relationships"`
+	Anomalies     []Anomaly `json:"anomalies"`
 }
 
 // GetSenderProfile returns a sender's profile. A sender with cached mail but
@@ -210,22 +225,27 @@ func (s *Service) GetSenderProfile(ctx context.Context, address string) (SenderP
 	if address == "" {
 		return SenderProfile{}, invalid("address is required")
 	}
-	if s.db.SQL() == nil {
-		return SenderProfile{}, unavailable("the mail cache is not open in this mode")
+	if s.db == nil || s.db.StateSQL() == nil {
+		return SenderProfile{}, unavailable("the state database is not open in this mode")
 	}
 	p := SenderProfile{Relationships: []KGEdge{}, Anomalies: []Anomaly{}}
-	x, err := scanSender(s.db.SQL().QueryRowContext(ctx, `SELECT `+senderCols+` FROM senders WHERE lower(address) = ?`, address))
+	x, err := scanSender(s.db.StateSQL().QueryRowContext(ctx, `SELECT `+senderCols+` FROM senders WHERE lower(address) = ?`, address))
 	if err != nil && err != sql.ErrNoRows {
 		return p, err
 	}
 	p.Sender = x
-	s.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE lower(from_addr) = ?`, address).Scan(&p.CachedMessages) //nolint:errcheck
+	if s.db.SQL() != nil {
+		s.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE lower(from_addr) = ?`, address).Scan(&p.CachedMessages) //nolint:errcheck
+	}
 	if err == sql.ErrNoRows && p.CachedMessages == 0 {
 		return p, notFound("no profile or cached mail for %s", address)
 	}
 	p.Address = address
 	if p.Role == "" {
 		p.Role = "unknown"
+	}
+	if st, err := s.IntelStats(ctx); err == nil {
+		p.ScanComplete = st.BackfillComplete
 	}
 	if p.Relationships, err = s.KGQuery(ctx, KGParams{Entity: address, Limit: 50}); err != nil {
 		return p, err
@@ -292,8 +312,8 @@ type KGEdge struct {
 
 // KGQuery returns relationships touching an entity (as subject or object).
 func (s *Service) KGQuery(ctx context.Context, p KGParams) ([]KGEdge, error) {
-	if s.db.SQL() == nil {
-		return nil, unavailable("the mail cache is not open in this mode")
+	if s.db == nil || s.db.StateSQL() == nil {
+		return nil, unavailable("the state database is not open in this mode")
 	}
 	if p.Limit <= 0 || p.Limit > 500 {
 		p.Limit = 50
@@ -308,7 +328,7 @@ func (s *Service) KGQuery(ctx context.Context, p KGParams) ([]KGEdge, error) {
 	if p.EntityType != "" {
 		where, args = append(where, "(a.entity_type = ? OR b.entity_type = ?)"), append(args, p.EntityType, p.EntityType)
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `SELECT a.name, a.entity_type, r.predicate, b.name, b.entity_type,
+	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT a.name, a.entity_type, r.predicate, b.name, b.entity_type,
 		COALESCE(r.valid_from,0), COALESCE(r.valid_to,0), COALESCE(r.confidence,1)
 		FROM kg_relationships r JOIN kg_entities a ON a.id = r.subject_id JOIN kg_entities b ON b.id = r.object_id
 		WHERE `+strings.Join(where, " AND ")+` ORDER BY r.created_at DESC LIMIT ?`, append(args, p.Limit)...)
@@ -348,8 +368,8 @@ type Anomaly struct {
 
 // Anomalies lists detected anomalies, newest first.
 func (s *Service) Anomalies(ctx context.Context, p AnomalyParams) ([]Anomaly, error) {
-	if s.db.SQL() == nil {
-		return nil, unavailable("the mail cache is not open in this mode")
+	if s.db == nil || s.db.StateSQL() == nil {
+		return nil, unavailable("the state database is not open in this mode")
 	}
 	if p.Limit <= 0 || p.Limit > 500 {
 		p.Limit = 20
@@ -372,7 +392,7 @@ func (s *Service) Anomalies(ctx context.Context, p AnomalyParams) ([]Anomaly, er
 	if !p.IncludeResolved {
 		where = append(where, "resolved = 0")
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `SELECT id, account, COALESCE(sender,''), anomaly_type, COALESCE(description,''),
+	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT id, account, COALESCE(sender,''), anomaly_type, COALESCE(description,''),
 		COALESCE(severity,'low'), COALESCE(detected_at,0), resolved FROM anomalies WHERE `+strings.Join(where, " AND ")+
 		` ORDER BY detected_at DESC LIMIT ?`, append(args, p.Limit)...)
 	if err != nil {
