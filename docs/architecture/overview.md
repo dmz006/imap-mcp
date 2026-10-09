@@ -48,7 +48,7 @@ exposes a REST API for algorithmic automation, and maintains a local intelligenc
 │         (15m)         (qwen3:1.7b         vectors +           Engine      │
 │                        nomic-embed)       KG + FTS5)          (future)    │
 │   │                       │                   │                           │
-│   └───── 3 accounts ──────┘                   │                           │
+│   └───── N accounts ──────┘                   │                           │
 │          (all connected)                       └── Ollama :11434           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

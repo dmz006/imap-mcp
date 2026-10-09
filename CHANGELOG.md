@@ -175,6 +175,10 @@ All notable changes to imap-mcp are documented here. The format is based on
   dropped and rebuilt from IMAP on first start.
 
 ### Changed
+- **More personal details scrubbed (v0.10.2).** Removed mailbox-derived counts
+  from the inbox-cleanup cookbook, README and IMAP-MCP-CONTEXT.md (now illustrative
+  numbers), installed model sizes, an internal commit note, and the account count
+  in the architecture diagram. No code changes.
 - **Docs scrubbed of personal and internal details (v0.10.1).** Public docs, plans
   and tests no longer contain local home paths, a personal mail domain or account
   name, hardware specifics, or stats derived from live mailboxes. Examples use

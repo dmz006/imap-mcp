@@ -11,7 +11,7 @@ clean automatically with a **datawatch** scheduled job.
 
 ## The scenario
 
-An operator has a personal mailbox of ~17,000 messages built up over years —
+An operator has a personal mailbox of tens of thousands of messages built up over years —
 newsletters, store promos, app notifications, conference blasts, plus the mail
 that actually matters (banking, health, school, family, work). Goal: get the
 inbox down to real mail, organize the rest into labels, and stop the spam from
@@ -39,11 +39,11 @@ top_senders { account: "personal", folder: "INBOX", top: 50, group_by: "domain" 
 Typical output (redacted):
 
 ```
-1572  personalmail.example       (you / person-to-person)
- 478  listings.realty.example    Realty Listings
- 425  deals.bigbox.example       Big Box Store
- 259  hsa-provider.example       Health Savings
- 220  socialapp.example          Social App notifications
+1200  personalmail.example       (you / person-to-person)
+ 400  listings.example           Listings alerts
+ 350  deals.bigbox.example       Big Box Store
+ 200  newsletter.example         Newsletter
+ 180  socialapp.example          Social App notifications
  ...
 ```
 
@@ -52,7 +52,7 @@ Two things this immediately tells you:
 - The big *keep* clusters (bank, health, person-to-person) you must not touch.
 
 > **Why an aggregator, not search-and-eyeball:** paginating 50 messages at a time
-> across 17k is hopeless and unrepresentative. `top_senders` scans the whole
+> across tens of thousands is hopeless and unrepresentative. `top_senders` scans the whole
 > folder in one call.
 
 ---
@@ -63,7 +63,7 @@ For each clearly-promotional sender, drain it in one call:
 
 ```
 purge_sender { account: "personal", from: "deals.bigbox.example" }
-→ purged 425 messages from "INBOX" matching from="deals.bigbox.example" → Trash
+→ purged 350 messages from "INBOX" matching from="deals.bigbox.example" → Trash
 ```
 
 `purge_sender` loops until the sender is drained and auto-detects the Trash
@@ -125,14 +125,13 @@ A sensible starter taxonomy (map each big sender to one):
 | Personal | friends + known individual addresses |
 
 **Two judgment calls worth flagging:**
-- **Person-to-person webmail** (`personalmail.example`, 1,500+) can't be sorted
+- **Person-to-person webmail** (`personalmail.example`, the largest group) can't be sorted
   by domain — it's mixed. Leave it, or tag by *known individual* addresses only.
 - **Mixed-provider domains** (e.g. a big-tech `*.example` that carries security
   alerts *and* product promos *and* shared docs) aren't safe to bulk-anything.
   Target a specific sub-sender or subject, or leave them.
 
-Archiving the categorized mail drops the inbox dramatically (in the real run:
-~10k → ~3.6k) while everything stays findable under its label.
+Archiving the categorized mail drops the inbox dramatically (typically by more than half) while everything stays findable under its label.
 
 ---
 
@@ -170,7 +169,7 @@ Apply all rules once from the shell (cron-friendly):
 
 ```
 imap-mcp run-rules --config ~/.config/imap-mcp/config.yaml
-→ run-rules: 105 active rules, 3 messages actioned (dry_run=false)
+→ run-rules: 40 active rules, 2 messages actioned (dry_run=false)
 ```
 
 Then have **datawatch** spawn an ephemeral, session-independent job to run it

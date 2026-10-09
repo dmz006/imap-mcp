@@ -31,7 +31,7 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.10.1 |
+| Current version | 0.10.2 |
 | Location | the repo root |
 | Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
 
@@ -62,8 +62,7 @@ to a session — there is no auto-injection.
    {account}/messages/send`; datawatch's `imap_mcp` messaging backend
    (`internal/messaging/backends/imapmcp`, datawatch#127) consumes verified
    events via SSE and replies via the send endpoint. imap-mcp owns mail+crypto;
-   datawatch owns dispatch. Note: the REST endpoints were added by a sibling
-   session in commit 1f01312.
+   datawatch owns dispatch.
 
 PGP inbound gate is **backlogged** — declared but fails closed until implemented.
 
@@ -240,7 +239,7 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 - `list_folders` — folder tree for an account (live-tested: returns all mailboxes)
 - `create_folder` — create mailbox folder
 - `delete_folder` — delete mailbox folder
-- `list_messages` — paginated messages with headers, date sort, total count (live-tested: 20,655-message inbox)
+- `list_messages` — paginated messages with headers, date sort, total count
 - `get_message` — full message fetch by UID including raw body (live-tested; body is raw MIME — decode pass needed)
 - `get_headers` — headers-only fetch by UID
 - `search_messages` — IMAP SEARCH by from/subject/text/date range/flags (live-tested)
@@ -304,7 +303,7 @@ Pipeline (10s tick, new lane first; backfill rate-limited and gated):
 ```
 
 Ollama must be running at `http://localhost:11434`.
-Models installed: `nomic-embed-text` (261MB), `qwen3:1.7b` (1296MB).
+Default models: `nomic-embed-text` (embeddings), `qwen3:1.7b` (classification).
 
 ---
 
