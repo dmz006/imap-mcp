@@ -218,6 +218,7 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 | `internal/mcp/tools/impl_stubs.go` | Remaining unimplemented tools |
 | `internal/api/server.go` | REST API router; /api/health, /api/accounts ✅ |
 | `internal/server/server.go` | Combined HTTP server (MCP at /mcp, REST at /api) |
+| `internal/httpauth/` | Named, scoped bearer-token auth for /api and /mcp (D13a) |
 | `AGENT.md` | Operating rules for Claude sessions |
 | `docs/architecture/overview.md` | Full architecture doc with diagrams |
 
@@ -305,6 +306,12 @@ Current event types: `message.synced`, `message.updated`, `message.deleted`,
 ---
 
 ## REST API Endpoints (v0.1.0)
+
+**Auth (v0.5.3):** every route except `/api/health`, and `/mcp`, requires
+`Authorization: Bearer <token>` with the route's scope (`read`, `write`,
+`send`, `admin`); see `server.auth` in `config.example.yaml`. The tool→scope
+table is `internal/mcp/scopes.go`; REST scopes are declared in
+`internal/api/server.go` `Router`.
 
 ```
 GET  /api/health                          ✅ implemented

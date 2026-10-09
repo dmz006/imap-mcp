@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: "0.1.0"
+version: "0.2.0"
 tags:
   - email
   - imap
@@ -43,6 +43,12 @@ it in `.mcp.json` — either a stdio command or an HTTP URL like
 `http://localhost:8765/mcp`). If the imap-mcp tools below are not available,
 stop and tell the operator the server is not attached. Do not attempt to
 connect it yourself.
+
+Over HTTP, imap-mcp 0.5.3+ requires a bearer token, and each token carries
+scopes (`read`, `write`, `send`, `admin`). You only see the tools your token
+allows. If a tool you need is missing, or a call fails with
+`forbidden: tool "..." requires scope "..."`, tell the operator which scope
+is missing. Never look for, read or reuse another client's token.
 
 Confirm with `list_accounts` before doing anything else — it returns the
 configured accounts and whether each is connected. Every tool takes an optional

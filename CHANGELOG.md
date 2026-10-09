@@ -7,6 +7,27 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Security
+- `/api` and `/mcp` now require named, scoped bearer tokens (v0.5.3).
+  `browserGuard` (v0.5.2) only stopped browsers: any local process could still
+  send mail or call destructive MCP tools without credentials. New
+  `server.auth` config:
+  - `tokens: [{name, token, scopes}]`, with scopes `read`, `write`, `send` and
+    `admin`. Values are `${secret:name}` or `${ENV}` references, at least 32
+    characters.
+  - Every REST route and MCP tool declares a required scope. MCP `tools/list`
+    only shows tools the token may call; a denied call returns a tool error.
+    Unknown routes and unmapped tools fail closed.
+  - `serve` refuses to start without a token unless `server.auth.disabled: true`
+    is set (insecure opt-out, warned at startup, reported in `/api/health` as
+    `"auth"`, env `IMAP_MCP_SERVER_AUTH_DISABLED`). Unresolvable token
+    references always stop startup.
+  - `/api/health` stays open. Token names are logged; values never are.
+  - stdio mode and `run-rules` are unaffected and do not need datawatch to
+    resolve tokens.
+
+  **Upgrade:** add tokens to the config and to every client before upgrading.
+  Claude Code: `"headers": {"Authorization": "Bearer ..."}` on the `imap-mcp`
+  HTTP entry. datawatch's `imap_mcp` backend needs a version that sends a token.
 - Browser-originated requests against the local HTTP server are now refused
   (v0.5.2). Before, any web page open on the host could POST a `text/plain`
   body to `/api/accounts/{account}/messages/send` without a CORS preflight and

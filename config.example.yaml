@@ -145,6 +145,39 @@ server:
   host: 127.0.0.1
   port: 8765
 
+  # Bearer-token auth for `imap-mcp serve` (REST at /api, MCP at /mcp).
+  # REQUIRED: serve refuses to start without at least one token unless
+  # `disabled: true` is set. stdio mode and `run-rules` never use this block.
+  #
+  # Clients send `Authorization: Bearer <token>`. /api/health stays open.
+  # Each token gets only the scopes its client needs:
+  #   read   accounts, folders, messages, search, analytics, rules listing,
+  #          the /api/events stream, reading the output sandbox
+  #   write  mailbox changes (move/delete/flags/labels/purge/trash), rules
+  #          changes, writing to the output sandbox
+  #   send   outbound mail (send_message, POST .../messages/send)
+  #   admin  webhooks, /api/query, sync and enrichment triggers
+  #
+  # Token values must be ${secret:name} (datawatch block below) or ${ENV}
+  # references, at least 32 characters. Generate one with:
+  #   openssl rand -hex 32
+  # An unresolvable reference always stops startup (fails closed), even when
+  # auth is disabled. The token name is logged; the value never is.
+  auth:
+    # Insecure opt-out: accept unauthenticated requests from any local process.
+    # Warned at every startup and reported as "auth": "disabled" in /api/health.
+    # Env override: IMAP_MCP_SERVER_AUTH_DISABLED=true
+    disabled: false
+    tokens:
+      # Claude Code sessions (~/.mcp.json "headers": {"Authorization": "Bearer ..."}).
+      - name: claude
+        token: ${IMAP_MCP_TOKEN_CLAUDE}            # or ${secret:imap_mcp_token_claude}
+        scopes: [read, write, send, admin]
+      # datawatch imap_mcp messaging backend: event stream + replies only.
+      - name: datawatch
+        token: ${IMAP_MCP_TOKEN_DATAWATCH}         # or ${secret:imap_mcp_token_datawatch}
+        scopes: [read, send]
+
 db:
   path: ~/.local/share/imap-mcp/imap.db
 
