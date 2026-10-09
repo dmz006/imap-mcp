@@ -267,6 +267,8 @@ Remaining 15 tools return "not yet implemented" error with descriptive message.
 Two files since 0.6.0 (AGENT.md D1b), each optionally encrypted:
 `imap.db` (state: rules, webhooks, inbound_nonces) and `cache.db` (everything
 below except those three; disposable, rebuilt from IMAP).
+An existing plaintext file is converted with `imap-mcp db encrypt` (service
+stopped; verified before the plaintext original is replaced; AGENT.md D14).
 
 ```sql
 messages          -- cached messages with hall/wing/room enrichment tags

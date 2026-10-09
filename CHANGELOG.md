@@ -7,6 +7,16 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`imap-mcp db encrypt` (D14).** Encrypts an existing plaintext `imap.db`
+  and/or `cache.db` in place with the configured keys (`--only state|cache`).
+  - It refuses while another process has the file open, so stop the service
+    first.
+  - It writes an encrypted copy and verifies it: the key opens it, the
+    integrity check passes, and every table's row count and content digest
+    match. Only then does it replace the plaintext original.
+  - It lists other plaintext copies, such as the pre-0.6.0 backup, but never
+    deletes them.
+  - Re-running is safe: already-encrypted files are skipped.
 - **REST platform, in progress for v0.10.0 (D13).**
   - **Shared service layer.** Every operation is implemented once in
     `internal/service`, and both MCP tools and REST call it. Existing MCP

@@ -191,7 +191,7 @@ func openFile(o Options, schema string) (*sql.DB, error) {
 	switch {
 	case kind == filePlain && o.Key != "":
 		return nil, fmt.Errorf("%s is not encrypted but an encryption key is configured; "+
-			"refusing to open (see docs: enabling encryption on an existing database)", o.Path)
+			"refusing to open (run `imap-mcp db encrypt` with the service stopped to convert it)", o.Path)
 	case kind == fileOpaque && o.Key == "":
 		return nil, fmt.Errorf("%s is encrypted (or not a SQLite database) and no encryption key is configured", o.Path)
 	}

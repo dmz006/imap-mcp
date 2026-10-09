@@ -200,6 +200,12 @@ server:
 # Env overrides: IMAP_MCP_DB_PATH, IMAP_MCP_DB_ENCRYPTION_KEY,
 #                IMAP_MCP_DB_CACHE_PATH, IMAP_MCP_DB_CACHE_ENCRYPTION_KEY.
 # Encryption state is reported in /api/health under "storage".
+# To encrypt an existing plaintext file, set its key, stop the service, then run
+#   imap-mcp db encrypt [--only state|cache] --config PATH
+# It verifies the encrypted copy before replacing the plaintext original, and
+# lists other plaintext copies (e.g. the pre-0.6.0 backup) for you to delete.
+# The server never converts a file on its own: a key on a plaintext file
+# refuses to start.
 db:
   path: ~/.local/share/imap-mcp/imap.db
   # encryption_key: ${secret:imap_mcp_state_key}

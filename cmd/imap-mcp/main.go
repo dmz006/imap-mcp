@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,6 +51,8 @@ func run() error {
 		return runAuthSetup(os.Args[2:])
 	case "run-rules":
 		return runRules(os.Args[2:])
+	case "db":
+		return runDB(os.Args[2:])
 	case "version":
 		fmt.Println(Version)
 		return nil
@@ -133,6 +138,78 @@ func runRules(args []string) error {
 		fmt.Println(line)
 	}
 	fmt.Printf("run-rules: %d active rules, %d messages actioned (dry_run=%v)\n", len(results), total, *dryRun)
+	return nil
+}
+
+// runDB handles database maintenance subcommands.
+func runDB(args []string) error {
+	if len(args) == 0 || args[0] != "encrypt" {
+		return fmt.Errorf("usage: imap-mcp db encrypt [--only state|cache] [--config PATH]")
+	}
+	fs := flag.NewFlagSet("db encrypt", flag.ExitOnError)
+	cfgPath := fs.String("config", "", "config file path")
+	only := fs.String("only", "", "encrypt only this file: state or cache")
+	_ = fs.Parse(args[1:])
+	if *only != "" && *only != "state" && *only != "cache" {
+		return fmt.Errorf("--only must be state or cache")
+	}
+	cfg, _, err := loadConfig(*cfgPath)
+	if err != nil {
+		return err
+	}
+	doState, doCache := *only != "cache", *only != "state"
+	keys, err := cfg.ResolveDBKeys(doState, doCache)
+	if err != nil {
+		return err
+	}
+	return encryptFiles(os.Stdout, []encryptTarget{
+		{"state", "db.encryption_key", cfg.DB.Path, keys.State, doState},
+		{"cache", "db.cache.encryption_key", cfg.DB.Cache.Path, keys.Cache, doCache},
+	})
+}
+
+type encryptTarget struct {
+	name, keyField, path, key string
+	enabled                   bool
+}
+
+// encryptFiles converts each enabled target (AGENT.md D14) and lists any
+// plaintext copies left for the operator to remove.
+func encryptFiles(w io.Writer, targets []encryptTarget) error {
+	var failed []string
+	for _, t := range targets {
+		if !t.enabled {
+			continue
+		}
+		if t.key == "" {
+			fmt.Fprintf(w, "%s: %s not set; leaving %s as is\n", t.name, t.keyField, t.path)
+			continue
+		}
+		rep, err := db.Encrypt(t.path, t.key)
+		switch {
+		case errors.Is(err, db.ErrAlreadyEncrypted):
+			fmt.Fprintf(w, "%s: %s is already encrypted\n", t.name, t.path)
+			continue
+		case errors.Is(err, db.ErrNoDatabase):
+			fmt.Fprintf(w, "%s: %s does not exist yet; it will be created encrypted\n", t.name, t.path)
+			continue
+		case err != nil:
+			fmt.Fprintf(w, "%s: FAILED: %v\n", t.name, err)
+			failed = append(failed, t.name)
+			continue
+		}
+		fmt.Fprintf(w, "%s: encrypted %s (%d tables, %d rows verified); plaintext original removed\n",
+			t.name, rep.Path, rep.Tables, rep.Rows)
+		if len(rep.PlaintextCopies) > 0 {
+			fmt.Fprintf(w, "%s: these plaintext copies still exist; delete them once you no longer need them:\n", t.name)
+			for _, p := range rep.PlaintextCopies {
+				fmt.Fprintf(w, "  %s\n", p)
+			}
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("encrypt failed for: %s", strings.Join(failed, ", "))
+	}
 	return nil
 }
 
@@ -364,6 +441,11 @@ Usage:
   imap-mcp serve [--config PATH]  Run as HTTP server (MCP at /mcp, REST at /api)
   imap-mcp auth-setup [--account NAME] [--config PATH]
                                   Run OAuth2 browser flow for an account
+  imap-mcp run-rules [--dry-run] [--config PATH]
+                                  Apply active rules once and exit
+  imap-mcp db encrypt [--only state|cache] [--config PATH]
+                                  Encrypt existing plaintext DBs in place with
+                                  the configured keys (stop the service first)
   imap-mcp version                Print version
 
 Config: ~/.config/imap-mcp/config.yaml (or --config flag)
