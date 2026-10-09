@@ -4,15 +4,15 @@
 |-------|-------|
 | Date | 2026-10-08 |
 | Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
-| Status | **Planned — D13a follow-ups (auth timing, mandatory vs opt-in) pending**, then P1 (0.6.0) |
+| Status | **Planned — D13a-2 (auth mandatory vs opt-in) pending**, then P0 (0.5.3), then P1 (0.6.0), then P1 (0.6.0) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
 
 ## Current status (2026-10-08)
 
 - Decided: D1, D1a, D1b, D5–D10, D11a, D11b, D12, D13 (D2–D4 resolved by D1).
   Each is recorded as a rule in `AGENT.md` § Recorded Decisions.
-- D13a decided: named, scoped tokens. **Next:** D13a follow-ups — when auth ships
-  (release) and whether it is mandatory or opt-in.
+- D13a decided: named, scoped tokens; D13a-1: ships first as security release
+  0.5.3 (P0). **Next:** D13a-2 — mandatory vs opt-in.
 - Then implement P1 (0.6.0, storage) per the phase table and AGENT.md release
   rules.
 
@@ -127,11 +127,13 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D12 | Phase order + release cadence | **Storage first, one minor release per phase:** 0.6.0 storage → 0.7.0 sync → 0.8.0 cleaning → 0.9.0 load/enrichment → 0.10.0 REST. Each live-validated, CHANGELOG'd, pushed before the next | **Decided** 2026-10-08 |
 | D13 | REST surface | Recommended MCP parity via shared service layer; **operator chose full platform** 2026-10-08: tool logic moves to an interface-based service layer used by both MCP and REST; all 25 stub routes implemented (reads, mailbox writes, rules CRUD/test, enrichment trigger) **plus** webhook delivery and the `/api/query` DSL. Webhook delivery and DSL design are raised as their own DIPs before P5 work on them starts. Write routes require the auth decided in D13a | **Decided** 2026-10-08 |
 | D13a | Local auth for `/api` and `/mcp` | **Named tokens with scopes** (`server.auth.tokens: [{name, token: ${secret:…}/${ENV}, scopes}]`; scopes `read`, `write`, `send`, `admin`); every `/api` route and MCP tool maps to a required scope, checked once in middleware, constant-time compare; `/api/health` open; token name logged, value never. Operator directive: provision datawatch secrets for the local agent so the scheduled jobs and datawatch's `imap_mcp` backend keep working; datawatch-side code/config changes are coordinated with the datawatch agent (it owns datawatch), never made directly | **Decided** 2026-10-08 |
+| D13a-1 | Auth release timing | **Separate security release 0.5.3 before P1** (v0.5.2 precedent); D12 numbering unchanged | **Decided** 2026-10-08 |
 
 ## Phases
 
 | Phase | Release | Scope | Depends on | Status |
 |-------|---------|-------|------------|--------|
+| P0 | 0.5.3 | Security: scoped token auth middleware for `/api` + `/mcp`, scope table for all routes/tools, config + example, tests; datawatch backend token (via datawatch agent), datawatch secrets, `~/.mcp.json` header | D13a, D13a-1 | Planned |
 | P1 | 0.6.0 | Storage: driver swap to ncruces + adiantum; split `cache.db` / `imap.db` with a verified one-time migration of rules, webhooks and nonces (backup first); per-file optional encryption + `${secret:}`/`${ENV}` key resolution, fail closed; systemd ordering after datawatch when needed | D1, D1a, D1b, D5 | Planned |
 | P2 | 0.7.0 | Sync engine: SPECIAL-USE folder resolution, INTERNALDATE window with 3-level overrides, UID diff + CONDSTORE, UIDVALIDITY rebuild, headers + bodies + MIME decode (go-message), Message-ID de-dup, bus events | D6, D8, D9, D10 | Planned |
 | P3 | 0.8.0 | Cleaning: auto purge + orphans + VACUUM, `cache_sweep` (dry-run default), `\Flagged` exemption, window-resize purge/backfill; content-cleaning hook point | D7, D8 | Planned |

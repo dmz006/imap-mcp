@@ -302,6 +302,10 @@ they can be replaced or extended without touching call sites.
   secrets so scheduled jobs and the datawatch backend keep working. Changes to
   datawatch code or local datawatch config go through the datawatch agent, which
   owns datawatch; never edit the datawatch repo directly.
+- **2026-10-08 — D13a-1 (auth timing):** token auth ships first, as its own
+  security patch release 0.5.3 before P1. Security fixes may ship as patch
+  releases even when they add config, and they are never bundled into a
+  storage/migration release.
 
 ---
 
