@@ -140,7 +140,9 @@ func TestStateMigrationAddsKGColumns(t *testing.T) {
 	}
 	// Recreate the 0.12 shapes of the two changed tables.
 	for _, q := range []string{
-		`DROP TABLE intel_messages`, `DROP TABLE kg_relationships`,
+		`DROP TABLE intel_messages`, `DROP TABLE kg_relationships`, `DROP TABLE anomalies`,
+		`CREATE TABLE anomalies (id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT NOT NULL, message_id INTEGER, sender TEXT,
+			anomaly_type TEXT NOT NULL, description TEXT, severity TEXT DEFAULT 'low', detected_at INTEGER, resolved INTEGER DEFAULT 0, resolved_at INTEGER)`,
 		`CREATE TABLE intel_messages (account TEXT NOT NULL, msg_hash INTEGER NOT NULL, date INTEGER NOT NULL, sender_id INTEGER,
 			outgoing INTEGER NOT NULL DEFAULT 0, reply_hash INTEGER, paired INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (account, msg_hash)) WITHOUT ROWID`,
 		`CREATE TABLE kg_relationships (id INTEGER PRIMARY KEY AUTOINCREMENT, subject_id INTEGER NOT NULL, predicate TEXT NOT NULL,
@@ -175,6 +177,12 @@ func TestStateMigrationAddsKGColumns(t *testing.T) {
 	}
 	if _, err := d.StateSQL().Exec(`INSERT INTO kg_relationships(subject_id, predicate, object_id) VALUES(1,'p',2)`); err == nil {
 		t.Error("unique (subject, predicate, object) index missing")
+	}
+	if _, err := d.StateSQL().Exec(`INSERT INTO anomalies(account, anomaly_type, folder, uid, message_ref, details) VALUES('a','new_sender','INBOX',1,'m@x','{}')`); err != nil {
+		t.Fatalf("anomaly columns missing: %v", err)
+	}
+	if _, err := d.StateSQL().Exec(`INSERT INTO anomalies(account, anomaly_type, message_ref) VALUES('a','new_sender','m@x')`); err == nil {
+		t.Error("one finding per message and type: unique index missing")
 	}
 	// A second open is a no-op: the scan is not reset again.
 	d.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 9`) //nolint:errcheck

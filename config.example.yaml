@@ -328,6 +328,13 @@ intelligence:
   kg_stale_days: 365           # relationships without evidence this long become history (valid_to set)
   kg_llm: true                 # let the classify model read recent conversation bodies for richer relations
   kg_llm_per_tick: 10          # bodies read per tick; only when enrichment backfill gates allow
+  anomalies: true              # detect anomalies (new senders, auth failures, lookalike domains, ...)
+  anomaly_lookback_days: 7     # per-message checks only for mail this recent, and only after the history scan
+  anomaly_auth_min_passes: 3   # auth_failure: earlier messages from the sender that passed DMARC/DKIM
+  anomaly_silence_min_messages: 20  # silence: only senders with at least this many messages
+  anomaly_silence_min_days: 30 # silence: never shorter than this (else 3x their usual gap)
+  anomaly_spike_min: 10        # volume_spike: more than max(min, factor x daily average) in 24 hours
+  anomaly_spike_factor: 5
 
 log:
   level: info

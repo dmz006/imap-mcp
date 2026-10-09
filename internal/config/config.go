@@ -346,7 +346,25 @@ type IntelConfig struct {
 	KGLLM *bool `yaml:"kg_llm"`
 	// KGLLMPerTick caps extraction model calls per tick. Default 10.
 	KGLLMPerTick int `yaml:"kg_llm_per_tick"`
+
+	// Anomalies turns detection on (D22). Pointer: default true.
+	Anomalies *bool `yaml:"anomalies"`
+	// AnomalyLookbackDays: per-message checks only look at mail this recent. Default 7.
+	AnomalyLookbackDays int `yaml:"anomaly_lookback_days"`
+	// AnomalyAuthMinPasses: auth_failure needs at least this many earlier passes. Default 3.
+	AnomalyAuthMinPasses int `yaml:"anomaly_auth_min_passes"`
+	// AnomalySilenceMinMessages: silence only for senders with at least this many messages. Default 20.
+	AnomalySilenceMinMessages int `yaml:"anomaly_silence_min_messages"`
+	// AnomalySilenceMinDays: the shortest silence reported. Default 30.
+	AnomalySilenceMinDays int `yaml:"anomaly_silence_min_days"`
+	// AnomalySpikeMin and AnomalySpikeFactor: a volume spike is more than
+	// max(min, factor × daily average) messages in 24 hours. Defaults 10 and 5.
+	AnomalySpikeMin    int `yaml:"anomaly_spike_min"`
+	AnomalySpikeFactor int `yaml:"anomaly_spike_factor"`
 }
+
+// AnomaliesOn reports whether anomaly detection runs (default true).
+func (c IntelConfig) AnomaliesOn() bool { return c.Anomalies == nil || *c.Anomalies }
 
 // KGOn reports whether the knowledge graph is built (default true).
 func (c IntelConfig) KGOn() bool { return c.KG == nil || *c.KG }
@@ -438,6 +456,13 @@ func defaults() *Config {
 			LLMRolesPerTick:     20,
 			KGStaleDays:         365,
 			KGLLMPerTick:        10,
+
+			AnomalyLookbackDays:       7,
+			AnomalyAuthMinPasses:      3,
+			AnomalySilenceMinMessages: 20,
+			AnomalySilenceMinDays:     30,
+			AnomalySpikeMin:           10,
+			AnomalySpikeFactor:        5,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -540,11 +565,18 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_INTELLIGENCE_LLM_ROLES_PER_TICK", &cfg.Intel.LLMRolesPerTick)
 	envInt("IMAP_MCP_INTELLIGENCE_KG_STALE_DAYS", &cfg.Intel.KGStaleDays)
 	envInt("IMAP_MCP_INTELLIGENCE_KG_LLM_PER_TICK", &cfg.Intel.KGLLMPerTick)
+	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_LOOKBACK_DAYS", &cfg.Intel.AnomalyLookbackDays)
+	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_AUTH_MIN_PASSES", &cfg.Intel.AnomalyAuthMinPasses)
+	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SILENCE_MIN_MESSAGES", &cfg.Intel.AnomalySilenceMinMessages)
+	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SILENCE_MIN_DAYS", &cfg.Intel.AnomalySilenceMinDays)
+	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_MIN", &cfg.Intel.AnomalySpikeMin)
+	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_FACTOR", &cfg.Intel.AnomalySpikeFactor)
 	for key, dst := range map[string]**bool{
 		"IMAP_MCP_INTELLIGENCE_ENABLED":   &cfg.Intel.Enabled,
 		"IMAP_MCP_INTELLIGENCE_LLM_ROLES": &cfg.Intel.LLMRoles,
 		"IMAP_MCP_INTELLIGENCE_KG":        &cfg.Intel.KG,
 		"IMAP_MCP_INTELLIGENCE_KG_LLM":    &cfg.Intel.KGLLM,
+		"IMAP_MCP_INTELLIGENCE_ANOMALIES": &cfg.Intel.Anomalies,
 	} {
 		if v := os.Getenv(key); v != "" {
 			if b, err := strconv.ParseBool(v); err == nil {
@@ -605,8 +637,9 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("tools: attachment_inline_kb must be >= 0; attachment_max_mb, export_max_messages and export_max_mb must be >= 1")
 	}
 	if in := cfg.Intel; in.ScanIntervalMinutes < 1 || in.BackfillPerMinute < 1 || in.BatchSize < 1 || in.BatchSize > 1000 || in.LLMRolesPerTick < 0 ||
-		in.KGStaleDays < 1 || in.KGLLMPerTick < 0 {
-		return fmt.Errorf("intelligence: scan_interval_minutes, backfill_per_minute, kg_stale_days must be >= 1; batch_size 1-1000; llm_roles_per_tick, kg_llm_per_tick >= 0")
+		in.KGStaleDays < 1 || in.KGLLMPerTick < 0 || in.AnomalyLookbackDays < 1 || in.AnomalyAuthMinPasses < 1 ||
+		in.AnomalySilenceMinMessages < 2 || in.AnomalySilenceMinDays < 1 || in.AnomalySpikeMin < 1 || in.AnomalySpikeFactor < 1 {
+		return fmt.Errorf("intelligence: scan_interval_minutes, backfill_per_minute, kg_stale_days and the anomaly_* thresholds must be >= 1 (anomaly_silence_min_messages >= 2); batch_size 1-1000; llm_roles_per_tick, kg_llm_per_tick >= 0")
 	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")

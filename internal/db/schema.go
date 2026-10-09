@@ -312,7 +312,11 @@ CREATE TABLE IF NOT EXISTS anomalies (
     severity     TEXT DEFAULT 'low', -- low|medium|high
     detected_at  INTEGER DEFAULT (unixepoch()),
     resolved     INTEGER DEFAULT 0,
-    resolved_at  INTEGER
+    resolved_at  INTEGER,
+    folder       TEXT,              -- per-message anomalies: where the message was found
+    uid          INTEGER,
+    message_ref  TEXT,              -- its Message-ID (get_thread, search)
+    details      TEXT               -- JSON: the numbers behind the finding
 );
 
 CREATE INDEX IF NOT EXISTS idx_anomalies_account ON anomalies(account);

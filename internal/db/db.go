@@ -295,6 +295,10 @@ var stateColumns = []struct{ table, column, decl string }{
 	{"intel_messages", "kg_llm_done", "INTEGER NOT NULL DEFAULT 0"},
 	{"kg_relationships", "weight", "INTEGER NOT NULL DEFAULT 1"},
 	{"kg_relationships", "last_seen", "INTEGER"},
+	{"anomalies", "folder", "TEXT"},
+	{"anomalies", "uid", "INTEGER"},
+	{"anomalies", "message_ref", "TEXT"},
+	{"anomalies", "details", "TEXT"},
 }
 
 // migrateState brings an existing imap.db up to the current schema: missing
@@ -328,6 +332,9 @@ func migrateState(conn *sql.DB) error {
 	for _, q := range []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_rel_unique ON kg_relationships(subject_id, predicate, object_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_intel_messages_kg ON intel_messages(account, kg_done) WHERE kg_done = 0`,
+		// One finding per message and type; one open periodic finding per sender and type.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_message ON anomalies(anomaly_type, message_ref) WHERE message_ref IS NOT NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_open ON anomalies(account, sender, anomaly_type) WHERE message_ref IS NULL AND resolved = 0`,
 	} {
 		if _, err := conn.Exec(q); err != nil {
 			return err
