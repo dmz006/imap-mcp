@@ -257,6 +257,9 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D1b (DB split):** mail cache (`cache.db`, disposable) and state
   (`imap.db`: rules, webhooks, nonces) are separate files. Each one independently
   supports encryption, selected by the operator. Encryption is never mandatory.
+- **2026-10-08 — D5 (key source):** encryption keys come only from `${secret:name}`
+  or `${ENV}` passphrase references (Argon2id). Never auto-generate a key, and fail
+  closed when the key is missing.
 
 ---
 

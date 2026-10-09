@@ -105,7 +105,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D2 | Which fields are encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D3 | Search over encrypted content | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D4 | Embeddings when encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
-| D5 | Key source | `${secret:...}` / `${ENV}` passphrase → Argon2id, else an auto-generated 0600 keyfile. Unattended under systemd | Open |
+| D5 | Key source | **Per-file `encryption.key` = `${secret:name}` (datawatch secrets) or `${ENV}` passphrase → Argon2id (adiantum).** Never auto-generate; fail closed (refuse to open) if the key is missing or wrong. Both files may reference the same secret. systemd unit gains `After=`/`Wants=datawatch.service` when a `${secret:}` key is used. TPM-sealed systemd creds = possible later add-on | **Decided** 2026-10-08 |
 | D6 | Unencrypted mode and enrichment | Body fetched transiently for enrichment and never persisted. Headers plus a short snippet? (see options) | Open |
 | D7 | Meaning of "cleaning" | Retention sweep à la datawatch (dry-run, counts) plus optional content normalization before the LLM | Open |
 | D8 | Window semantics | INTERNALDATE, cache-only purge, global default with per-account override | Open |
