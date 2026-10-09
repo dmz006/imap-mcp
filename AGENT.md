@@ -267,6 +267,9 @@ they can be replaced or extended without touching call sites.
   on-demand `cache_sweep` (dry_run defaults true, counts before deleting), and an
   optional `\Flagged` exemption. Cleaning never touches the mailbox. Content cleaning
   before enrichment is planned for iteration 3.
+- **2026-10-08 — D8 (window):** the cache window is based on IMAP INTERNALDATE, with
+  `window_days` set globally and overridable per account and per folder. Resizing
+  the window purges or backfills; new mail always comes first.
 
 ---
 
