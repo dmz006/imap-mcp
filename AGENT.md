@@ -270,6 +270,9 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D8 (window):** the cache window is based on IMAP INTERNALDATE, with
   `window_days` set globally and overridable per account and per folder. Resizing
   the window purges or backfills; new mail always comes first.
+- **2026-10-08 — D9 (change detection):** sync detects changes with a per-cycle UID
+  diff inside the window, plus CONDSTORE `CHANGEDSINCE` for flags where available.
+  A UIDVALIDITY change rebuilds the folder. Keep one code path for all servers.
 
 ---
 
