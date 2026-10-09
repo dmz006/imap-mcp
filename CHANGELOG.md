@@ -4,6 +4,17 @@ All notable changes to imap-mcp are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- SQLite connection pragmas were never applied (v0.5.1). The DSN used
+  mattn-style `_journal`/`_fk`/`_timeout` params, which `modernc.org/sqlite`
+  silently ignores, so the DB ran in rollback-journal mode with no busy timeout
+  and foreign keys off. Concurrent writers — e.g. `imap-mcp serve` plus the
+  hourly `run-rules` CLI on the same file — could fail immediately with
+  `database is locked (SQLITE_BUSY)`. Now uses `_pragma=busy_timeout(5000)`,
+  `journal_mode(WAL)` and `foreign_keys(1)`; covered by `internal/db/db_test.go`.
+
 ## [0.3.0] - 2026-06-14
 
 Cleanup tooling and automation, built from the friction of a real ~16K-message

@@ -33,7 +33,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	dsn := fmt.Sprintf("file:%s?_journal=WAL&_fk=on&_timeout=5000", path)
+	// modernc.org/sqlite only honours _pragma=name(value) params; the mattn-style
+	// _journal/_fk/_timeout keys are silently ignored. busy_timeout goes first so
+	// it applies while switching journal mode. The service and the hourly
+	// run-rules CLI share this file, so WAL + busy_timeout prevent SQLITE_BUSY.
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", path)
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)

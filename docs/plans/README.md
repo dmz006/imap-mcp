@@ -1,0 +1,14 @@
+# Plans, bugs & backlog
+
+## Bugs
+
+| Date | Bug | Status |
+|------|-----|--------|
+| 2026-10-08 | SQLite DSN params ignored by `modernc.org/sqlite` → no WAL, no busy timeout, FKs off; `serve` + `run-rules` could hit `SQLITE_BUSY` | Fixed in v0.5.1 |
+
+## Backlog
+
+| Item | Notes |
+|------|-------|
+| Background sync is a scaffold | `internal/sync/syncer.go` `syncFolder` selects the folder and stamps `sync_state.last_synced` but fetches no messages (`messages` stays empty). The `sync.interval_minutes` loop runs but caches nothing, so enrichment, FTS, and semantic search have no data. Live tools and the rules engine query IMAP directly and are unaffected. |
+| PGP inbound gate | Declared but fails closed until implemented. |
