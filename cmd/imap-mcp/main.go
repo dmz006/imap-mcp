@@ -397,6 +397,7 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 		}
 	}
 	scanner := intel.New(cfg, intel.NewIMAPSource(pool), database.StateSQL(), database.SQL(), classify, log)
+	scanner.SetBus(b) // anomaly.detected (D22)
 
 	// Start background workers
 	go syncer.Run(ctx)

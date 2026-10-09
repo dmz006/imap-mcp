@@ -90,6 +90,7 @@ func NewServer(
 	s.AddTool(tools.GetSenderProfileTool(), h.GetSenderProfile)
 	s.AddTool(tools.KGQueryTool(), h.KGQuery)
 	s.AddTool(tools.GetAnomaliesTool(), h.GetAnomalies)
+	s.AddTool(tools.ResolveAnomalyTool(), h.ResolveAnomaly)
 	s.AddTool(tools.EnrichmentStatusTool(), h.EnrichmentStatus)
 	s.AddTool(tools.TriggerEnrichmentTool(), h.TriggerEnrichment)
 

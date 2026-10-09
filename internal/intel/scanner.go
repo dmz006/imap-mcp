@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/imap-mcp/internal/bus"
 	"github.com/dmz006/imap-mcp/internal/config"
 )
 
@@ -44,7 +45,13 @@ type Scanner struct {
 	// profiles fill in progressively instead of only at the end of the tick.
 	refreshEvery int
 	sinceRefresh int
+
+	bus *bus.Bus  // anomaly.detected; nil = not published
+	det *detector // this tick's anomaly detector (nil = off)
 }
+
+// SetBus lets the scanner publish anomaly.detected.
+func (sc *Scanner) SetBus(b *bus.Bus) { sc.bus = b }
 
 // New builds a scanner. classify may be nil (no model-assigned roles).
 func New(cfg *config.Config, src Source, state, cache *sql.DB, classify ClassifyFunc, log *slog.Logger) *Scanner {
@@ -114,6 +121,7 @@ func (sc *Scanner) Run(ctx context.Context) {
 type TickResult struct {
 	Scanned, New, Duplicate, Paired, Roles, ModelRoles int
 	Edges, TagEdges, ModelEdges                        int // messages that added graph edges, per source
+	Anomalies                                          int
 }
 
 // Tick scans every account's folders for new UIDs, pairs replies, recomputes
@@ -138,6 +146,15 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 			return err
 		}
 	}
+	accounts := make([]string, 0, len(scopes))
+	for a := range scopes {
+		accounts = append(accounts, a)
+	}
+	det, err := sc.prepareDetector(ctx, accounts)
+	if err != nil {
+		return err
+	}
+	sc.det = det
 	for _, account := range sc.src.Accounts() {
 		folders, ok := scopes[account]
 		if !ok {
@@ -161,6 +178,19 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 		return err
 	}
 	res.Roles = n
+	found, err := sc.periodic(ctx, det)
+	if err != nil {
+		return err
+	}
+	for account, ids := range found {
+		res.Anomalies += len(ids)
+		sc.publish(ctx, account, ids)
+	}
+	if det != nil {
+		if err := sc.scoreSenders(ctx); err != nil {
+			return err
+		}
+	}
 	if res.ModelRoles, err = sc.modelRoles(ctx, sc.cfg.LLMRolesPerTick); err != nil {
 		return err
 	}
@@ -175,10 +205,11 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 			return err
 		}
 	}
-	if res.Scanned > 0 || res.Roles > 0 || res.ModelRoles > 0 || res.TagEdges > 0 || res.ModelEdges > 0 {
+	if res.Scanned > 0 || res.Roles > 0 || res.ModelRoles > 0 || res.TagEdges > 0 || res.ModelEdges > 0 || res.Anomalies > 0 {
 		sc.log.Info("intel: scan tick", "scanned", res.Scanned, "new", res.New, "duplicates", res.Duplicate,
 			"replies_paired", res.Paired, "roles", res.Roles, "model_roles", res.ModelRoles,
 			"kg_messages", res.Edges, "kg_tag_messages", res.TagEdges, "kg_model_messages", res.ModelEdges,
+			"anomalies", res.Anomalies,
 			"took", sc.now().Sub(start).Round(time.Millisecond))
 	}
 	return nil
@@ -244,7 +275,7 @@ func (sc *Scanner) scanFolder(ctx context.Context, account, folder string, res *
 			continue
 		}
 		st.UIDValidity = b.UIDValidity
-		a, err := sc.st.apply(ctx, account, folder, b.UIDValidity, b, own, kg)
+		a, err := sc.st.apply(ctx, account, folder, b.UIDValidity, b, own, kg, sc.det, sc.anomalyCfg())
 		if err != nil {
 			return err
 		}
@@ -252,6 +283,8 @@ func (sc *Scanner) scanFolder(ctx context.Context, account, folder string, res *
 		res.New += a.New
 		res.Duplicate += a.Duplicate
 		res.Edges += a.Edges
+		res.Anomalies += len(a.Anomalies)
+		sc.publish(ctx, account, a.Anomalies)
 		if sc.sinceRefresh += a.New + a.Edges; sc.sinceRefresh >= sc.refreshEvery {
 			sc.sinceRefresh = 0
 			if _, err := sc.st.pairReplies(ctx, account); err != nil {

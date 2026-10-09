@@ -165,6 +165,7 @@ func newFixture(t *testing.T) *fixture {
 
 	cfg := &config.Config{Accounts: []config.AccountConfig{f.srv.Account("test")}, Intel: config.IntelConfig{
 		ScanIntervalMinutes: 15, BackfillPerMinute: 600, BatchSize: 2, LLMRolesPerTick: 5, KGStaleDays: 365, KGLLMPerTick: 5,
+		AnomalyLookbackDays: 7, AnomalyAuthMinPasses: 3, AnomalySilenceMinMessages: 20, AnomalySilenceMinDays: 30, AnomalySpikeMin: 10, AnomalySpikeFactor: 5,
 		ExcludeFolders: []string{"Junk", "Drafts"}, // the test server has no SPECIAL-USE attributes
 	}}
 	classify := func(ctx context.Context, prompt string) (string, error) {

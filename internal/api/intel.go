@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/dmz006/imap-mcp/internal/service"
 )
 
@@ -53,7 +55,18 @@ func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	resolved, _ := strconv.ParseBool(q.Get("include_resolved"))
 	list, err := s.svc.Anomalies(r.Context(), service.AnomalyParams{
-		Account: q.Get("account"), Severity: q.Get("severity"), IncludeResolved: resolved, Limit: queryInt(r, "limit", 20),
+		Account: q.Get("account"), Severity: q.Get("severity"), Type: q.Get("type"), Sender: q.Get("sender"),
+		IncludeResolved: resolved, Limit: queryInt(r, "limit", 20),
 	})
 	respond(w)(map[string]any{"count": len(list), "anomalies": list}, err)
+}
+
+// POST /api/anomalies/{id}/resolve
+func (s *Server) handleResolveAnomaly(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "id must be a positive integer", http.StatusBadRequest)
+		return
+	}
+	respond(w)(s.svc.ResolveAnomaly(r.Context(), id))
 }

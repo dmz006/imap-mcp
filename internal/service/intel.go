@@ -361,9 +361,10 @@ func (s *Service) KGQuery(ctx context.Context, p KGParams) ([]KGEdge, error) {
 
 // AnomalyParams filters the anomaly log.
 type AnomalyParams struct {
-	Account, Severity, Sender string
-	IncludeResolved           bool
-	Limit                     int
+	Account, Severity, Sender, Type string
+	ID                              int64
+	IncludeResolved                 bool
+	Limit                           int
 }
 
 // Anomaly is one detected behaviour change.
@@ -376,6 +377,13 @@ type Anomaly struct {
 	Severity    string `json:"severity"`
 	DetectedAt  int64  `json:"detected_at"`
 	Resolved    bool   `json:"resolved"`
+	ResolvedAt  int64  `json:"resolved_at,omitempty"`
+	// Per-message findings: where the message is. message_ref is its
+	// Message-ID (for get_thread or search).
+	Folder     string          `json:"folder,omitempty"`
+	UID        uint32          `json:"uid,omitempty"`
+	MessageRef string          `json:"message_ref,omitempty"`
+	Details    json.RawMessage `json:"details,omitempty"`
 }
 
 // Anomalies lists detected anomalies, newest first.
@@ -404,8 +412,15 @@ func (s *Service) Anomalies(ctx context.Context, p AnomalyParams) ([]Anomaly, er
 	if !p.IncludeResolved {
 		where = append(where, "resolved = 0")
 	}
+	if p.Type != "" {
+		where, args = append(where, "anomaly_type = ?"), append(args, p.Type)
+	}
+	if p.ID > 0 {
+		where, args = append(where, "id = ?"), append(args, p.ID)
+	}
 	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT id, account, COALESCE(sender,''), anomaly_type, COALESCE(description,''),
-		COALESCE(severity,'low'), COALESCE(detected_at,0), resolved FROM anomalies WHERE `+strings.Join(where, " AND ")+
+		COALESCE(severity,'low'), COALESCE(detected_at,0), resolved, COALESCE(resolved_at,0), COALESCE(folder,''), COALESCE(uid,0),
+		COALESCE(message_ref,''), COALESCE(details,'') FROM anomalies WHERE `+strings.Join(where, " AND ")+
 		` ORDER BY detected_at DESC LIMIT ?`, append(args, p.Limit)...)
 	if err != nil {
 		return nil, err
@@ -415,11 +430,43 @@ func (s *Service) Anomalies(ctx context.Context, p AnomalyParams) ([]Anomaly, er
 	for rows.Next() {
 		var a Anomaly
 		var resolved int
-		if err := rows.Scan(&a.ID, &a.Account, &a.Sender, &a.Type, &a.Description, &a.Severity, &a.DetectedAt, &resolved); err != nil {
+		var details string
+		if err := rows.Scan(&a.ID, &a.Account, &a.Sender, &a.Type, &a.Description, &a.Severity, &a.DetectedAt, &resolved,
+			&a.ResolvedAt, &a.Folder, &a.UID, &a.MessageRef, &details); err != nil {
 			return nil, err
 		}
 		a.Resolved = resolved != 0
+		if details != "" && json.Valid([]byte(details)) {
+			a.Details = json.RawMessage(details)
+		}
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// ResolveAnomaly marks an anomaly resolved (reviewed). Resolving twice is
+// harmless; an unknown id is NotFound.
+func (s *Service) ResolveAnomaly(ctx context.Context, id int64) (Anomaly, error) {
+	if s.db == nil || s.db.StateSQL() == nil {
+		return Anomaly{}, unavailable("the state database is not open in this mode")
+	}
+	if id <= 0 {
+		return Anomaly{}, invalid("id is required")
+	}
+	r, err := s.db.StateSQL().ExecContext(ctx, `UPDATE anomalies SET resolved = 1, resolved_at = COALESCE(resolved_at, unixepoch()) WHERE id = ?`, id)
+	if err != nil {
+		return Anomaly{}, err
+	}
+	if n, _ := r.RowsAffected(); n == 0 {
+		return Anomaly{}, notFound("no anomaly %d", id)
+	}
+	// Keep the sender's score in step (best effort; the scanner recomputes it).
+	_, _ = s.db.StateSQL().ExecContext(ctx, `UPDATE senders SET anomaly_score = COALESCE((SELECT sum(CASE a.severity WHEN 'high' THEN 1.0
+		WHEN 'medium' THEN 0.5 ELSE 0.2 END) FROM anomalies a WHERE a.sender = senders.address AND a.resolved = 0), 0)
+		WHERE address = (SELECT sender FROM anomalies WHERE id = ?)`, id)
+	list, err := s.Anomalies(ctx, AnomalyParams{IncludeResolved: true, ID: id, Limit: 1})
+	if err != nil || len(list) == 0 {
+		return Anomaly{ID: id, Resolved: true}, err
+	}
+	return list[0], nil
 }

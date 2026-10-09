@@ -185,3 +185,35 @@ func TestIntelStats(t *testing.T) {
 		t.Errorf("profile scan_complete = %+v %v", p.ScanComplete, err)
 	}
 }
+
+func TestResolveAnomaly(t *testing.T) {
+	s, d := intelSvc(t)
+	ctx := context.Background()
+	if _, err := d.StateSQL().Exec(`INSERT INTO anomalies(account, sender, anomaly_type, severity, folder, uid, message_ref, details)
+		VALUES('personal','eve@example.com','auth_failure','high','INBOX',7,'m7@example.com','{"method":"dmarc"}')`); err != nil {
+		t.Fatal(err)
+	}
+	d.StateSQL().Exec(`INSERT INTO senders(address, anomaly_score) VALUES('eve@example.com', 1.0)`) //nolint:errcheck
+	list, err := s.Anomalies(ctx, AnomalyParams{Type: "auth_failure"})
+	if err != nil || len(list) != 1 || list[0].MessageRef != "m7@example.com" || list[0].UID != 7 || string(list[0].Details) != `{"method":"dmarc"}` {
+		t.Fatalf("filtered = %+v %v", list, err)
+	}
+	a, err := s.ResolveAnomaly(ctx, list[0].ID)
+	if err != nil || !a.Resolved || a.ResolvedAt == 0 {
+		t.Fatalf("resolved = %+v %v", a, err)
+	}
+	var score float64
+	d.StateSQL().QueryRow(`SELECT anomaly_score FROM senders WHERE address='eve@example.com'`).Scan(&score) //nolint:errcheck
+	if score != 0 {
+		t.Errorf("score after resolve = %v", score)
+	}
+	if open, _ := s.Anomalies(ctx, AnomalyParams{Type: "auth_failure"}); len(open) != 0 {
+		t.Error("resolved anomaly still listed as open")
+	}
+	if _, err := s.ResolveAnomaly(ctx, 99999); KindOf(err) != KindNotFound {
+		t.Errorf("unknown id: %v", err)
+	}
+	if _, err := s.ResolveAnomaly(ctx, 0); KindOf(err) != KindInvalid {
+		t.Errorf("zero id: %v", err)
+	}
+}

@@ -45,7 +45,13 @@ func (h *Handlers) KGQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 func (h *Handlers) GetAnomalies(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	list, err := h.svc.Anomalies(ctx, service.AnomalyParams{
 		Account: req.GetString("account", ""), Severity: req.GetString("severity", ""),
+		Type: req.GetString("type", ""), Sender: req.GetString("sender", ""),
 		IncludeResolved: !req.GetBool("unresolved_only", true), Limit: int(req.GetFloat("limit", 20)),
 	})
 	return result(map[string]any{"count": len(list), "anomalies": list}, err)
+}
+
+// ResolveAnomaly marks an anomaly reviewed.
+func (h *Handlers) ResolveAnomaly(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.ResolveAnomaly(ctx, int64(req.GetFloat("id", 0))))
 }

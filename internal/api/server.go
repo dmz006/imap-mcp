@@ -149,6 +149,7 @@ func (s *Server) Router() http.Handler {
 		r.With(read).Get("/api/senders/{address}", s.handleGetSender)
 		r.With(read).Get("/api/kg", s.handleKGQuery)
 		r.With(read).Get("/api/anomalies", s.handleGetAnomalies)
+		r.With(write).Post("/api/anomalies/{id}/resolve", s.handleResolveAnomaly)
 		r.With(read).Get("/api/enrichment/status", s.handleEnrichmentStatus)
 		r.With(admin).Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
 

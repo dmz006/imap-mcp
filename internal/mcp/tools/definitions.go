@@ -289,11 +289,21 @@ func KGQueryTool() mcp.Tool {
 
 func GetAnomaliesTool() mcp.Tool {
 	return mcp.NewTool("get_anomalies",
-		mcp.WithDescription("Get detected anomalies: behavior changes, silence, reply spikes, new senders"),
+		mcp.WithDescription("Get detected anomalies, newest first: new_sender, auth_failure (DMARC/DKIM fails for a sender whose mail used to pass), "+
+			"lookalike_domain, reply_to_mismatch, silence, volume_spike. Per-message findings include folder, uid and message_ref (Message-ID)"),
 		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
 		mcp.WithString("severity", mcp.Description("Filter by severity: low|medium|high")),
+		mcp.WithString("type", mcp.Description("Filter by type, e.g. auth_failure")),
+		mcp.WithString("sender", mcp.Description("Filter by sender address")),
 		mcp.WithBoolean("unresolved_only", mcp.Description("Only return unresolved anomalies (default: true)")),
 		mcp.WithNumber("limit", mcp.Description("Max results (default: 20)")),
+	)
+}
+
+func ResolveAnomalyTool() mcp.Tool {
+	return mcp.NewTool("resolve_anomaly",
+		mcp.WithDescription("Mark an anomaly as reviewed (resolved). It stays in the log with resolved: true"),
+		mcp.WithNumber("id", mcp.Required(), mcp.Description("Anomaly id from get_anomalies")),
 	)
 }
 

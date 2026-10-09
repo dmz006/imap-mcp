@@ -121,6 +121,9 @@ func (s *imapSource) Fetch(ctx context.Context, account, folder string, afterUID
 			if len(env.From) > 0 {
 				h.From = addr(env.From[0])
 			}
+			if len(env.ReplyTo) > 0 {
+				h.ReplyTo = addr(env.ReplyTo[0])
+			}
 			for _, a := range env.To {
 				h.To = append(h.To, addr(a))
 			}

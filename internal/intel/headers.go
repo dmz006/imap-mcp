@@ -32,6 +32,7 @@ type Header struct {
 	MessageID string
 	InReplyTo string
 	From      Address
+	ReplyTo   Address
 	To, Cc    []Address
 
 	List  bool   // List-Id or List-Unsubscribe present

@@ -36,13 +36,14 @@ func (st *store) state(ctx context.Context, account, folder string) (scanState, 
 // applied reports what one batch changed.
 type applied struct {
 	New, Duplicate int
-	Edges          int // messages whose graph edges were added
+	Edges          int     // messages whose graph edges were added
+	Anomalies      []int64 // new anomaly ids, published after commit
 }
 
 // apply records one batch and the folder's new progress in a single
 // transaction, so a crash between batches never counts a message twice:
 // either the batch and its progress are both stored, or neither is.
-func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool, kg *kgTarget) (applied, error) {
+func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool, kg *kgTarget, det *detector, acfg anomalyCfg) (applied, error) {
 	var res applied
 	tx, err := st.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -74,6 +75,12 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 			res.Duplicate++ // already seen in another folder or label (D28)
 		} else {
 			res.New++
+			// Anomaly checks see the sender's profile before this message.
+			ids, err := det.check(ctx, tx, acfg, account, folder, h, own)
+			if err != nil {
+				return res, err
+			}
+			res.Anomalies = append(res.Anomalies, ids...)
 			if err := st.profile(ctx, tx, account, hash, h, outgoing, own); err != nil {
 				return res, err
 			}

@@ -148,3 +148,16 @@ func TestRESTContentRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestRESTResolveAnomaly(t *testing.T) {
+	hs := contentServer(t)
+	if resp := do(t, "POST", hs.URL+"/api/anomalies/1/resolve", readToken, "{}"); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("read token: %d, want 403", resp.StatusCode)
+	}
+	if resp := do(t, "POST", hs.URL+"/api/anomalies/1/resolve", writeToken, "{}"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown id: %d, want 404", resp.StatusCode)
+	}
+	if resp := do(t, "POST", hs.URL+"/api/anomalies/x/resolve", writeToken, "{}"); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bad id: %d, want 400", resp.StatusCode)
+	}
+}
