@@ -6,6 +6,64 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **Documentation pass (P7).** README rewritten for the current feature set; new
+  guides for token auth, encryption, deployment, the REST API, rules, the sync
+  cache, enrichment and known limitations, plus a docs index; existing guides,
+  example configs, the agent context file and the skill corrected against the code.
+
+## [0.10.4] - 2026-10-09
+
+### Fixed
+- **Reading mail no longer marks it read (v0.10.4).** `get_message`,
+  `get_headers` (and `GET /api/messages/{uid}` and its headers route),
+  `detect_subscriptions` and the inbound command watcher fetched body sections
+  without `PEEK`, so the server set `\Seen` on everything they read. The
+  watcher marked every unread message in its folder as read, not only command
+  attempts. All now use `BODY.PEEK`; only command attempts are marked `\Seen`,
+  explicitly.
+- **Microsoft 365 / Outlook OAuth works (v0.10.4).** `xoauth2` always requested
+  Google's `https://mail.google.com/` scope, so the Microsoft endpoint rejected
+  every authorization. Microsoft now requests
+  `https://outlook.office.com/IMAP.AccessAsUser.All` and `offline_access` (for a
+  refresh token); Google is unchanged.
+- **`auth-setup` callback hardened (v0.10.4).** The OAuth `state` is now random
+  and checked (a callback with a wrong or missing state is rejected and does not
+  end the flow), provider errors (`error=access_denied`) are reported, and the
+  callback listens on loopback only (127.0.0.1 and ::1) instead of all
+  interfaces.
+- **Provider auto-detect no longer panics (v0.10.4)** on short non-Gmail
+  addresses (11–13 characters), and only `@gmail.com` / `@googlemail.com`
+  count as Gmail (not e.g. `@notgmail.com`).
+
+## [0.10.3] - 2026-10-09
+
+### Fixed
+- **Clean stop with open streams (v0.10.3).** `serve` exited with status 1
+  ("context deadline exceeded") on every stop while a client held a long-lived
+  stream open (the datawatch `/api/events` SSE consumer, MCP streamable GET).
+  Requests now inherit the server context, so streams end as soon as shutdown
+  starts; any handler that still lingers past the 5 s grace period has its
+  connection closed instead of failing the stop.
+
+## [0.10.2] - 2026-10-09
+
+### Changed
+- **More personal details scrubbed (v0.10.2).** Removed mailbox-derived counts
+  from the inbox-cleanup cookbook, README and IMAP-MCP-CONTEXT.md (now illustrative
+  numbers), installed model sizes, an internal commit note, and the account count
+  in the architecture diagram. No code changes.
+
+## [0.10.1] - 2026-10-09
+
+### Changed
+- **Docs scrubbed of personal and internal details (v0.10.1).** Public docs, plans
+  and tests no longer contain local home paths, a personal mail domain or account
+  name, hardware specifics, or stats derived from live mailboxes. Examples use
+  `example.com` and `/path/to/imap-mcp`. No code changes.
+
+## [0.10.0] - 2026-10-09
+
 ### Added
 - **`/api/query` JSON query DSL (v0.10.0, D17).** `POST /api/query` answers ad-hoc
   questions over fixed, read-only views of the cache: `messages`, `senders`,
@@ -84,6 +142,33 @@ All notable changes to imap-mcp are documented here. The format is based on
     once iteration-3 intelligence fills those tables.
   - **Still pending:** webhooks and `/api/query`. Each waits on its own
     decision.
+
+### Changed
+- **datawatch secrets come from the external-service endpoint (v0.10.0, D15).**
+  `${secret:name}` now resolves via `GET /api/external/secrets/{name}`
+  (datawatch v8.75.0 or later) with imap-mcp's service token, minted by the
+  operator with `datawatch secrets mint-service-token imap-mcp`. Secrets must
+  be scoped `service:imap-mcp`. The old `/api/agents/secrets/` path is no
+  longer used. Errors now say what to fix (401: re-mint the token; 403/404:
+  missing or unscoped secret).
+
+### Fixed
+- **Permanent deletes now remove only the targeted messages (v0.10.0).** Before,
+  `delete_message permanent`, `purge_sender permanent` and the move-by-copy
+  fallback ran a folder-wide `EXPUNGE`. That also destroyed any other message
+  already marked `\Deleted` by a mail client. go-imap's own `Move` fallback
+  does the same on servers without UIDPLUS. Now:
+  - Servers with UIDPLUS use `UID EXPUNGE` on exactly the target messages.
+  - Without UIDPLUS, the operation refuses if any other message is already
+    `\Deleted`.
+  - All moves go through native MOVE, or COPY plus that same targeted delete.
+- **Enrichment ordering (v0.10.0).** Every new-mail item now finishes before
+  any backfill item in the same batch starts. Before, the concurrency cap
+  could let a backfill item go first.
+
+## [0.9.0] - 2026-10-08
+
+### Added
 - **Enrichment load handling (v0.9.0, D11a/D11b).**
   - **Providers per call type.** Embeddings always go straight to Ollama
     (`enrichment.embed.url/model`). Classification uses either `ollama`
@@ -113,6 +198,10 @@ All notable changes to imap-mcp are documented here. The format is based on
       oldest pending age, pause reason and backoff.
   - The cache schema moves to v3 (queue lane). The cache is rebuilt from IMAP
     on first start.
+
+## [0.8.0] - 2026-10-08
+
+### Added
 - **Cache cleaning (v0.8.0).** Cleaning touches the cache only, never the
   mailbox.
   - **After every sync cycle:**
@@ -140,6 +229,10 @@ All notable changes to imap-mcp are documented here. The format is based on
     iteration 3.
   - New env overrides: `IMAP_MCP_SYNC_KEEP_FLAGGED` and
     `IMAP_MCP_SYNC_VACUUM_INTERVAL_HOURS`.
+
+## [0.7.0] - 2026-10-08
+
+### Added
 - **Mail cache sync (v0.7.0).** The background sync now fills `cache.db`.
   Before, it only stamped `sync_state`. Per account and per configured folder:
   - **Folders:** `sync.folders` takes SPECIAL-USE tokens (`\Sent`, `\Archive`,
@@ -174,22 +267,29 @@ All notable changes to imap-mcp are documented here. The format is based on
   The cache schema is versioned (`PRAGMA user_version`). A cache from 0.6.0 is
   dropped and rebuilt from IMAP on first start.
 
+### Fixed
+- Database files and their WAL/SHM sidecars are created and kept at mode 0600
+  (v0.7.0). Before, the WAL/SHM files followed the umask.
+- Enrichment no longer leaves rows with a NULL body, subject or sender name
+  stuck in `pending` forever, which could starve the queue (v0.7.0).
+
+## [0.6.0] - 2026-10-08
+
+### Added
+- **Optional at-rest encryption per DB file (v0.6.0).** Set
+  `db.encryption_key` and/or `db.cache.encryption_key`. This is whole-file
+  encryption with the adiantum VFS: the full-text index, vectors and WAL are
+  all encrypted.
+  - Keys are `${secret:name}` or `${ENV}` passphrase references, run through
+    Argon2id. A key is never generated.
+  - A missing, unresolvable or wrong key refuses to open the file. A key set on
+    an existing plaintext file also refuses to open.
+  - `run-rules` opens only the state DB and resolves only its key.
+  - Encryption state is reported in `/api/health` under `storage`.
+  - New env overrides: `IMAP_MCP_DB_CACHE_PATH`, `IMAP_MCP_DB_ENCRYPTION_KEY`
+    and `IMAP_MCP_DB_CACHE_ENCRYPTION_KEY`.
+
 ### Changed
-- **More personal details scrubbed (v0.10.2).** Removed mailbox-derived counts
-  from the inbox-cleanup cookbook, README and IMAP-MCP-CONTEXT.md (now illustrative
-  numbers), installed model sizes, an internal commit note, and the account count
-  in the architecture diagram. No code changes.
-- **Docs scrubbed of personal and internal details (v0.10.1).** Public docs, plans
-  and tests no longer contain local home paths, a personal mail domain or account
-  name, hardware specifics, or stats derived from live mailboxes. Examples use
-  `example.com` and `/path/to/imap-mcp`. No code changes.
-- **datawatch secrets come from the external-service endpoint (v0.10.0, D15).**
-  `${secret:name}` now resolves via `GET /api/external/secrets/{name}`
-  (datawatch v8.75.0 or later) with imap-mcp's service token, minted by the
-  operator with `datawatch secrets mint-service-token imap-mcp`. Secrets must
-  be scoped `service:imap-mcp`. The old `/api/agents/secrets/` path is no
-  longer used. Errors now say what to fix (401: re-mint the token; 403/404:
-  missing or unscoped secret).
 - **Storage (v0.6.0).** The SQLite driver is now `github.com/ncruces/go-sqlite3`
   (pure Go, no cgo), replacing `modernc.org/sqlite`. Data now lives in two files:
   - `db.path` (`imap.db`) is the state DB: rules, webhooks and inbound nonces.
@@ -208,19 +308,11 @@ All notable changes to imap-mcp are documented here. The format is based on
   - The split is logged with row counts.
   - It's idempotent and safe if `serve` and `run-rules` start at the same time.
 
-### Added
-- **Optional at-rest encryption per DB file (v0.6.0).** Set
-  `db.encryption_key` and/or `db.cache.encryption_key`. This is whole-file
-  encryption with the adiantum VFS: the full-text index, vectors and WAL are
-  all encrypted.
-  - Keys are `${secret:name}` or `${ENV}` passphrase references, run through
-    Argon2id. A key is never generated.
-  - A missing, unresolvable or wrong key refuses to open the file. A key set on
-    an existing plaintext file also refuses to open.
-  - `run-rules` opens only the state DB and resolves only its key.
-  - Encryption state is reported in `/api/health` under `storage`.
-  - New env overrides: `IMAP_MCP_DB_CACHE_PATH`, `IMAP_MCP_DB_ENCRYPTION_KEY`
-    and `IMAP_MCP_DB_CACHE_ENCRYPTION_KEY`.
+### Fixed
+- `Rules.List` no longer fails on rules with NULL description, priority or
+  run count (v0.6.0).
+
+## [0.5.3] - 2026-10-08
 
 ### Security
 - `/api` and `/mcp` now require named, scoped bearer tokens (v0.5.3).
@@ -244,6 +336,16 @@ All notable changes to imap-mcp are documented here. The format is based on
   **Upgrade:** add tokens to the config and to every client before upgrading.
   Claude Code: `"headers": {"Authorization": "Bearer ..."}` on the `imap-mcp`
   HTTP entry. datawatch's `imap_mcp` backend needs a version that sends a token.
+
+### Fixed
+- `GET /api/events` (SSE) now sends its 200 headers immediately, instead of at
+  the first event or 15 s heartbeat, and is exempt from the 30 s route timeout
+  and the 60 s server `WriteTimeout`, which had cut the stream every 30–60 s
+  and forced datawatch's `imap_mcp` backend to reconnect (v0.5.3).
+
+## [0.5.2] - 2026-10-08
+
+### Security
 - Browser-originated requests against the local HTTP server are now refused
   (v0.5.2). Before, any web page open on the host could POST a `text/plain`
   body to `/api/accounts/{account}/messages/send` without a CORS preflight and
@@ -255,48 +357,9 @@ All notable changes to imap-mcp are documented here. The format is based on
 
   Non-browser clients (curl, datawatch, Claude Code) are unaffected.
 
+## [0.5.1] - 2026-10-08
+
 ### Fixed
-- **Microsoft 365 / Outlook OAuth works (v0.10.4).** `xoauth2` always requested
-  Google's `https://mail.google.com/` scope, so the Microsoft endpoint rejected
-  every authorization. Microsoft now requests
-  `https://outlook.office.com/IMAP.AccessAsUser.All` and `offline_access` (for a
-  refresh token); Google is unchanged.
-- **`auth-setup` callback hardened (v0.10.4).** The OAuth `state` is now random
-  and checked (a callback with a wrong or missing state is rejected and does not
-  end the flow), provider errors (`error=access_denied`) are reported, and the
-  callback listens on loopback only (127.0.0.1 and ::1) instead of all
-  interfaces.
-- **Provider auto-detect no longer panics (v0.10.4)** on short non-Gmail
-  addresses (11–13 characters), and only `@gmail.com` / `@googlemail.com`
-  count as Gmail (not e.g. `@notgmail.com`).
-- **Clean stop with open streams (v0.10.3).** `serve` exited with status 1
-  ("context deadline exceeded") on every stop while a client held a long-lived
-  stream open (the datawatch `/api/events` SSE consumer, MCP streamable GET).
-  Requests now inherit the server context, so streams end as soon as shutdown
-  starts; any handler that still lingers past the 5 s grace period has its
-  connection closed instead of failing the stop.
-- **Permanent deletes now remove only the targeted messages (v0.10.0).** Before,
-  `delete_message permanent`, `purge_sender permanent` and the move-by-copy
-  fallback ran a folder-wide `EXPUNGE`. That also destroyed any other message
-  already marked `\Deleted` by a mail client. go-imap's own `Move` fallback
-  does the same on servers without UIDPLUS. Now:
-  - Servers with UIDPLUS use `UID EXPUNGE` on exactly the target messages.
-  - Without UIDPLUS, the operation refuses if any other message is already
-    `\Deleted`.
-  - All moves go through native MOVE, or COPY plus that same targeted delete.
-- **Enrichment ordering (v0.10.0).** Every new-mail item now finishes before
-  any backfill item in the same batch starts. Before, the concurrency cap
-  could let a backfill item go first.
-- Database files and their WAL/SHM sidecars are created and kept at mode 0600
-  (v0.7.0). Before, the WAL/SHM files followed the umask.
-- Enrichment no longer leaves rows with a NULL body, subject or sender name
-  stuck in `pending` forever, which could starve the queue (v0.7.0).
-- `Rules.List` no longer fails on rules with NULL description, priority or
-  run count (v0.6.0).
-- `GET /api/events` (SSE) now sends its 200 headers immediately, instead of at
-  the first event or 15 s heartbeat, and is exempt from the 30 s route timeout
-  and the 60 s server `WriteTimeout`, which had cut the stream every 30–60 s
-  and forced datawatch's `imap_mcp` backend to reconnect (v0.5.3).
 - SQLite connection pragmas were never applied (v0.5.1). The DSN used
   mattn-style `_journal`/`_fk`/`_timeout` params, which `modernc.org/sqlite`
   silently ignores, so the DB ran in rollback-journal mode with no busy timeout
@@ -305,9 +368,27 @@ All notable changes to imap-mcp are documented here. The format is based on
   `database is locked (SQLITE_BUSY)`. Now uses `_pragma=busy_timeout(5000)`,
   `journal_mode(WAL)` and `foreign_keys(1)`; covered by `internal/db/db_test.go`.
 
+## [0.5.0] - 2026-06-15
+
+### Added
+- **Enterprise Gmail / Google Workspace OAuth.** `auth.provider: google` selects the
+  Google endpoint for custom domains, and `xoauth2_service_account` supports
+  domain-wide delegation (headless). See `docs/enterprise-gmail-oauth.md`.
+
+## [0.4.0] - 2026-06-15
+
+### Added
+- **`imap-mcp run-rules [--dry-run]`.** Applies active rules once and exits, for
+  scheduled automation (cron or a datawatch job). See `docs/rules.md`.
+
+## [0.3.1] - 2026-06-14
+
+### Added
+- **`label_bulk`.** Applies a Gmail label to all messages from a sender.
+
 ## [0.3.0] - 2026-06-14
 
-Cleanup tooling and automation, built from the friction of a real ~16K-message
+Cleanup tooling and automation, built from the friction of a large real-world
 inbox cleanup. **42 MCP tools.**
 
 ### Added

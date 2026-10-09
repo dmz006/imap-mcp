@@ -101,6 +101,7 @@ func (h *Handlers) scanSubscriptions(ctx context.Context, account, folder string
 			{
 				Specifier:    imaplib.PartSpecifierHeader,
 				HeaderFields: []string{"LIST-UNSUBSCRIBE"},
+				Peek:         true, // a scan must not mark mail read
 			},
 		},
 	}

@@ -105,8 +105,10 @@ func (w *Watcher) pollAccount(_ context.Context, acct *config.AccountConfig) err
 		Envelope: true,
 		UID:      true,
 		BodySection: []*imaplib.FetchItemBodySection{
-			{Specifier: imaplib.PartSpecifierHeader, HeaderFields: []string{"Authentication-Results", "DKIM-Signature", "From"}},
-			{Specifier: imaplib.PartSpecifierText},
+			// Peek: ordinary mail must stay unread; only command attempts
+			// are marked \Seen, explicitly, below.
+			{Specifier: imaplib.PartSpecifierHeader, HeaderFields: []string{"Authentication-Results", "DKIM-Signature", "From"}, Peek: true},
+			{Specifier: imaplib.PartSpecifierText, Peek: true},
 		},
 	}
 

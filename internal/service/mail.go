@@ -189,7 +189,7 @@ func (s *Service) GetMessage(ctx context.Context, account, folder string, uid ui
 	}
 	msgs, err := client.Fetch(imaplib.UIDSetNum(imaplib.UID(uid)), &imaplib.FetchOptions{
 		Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true,
-		BodySection: []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierText}},
+		BodySection: []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierText, Peek: true}}, // reading must not set \Seen
 	}).Collect()
 	if err != nil {
 		return MessageDetail{}, upstream("uid fetch", err)
@@ -229,7 +229,7 @@ func (s *Service) GetHeaders(ctx context.Context, account, folder string, uid ui
 	}
 	msgs, err := client.Fetch(imaplib.UIDSetNum(imaplib.UID(uid)), &imaplib.FetchOptions{
 		Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true,
-		BodySection: []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierHeader}},
+		BodySection: []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierHeader, Peek: true}},
 	}).Collect()
 	if err != nil {
 		return Headers{}, upstream("fetch", err)
