@@ -109,6 +109,15 @@ func TestParseRelationsAndStrip(t *testing.T) {
 	if len(rels) != 3 || rels[0].Predicate != PredManages || rels[1].Due != "2026-11-01" || rels[2].Due != "" {
 		t.Fatalf("relations = %+v", rels)
 	}
+	// The shape small models actually return for deadlines (seen live).
+	r := parseRelations(`{"relations":[{"subject":"vendor contract renewal","predicate":"deadline","object":"2026-11-15"},` +
+		`{"subject":"Dana","predicate":"manages","object":"Sam","due":"2026-11-15"}]}`)
+	if len(r) != 2 || r[0].Object != "vendor contract renewal" || r[0].Due != "2026-11-15" || r[1].Due != "" {
+		t.Errorf("normalised = %+v", r)
+	}
+	if r := parseRelations(`{"relations":[{"subject":"thread","predicate":"deadline","object":"...","due":"2026-11-15"}]}`); len(r) != 0 {
+		t.Errorf("placeholder name kept: %+v", r)
+	}
 	if parseRelations("nothing here") != nil {
 		t.Error("garbage must parse to nothing")
 	}

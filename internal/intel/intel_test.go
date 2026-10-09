@@ -386,3 +386,23 @@ func TestProgressCountsUnstartedFolders(t *testing.T) {
 		t.Errorf("after excluding Archive: %d folders, %d complete", total, done)
 	}
 }
+
+// TestModelRolesPickCachedSenders: many busy unknown senders with nothing in
+// the cache must not starve the model pass of senders it can actually judge.
+func TestModelRolesPickCachedSenders(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		if _, err := f.d.StateSQL().Exec(`INSERT INTO senders(address, role, message_count, dirty) VALUES(?, 'unknown', 1000, 0)`,
+			"old"+strconv.Itoa(i)+"@archive.example"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.sc.cfg.LLMRolesPerTick = 1
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if m := f.sender(t, "who@mystery.example"); m.Source != "llm" {
+		t.Errorf("cached unknown sender was not sent to the model: %+v", m)
+	}
+}

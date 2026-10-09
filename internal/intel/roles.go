@@ -2,6 +2,7 @@ package intel
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -187,27 +188,45 @@ func (sc *Scanner) modelRoles(ctx context.Context, perTick int) (int, error) {
 	if sc.classify == nil || sc.cache == nil || perTick <= 0 {
 		return 0, nil
 	}
-	retry := sc.now().Add(-llmRetryAfter).Unix()
-	rows, err := sc.state.QueryContext(ctx, `SELECT id, address, COALESCE(name,'') FROM senders
-		WHERE role = 'unknown' AND (role_checked_at IS NULL OR role_checked_at < ?)
-		ORDER BY message_count DESC LIMIT ?`, retry, perTick*5)
+	// Start from senders that have cached mail (their subjects are what the
+	// model judges by), busiest first; keep those still unknown and not asked
+	// recently. Picking unknown senders by all-history volume instead finds
+	// mostly old senders with nothing cached.
+	rows, err := sc.cache.QueryContext(ctx, `SELECT lower(from_addr), count(*) AS n FROM messages
+		GROUP BY 1 ORDER BY n DESC LIMIT 2000`)
 	if err != nil {
 		return 0, err
 	}
+	var cached []string
+	for rows.Next() {
+		var a string
+		var n int
+		if rows.Scan(&a, &n) == nil {
+			cached = append(cached, a)
+		}
+	}
+	rows.Close()
 	type cand struct {
 		id         int64
 		addr, name string
 	}
+	retry := sc.now().Add(-llmRetryAfter).Unix()
 	var cands []cand
-	for rows.Next() {
+	for _, a := range cached {
+		if len(cands) >= perTick*2 {
+			break
+		}
 		var c cand
-		if err := rows.Scan(&c.id, &c.addr, &c.name); err != nil {
-			rows.Close()
+		err := sc.state.QueryRowContext(ctx, `SELECT id, address, COALESCE(name,'') FROM senders
+			WHERE address = ? AND role = 'unknown' AND (role_checked_at IS NULL OR role_checked_at < ?)`, a, retry).Scan(&c.id, &c.addr, &c.name)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
 			return 0, err
 		}
 		cands = append(cands, c)
 	}
-	rows.Close()
 
 	done := 0
 	for _, c := range cands {
