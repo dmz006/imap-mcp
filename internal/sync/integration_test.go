@@ -45,7 +45,9 @@ const multipartMsg = "From: =?ISO-8859-1?Q?Jos=E9?= <jose@example.com>\r\n" +
 	"JVBERi0xLjQK\r\n" +
 	"--XX--\r\n"
 
-func plainMsg(id, subject string) string { return imaptest.Plain(id, "a@example.com", subject, "hello") }
+func plainMsg(id, subject string) string {
+	return imaptest.Plain(id, "a@example.com", subject, "hello")
+}
 
 func TestSyncAgainstIMAPServer(t *testing.T) {
 	srv := imaptest.Start(t, []string{"Sent Items"})

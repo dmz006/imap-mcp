@@ -272,12 +272,6 @@ func notImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"error": "not yet implemented — coming in iteration 2"})
 }
 
-func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
-func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleGetSender(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
-func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
-
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
 func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }

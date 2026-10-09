@@ -581,3 +581,11 @@ func parseClassification(raw string, result *EnrichResult) {
 	result.Wing = c.Wing
 	result.Room = c.Room
 }
+
+// EmbedQuery embeds free text with the pipeline's embedder (for semantic
+// search). It shares the embed concurrency cap with enrichment.
+func (p *Pipeline) EmbedQuery(ctx context.Context, text string) ([]float32, error) {
+	p.embedSem <- struct{}{}
+	defer func() { <-p.embedSem }()
+	return p.embedder.Embed(ctx, text)
+}

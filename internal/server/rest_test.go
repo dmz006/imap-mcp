@@ -162,6 +162,19 @@ func TestRESTEndpointsEndToEnd(t *testing.T) {
 	if code, _ = send("POST", "/api/accounts/_default/messages/send", e2eDW, `{"to":"x@example.com"}`); code != 400 {
 		t.Errorf("send missing fields → %d", code)
 	}
+	// Intelligence reads (empty until iteration 3 populates the tables).
+	for path, want := range map[string]int{"/api/senders": 200, "/api/kg?entity=x": 200, "/api/anomalies": 200,
+		"/api/anomalies?severity=extreme": 400, "/api/senders/nobody%40example.com": 404} {
+		if code, b = get(path, e2eDW); code != want {
+			t.Errorf("%s → %d %s, want %d", path, code, b, want)
+		}
+	}
+	if code, _ = send("POST", "/api/search/semantic", e2eDW, `{"query":"x"}`); code != 503 {
+		t.Errorf("semantic without pipeline → %d", code)
+	}
+	if code, _ = send("POST", "/api/search/semantic", e2eDW, `{}`); code != 400 {
+		t.Errorf("semantic without query → %d", code)
+	}
 	if code, _ = send("POST", "/api/accounts/test/sync", e2eAll, `{}`); code != 503 {
 		t.Errorf("sync without syncer → %d", code)
 	}

@@ -543,7 +543,7 @@ func TestEnrichmentLaneAssignment(t *testing.T) {
 	h.sync(t) // first sync of the folder → backfill
 	h.add("INBOX", 6, 0, "arrived@x")
 	h.add("INBOX", 2, 20, "older@x") // outside the 10-day window for now
-	h.sync(t)                         // uid 6 > previous max 5 → new mail
+	h.sync(t)                        // uid 6 > previous max 5 → new mail
 	h.s.cfg.Sync.WindowDays = 30
 	h.sync(t) // window grew: uid 2 ≤ max → backfill
 
