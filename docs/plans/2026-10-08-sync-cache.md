@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Date | 2026-10-08 |
-| Target version | 0.6.0+ (see D12) |
+| Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
 | Status | **Planned — decisions pending** (DIP in progress) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
 
@@ -115,19 +115,19 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D10 | Folder selection | **Config only:** `sync.folders` default `[INBOX, "\\Sent"]`; `accounts[].sync.folders` replaces it per account; entries are SPECIAL-USE tokens (`\Sent`, `\Archive`, `\Drafts`, `\Junk`, `\All`, `\Flagged`) or literal names. One cache row per (folder, UID); enrichment de-duplicated by `Message-ID`; warn when `\All` is selected. Runtime folder tools = possible later add-on | **Decided** 2026-10-08 |
 | D11a | LLM routing | **Provider interface per call type.** `embed`: direct Ollama URL (either node; datawatch proxy has no embeddings). `classify`: `ollama` (direct, default) or `datawatch` (`POST /api/proxy/llm/<registry-llm-name>`, token via existing `datawatch:` block / `${secret:}`, needs `sessions:input` cap) for registry routing + failover. Models: keep nomic-embed-text + qwen3:1.7b; Qwen3-4B-Instruct-2507 upgrade only after the llm-research benchmark plan | **Decided** 2026-10-08 |
 | D11b | Load handling | **(1) Priority + caps:** two lanes (new mail always before backfill), per-provider concurrency cap (default 2), backfill rate limit, exponential backoff on errors/503, queue depth/rate/lag in `/api/health`. **(2) Yield to datawatch:** before each backfill batch read datawatch's capacity ledger + Ollama `/api/ps`; pause backfill when the target node's pool is held/has waiters or a large model is resident; never pauses new mail; degrades to (1) if datawatch is unreachable. **(3) Quiet hours:** optional backfill window (unset = no restriction) | **Decided** 2026-10-08 |
-| D12 | Release cadence | One minor release per phase (0.6.0, 0.7.0, …) | Open |
+| D12 | Phase order + release cadence | **Storage first, one minor release per phase:** 0.6.0 storage → 0.7.0 sync → 0.8.0 cleaning → 0.9.0 load/enrichment → 0.10.0 REST. Each live-validated, CHANGELOG'd, pushed before the next | **Decided** 2026-10-08 |
 | D13 | REST surface | Mirror the MCP read/search tools 1:1 for messages, folders, search | Open |
 
 ## Phases
 
-| Phase | Scope | Depends on | Status |
-|-------|-------|------------|--------|
-| P1 | Sync engine: folder resolution, window, UID diff, flags, expunge, UIDVALIDITY, bus events, headers only | D8, D9, D10 | Planned |
-| P2 | Storage: driver swap to ncruces + adiantum, split cache.db/imap.db with one-time migration of rules/webhooks/nonces, per-file encryption + key resolution, bodies + MIME decode (go-message) | D1, D1a, D1b, D5, D6 | Planned |
-| P3 | Cleaning: auto purge + orphans, `cache_sweep` (dry-run), `\Flagged` exemption, window-change purge/backfill | D7, D8 | Planned |
-| P4 | Load and enrichment: provider interface (Ollama / datawatch proxy), throttling, priority, status endpoint | D11 | Planned |
-| P5 | REST endpoints for messages, folders, search | D13 | Planned |
-| P6 | Docs + release: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation | all | Planned |
+| Phase | Release | Scope | Depends on | Status |
+|-------|---------|-------|------------|--------|
+| P1 | 0.6.0 | Storage: driver swap to ncruces + adiantum; split `cache.db` / `imap.db` with a verified one-time migration of rules, webhooks and nonces (backup first); per-file optional encryption + `${secret:}`/`${ENV}` key resolution, fail closed; systemd ordering after datawatch when needed | D1, D1a, D1b, D5 | Planned |
+| P2 | 0.7.0 | Sync engine: SPECIAL-USE folder resolution, INTERNALDATE window with 3-level overrides, UID diff + CONDSTORE, UIDVALIDITY rebuild, headers + bodies + MIME decode (go-message), Message-ID de-dup, bus events | D6, D8, D9, D10 | Planned |
+| P3 | 0.8.0 | Cleaning: auto purge + orphans + VACUUM, `cache_sweep` (dry-run default), `\Flagged` exemption, window-resize purge/backfill; content-cleaning hook point | D7, D8 | Planned |
+| P4 | 0.9.0 | Load + enrichment: provider interface (Ollama / datawatch proxy), two-lane priority, caps/backoff, datawatch capacity yield, quiet hours, `/api/health` stats | D11a, D11b | Planned |
+| P5 | 0.10.0 | REST endpoints for messages, folders, search | D13 | Planned |
+| P6 | each release | Docs + release per phase: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation notes | all | Ongoing |
 
 Each phase follows AGENT.md:
 - `go build ./...` and `go test ./...` pass, with functional tests (Tested=Yes).

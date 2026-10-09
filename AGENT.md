@@ -283,6 +283,9 @@ they can be replaced or extended without touching call sites.
   backfill), concurrency and rate caps with backoff, backfill that yields to
   datawatch capacity and Ollama load, and optional quiet hours for backfill.
   New-mail enrichment is never paused.
+- **2026-10-08 — D12 (release):** iteration 2 ships storage first, then one minor
+  release per phase (0.6.0 storage, 0.7.0 sync, 0.8.0 cleaning, 0.9.0 load,
+  0.10.0 REST). Each release is live-validated before the next phase starts.
 
 ---
 
