@@ -273,6 +273,9 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D9 (change detection):** sync detects changes with a per-cycle UID
   diff inside the window, plus CONDSTORE `CHANGEDSINCE` for flags where available.
   A UIDVALIDITY change rebuilds the folder. Keep one code path for all servers.
+- **2026-10-08 — D10 (folders):** synced folders are set in config: SPECIAL-USE
+  tokens or literal names, default INBOX + `\Sent`, per-account override. Enrichment
+  is de-duplicated by Message-ID.
 
 ---
 
