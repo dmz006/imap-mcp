@@ -4,7 +4,7 @@
 |-------|-------|
 | Date | 2026-10-08 |
 | Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
-| Status | **Planned — D13a-2 (auth mandatory vs opt-in) pending**, then P0 (0.5.3), then P1 (0.6.0), then P1 (0.6.0) |
+| Status | **P0 (0.5.3 auth) next**, then P1 (0.6.0), then P1 (0.6.0) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
 
 ## Current status (2026-10-08)
@@ -12,7 +12,8 @@
 - Decided: D1, D1a, D1b, D5–D10, D11a, D11b, D12, D13 (D2–D4 resolved by D1).
   Each is recorded as a rule in `AGENT.md` § Recorded Decisions.
 - D13a decided: named, scoped tokens; D13a-1: ships first as security release
-  0.5.3 (P0). **Next:** D13a-2 — mandatory vs opt-in.
+  0.5.3 (P0); D13a-2: mandatory with explicit opt-out. **Next:** P0, coordinated
+  with the datawatch agent.
 - Then implement P1 (0.6.0, storage) per the phase table and AGENT.md release
   rules.
 
@@ -128,6 +129,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D13 | REST surface | Recommended MCP parity via shared service layer; **operator chose full platform** 2026-10-08: tool logic moves to an interface-based service layer used by both MCP and REST; all 25 stub routes implemented (reads, mailbox writes, rules CRUD/test, enrichment trigger) **plus** webhook delivery and the `/api/query` DSL. Webhook delivery and DSL design are raised as their own DIPs before P5 work on them starts. Write routes require the auth decided in D13a | **Decided** 2026-10-08 |
 | D13a | Local auth for `/api` and `/mcp` | **Named tokens with scopes** (`server.auth.tokens: [{name, token: ${secret:…}/${ENV}, scopes}]`; scopes `read`, `write`, `send`, `admin`); every `/api` route and MCP tool maps to a required scope, checked once in middleware, constant-time compare; `/api/health` open; token name logged, value never. Operator directive: provision datawatch secrets for the local agent so the scheduled jobs and datawatch's `imap_mcp` backend keep working; datawatch-side code/config changes are coordinated with the datawatch agent (it owns datawatch), never made directly | **Decided** 2026-10-08 |
 | D13a-1 | Auth release timing | **Separate security release 0.5.3 before P1** (v0.5.2 precedent); D12 numbering unchanged | **Decided** 2026-10-08 |
+| D13a-2 | Auth enforcement | **Mandatory with explicit insecure opt-out:** `serve` refuses to start without at least one token unless `server.auth.disabled: true` (startup warning every time, `auth: disabled` in `/api/health`). An unresolvable token reference always fails closed, opt-out or not. stdio mode unaffected. Rollout: datawatch backend sends the header first, then imap-mcp enforces | **Decided** 2026-10-08 |
 
 ## Phases
 

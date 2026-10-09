@@ -306,6 +306,11 @@ they can be replaced or extended without touching call sites.
   security patch release 0.5.3 before P1. Security fixes may ship as patch
   releases even when they add config, and they are never bundled into a
   storage/migration release.
+- **2026-10-08 — D13a-2 (auth enforcement):** HTTP `serve` requires at least one
+  token. The only way around this is an explicit `server.auth.disabled: true`,
+  which logs a warning at every startup and shows `auth: disabled` in
+  `/api/health`. A token reference that cannot be resolved always fails closed.
+  Roll out client support (datawatch backend, `~/.mcp.json`) before enforcing.
 
 ---
 
