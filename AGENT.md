@@ -246,6 +246,15 @@ they can be replaced or extended without touching call sites.
 
 ---
 
+## Recorded Decisions
+
+- **2026-10-08 — D1 (sync cache encryption):** the optional at-rest encryption of the
+  sync cache is **whole-database** (SQLCipher-style), not field-level. When it's on,
+  every column, the FTS index, and the vectors live inside the encrypted file.
+  See `docs/plans/2026-10-08-sync-cache.md`.
+
+---
+
 *Prime rule: the user makes all decisions. When in doubt, run DIP before writing code.*
 
 

@@ -99,10 +99,11 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 
 | # | Decision | Recommendation (pending operator) | Status |
 |---|----------|-----------------------------------|--------|
-| D1 | Encryption mechanism | Field-level XChaCha20-Poly1305 (datawatch pattern, reimplemented), not SQLCipher (cgo/driver swap) | Open |
-| D2 | Which fields are encrypted | Body, subject, to/cc, attachment names, snippet. Keep from_addr, date, flags, size plaintext (rules, `top_senders`, window purge need them) | Open |
-| D3 | Search over encrypted content | No plaintext FTS on encrypted fields. Use semantic search plus IMAP server-side SEARCH fallback | Open |
-| D4 | Embeddings when encrypted | Encrypt vectors at rest and decrypt into memory at startup (cheap at 10²–10⁴ rows) | Open |
+| D1 | Encryption mechanism | Recommended field-level; **operator chose whole-DB encryption (SQLCipher-style)** 2026-10-08 | **Decided** |
+| D1a | Library for whole-DB encryption | See DIP (pending) | Open |
+| D2 | Which fields are encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
+| D3 | Search over encrypted content | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
+| D4 | Embeddings when encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D5 | Key source | `${secret:...}` / `${ENV}` passphrase → Argon2id, else an auto-generated 0600 keyfile. Unattended under systemd | Open |
 | D6 | Unencrypted mode and enrichment | Body fetched transiently for enrichment and never persisted. Headers plus a short snippet? (see options) | Open |
 | D7 | Meaning of "cleaning" | Retention sweep à la datawatch (dry-run, counts) plus optional content normalization before the LLM | Open |
