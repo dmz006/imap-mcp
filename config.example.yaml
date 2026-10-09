@@ -305,6 +305,14 @@ sync:
   vacuum_interval_hours: 24
   # Env overrides: IMAP_MCP_SYNC_KEEP_FLAGGED, IMAP_MCP_SYNC_VACUUM_INTERVAL_HOURS.
 
+# Content tools (get_attachments, export_message). Fetched attachments and
+# exports are written into working_dir, never returned as raw content.
+tools:
+  attachment_inline_kb: 64     # text/* attachments up to this size are also returned inline; 0 = never
+  attachment_max_mb: 25        # largest single attachment get_attachments will fetch
+  export_max_messages: 500     # most messages in one .mbox export (refused, not truncated, above this)
+  export_max_mb: 100           # largest total export size
+
 log:
   level: info
   format: text

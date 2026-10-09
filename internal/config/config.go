@@ -23,6 +23,7 @@ type Config struct {
 	WorkingDir string           `yaml:"working_dir"`
 	Enrichment EnrichmentConfig `yaml:"enrichment"`
 	Sync       SyncConfig       `yaml:"sync"`
+	Tools      ToolsConfig      `yaml:"tools"`
 	Log        LogConfig        `yaml:"log"`
 	// Datawatch is optional. When present, ${secret:name} references in
 	// credentials resolve against a datawatch secrets service. When absent,
@@ -300,6 +301,20 @@ func (c *Config) WindowDays(a *AccountConfig, folder string) int {
 	return 30
 }
 
+// ToolsConfig limits the content tools (AGENT.md D24, D25): attachment
+// fetches and message exports, which write into working_dir.
+type ToolsConfig struct {
+	// AttachmentInlineKB: text/* attachments up to this size are also returned
+	// inline (decoded) by get_attachments. 0 = never inline. Default 64.
+	AttachmentInlineKB int `yaml:"attachment_inline_kb"`
+	// AttachmentMaxMB caps the size of one fetched attachment. Default 25.
+	AttachmentMaxMB int `yaml:"attachment_max_mb"`
+	// ExportMaxMessages caps the messages in one export_message batch. Default 500.
+	ExportMaxMessages int `yaml:"export_max_messages"`
+	// ExportMaxMB caps the total size of one export. Default 100.
+	ExportMaxMB int `yaml:"export_max_mb"`
+}
+
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
@@ -364,6 +379,12 @@ func defaults() *Config {
 			WindowDays:          30,
 			MaxMessageMB:        25,
 			VacuumIntervalHours: 24,
+		},
+		Tools: ToolsConfig{
+			AttachmentInlineKB: 64,
+			AttachmentMaxMB:    25,
+			ExportMaxMessages:  500,
+			ExportMaxMB:        100,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -456,6 +477,10 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_ENRICHMENT_BACKFILL_PER_MINUTE", &cfg.Enrichment.BackfillPerMinute)
 	envInt("IMAP_MCP_ENRICHMENT_MAX_ATTEMPTS", &cfg.Enrichment.MaxAttempts)
 	envInt("IMAP_MCP_ENRICHMENT_BACKOFF_MAX_SECONDS", &cfg.Enrichment.BackoffMaxSeconds)
+	envInt("IMAP_MCP_TOOLS_ATTACHMENT_INLINE_KB", &cfg.Tools.AttachmentInlineKB)
+	envInt("IMAP_MCP_TOOLS_ATTACHMENT_MAX_MB", &cfg.Tools.AttachmentMaxMB)
+	envInt("IMAP_MCP_TOOLS_EXPORT_MAX_MESSAGES", &cfg.Tools.ExportMaxMessages)
+	envInt("IMAP_MCP_TOOLS_EXPORT_MAX_MB", &cfg.Tools.ExportMaxMB)
 	if v := os.Getenv("IMAP_MCP_ENRICHMENT_BACKFILL_WINDOW"); v != "" {
 		cfg.Enrichment.BackfillWindow = v
 	}
@@ -503,6 +528,10 @@ func validate(cfg *Config) error {
 	}
 	if err := validateEnrichment(cfg); err != nil {
 		return err
+	}
+	t := cfg.Tools
+	if t.AttachmentInlineKB < 0 || t.AttachmentMaxMB < 1 || t.ExportMaxMessages < 1 || t.ExportMaxMB < 1 {
+		return fmt.Errorf("tools: attachment_inline_kb must be >= 0; attachment_max_mb, export_max_messages and export_max_mb must be >= 1")
 	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")
