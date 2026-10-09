@@ -343,6 +343,12 @@ they can be replaced or extended without touching call sites.
   JSON over fixed views (`messages`, `senders`, `anomalies`, `kg`) with
   allowlisted fields, compiled to parameterized SQL. It never accepts raw SQL.
   Message bodies are returned only when a query names them explicitly.
+- **2026-10-09 — D18 (production DB encryption):** encrypt both `imap.db`
+  and `cache.db`. The keys are random values generated straight into datawatch
+  secrets (`imap_mcp_state_key`, `imap_mcp_cache_key`, scope
+  `service:imap-mcp`), are never printed, and are referenced from the config as
+  `${secret:…}`. The hourly `run-rules` job runs through a wrapper that loads
+  the datawatch service token from its 0600 env file.
 
 ---
 
