@@ -64,7 +64,7 @@ func (r *RuleRepo) Create(rule *Rule) (int64, error) {
 // List returns all rules ordered by priority then id.
 func (r *RuleRepo) List() ([]Rule, error) {
 	rows, err := r.db.Query(
-		`SELECT id, name, description, conditions, actions, active, priority, run_count FROM rules ORDER BY priority, id`)
+		`SELECT id, name, COALESCE(description, ''), conditions, actions, COALESCE(active, 1), COALESCE(priority, 100), COALESCE(run_count, 0) FROM rules ORDER BY priority, id`)
 	if err != nil {
 		return nil, err
 	}

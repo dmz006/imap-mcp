@@ -9,7 +9,8 @@ import (
 // TestOpenAppliesPragmas guards against DSN params the driver silently ignores:
 // the connection must actually run in WAL mode with a busy timeout and FKs on.
 func TestOpenAppliesPragmas(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "imap.db"))
+	dir := t.TempDir()
+	d, err := Open(Options{Path: filepath.Join(dir, "imap.db")}, Options{Path: filepath.Join(dir, "cache.db")})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -44,13 +45,14 @@ func TestOpenAppliesPragmas(t *testing.T) {
 // independent handles on one file writing at the same time must not fail with
 // SQLITE_BUSY ("database is locked").
 func TestConcurrentOpenersShareFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "imap.db")
-	a, err := Open(path)
+	dir := t.TempDir()
+	st, ca := Options{Path: filepath.Join(dir, "imap.db")}, Options{Path: filepath.Join(dir, "cache.db")}
+	a, err := Open(st, ca)
 	if err != nil {
 		t.Fatalf("Open a: %v", err)
 	}
 	defer a.Close()
-	b, err := Open(path)
+	b, err := Open(st, ca)
 	if err != nil {
 		t.Fatalf("Open b: %v", err)
 	}

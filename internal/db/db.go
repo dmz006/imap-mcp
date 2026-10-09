@@ -1,20 +1,46 @@
-// Package db manages the local SQLite database: message cache, vector store,
-// sender profiles, temporal knowledge graph, and enrichment queue.
+// Package db manages the local SQLite databases (AGENT.md D1, D1a, D1b):
+//
+//   - the state DB (imap.db): rules, webhooks and inbound nonces. Not
+//     rebuildable from IMAP.
+//   - the cache DB (cache.db): message cache, FTS5, vectors, sender profiles,
+//     temporal knowledge graph, anomalies, sync state and the enrichment queue.
+//     Disposable: every row can be rebuilt from IMAP.
+//
+// Both use the pure-Go ncruces/go-sqlite3 driver. Each file is independently
+// and optionally encrypted at rest with the adiantum VFS, keyed by an operator
+// passphrase (Argon2id). A missing or wrong key fails closed.
 package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
-	_ "modernc.org/sqlite"
+	"github.com/ncruces/go-sqlite3/driver"
+	"github.com/ncruces/go-sqlite3/ext/fts5"
+	_ "github.com/ncruces/go-sqlite3/vfs/adiantum" // registers the "adiantum" VFS
 )
 
-// DB wraps the SQLite connection and exposes typed repositories.
-type DB struct {
-	sql *sql.DB
+// Options locates one database file. Key is the resolved passphrase; empty
+// means the file is plaintext.
+type Options struct {
+	Path string
+	Key  string
+}
 
+// DB holds the state and cache connections and exposes typed repositories.
+// A state-only DB (OpenState, used by run-rules) has no cache connection and
+// nil cache repositories.
+type DB struct {
+	state *sql.DB
+	cache *sql.DB
+
+	// cache.db
 	Messages  *MessageRepo
 	Senders   *SenderRepo
 	KG        *KGRepo
@@ -22,62 +48,164 @@ type DB struct {
 	Folders   *FolderRepo
 	Anomalies *AnomalyRepo
 	Sync      *SyncRepo
-	Webhooks  *WebhookRepo
-	Rules     *RuleRepo
 	Enrich    *EnrichRepo
-	Nonces    *NonceRepo
+
+	// imap.db
+	Webhooks *WebhookRepo
+	Rules    *RuleRepo
+	Nonces   *NonceRepo
 }
 
-func Open(path string) (*DB, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+// Open opens (creating if needed) the state and cache databases. A legacy
+// single-file imap.db is split first (see migrateLegacy).
+func Open(state, cache Options) (*DB, error) {
+	d, err := OpenState(state)
+	if err != nil {
+		return nil, err
+	}
+	c, err := openFile(cache, cacheSchema)
+	if err != nil {
+		d.Close()
+		return nil, fmt.Errorf("cache db: %w", err)
+	}
+	d.cache = c
+	d.Messages = &MessageRepo{db: c}
+	d.Senders = &SenderRepo{db: c}
+	d.KG = &KGRepo{db: c}
+	d.Vectors = &VectorRepo{db: c}
+	d.Folders = &FolderRepo{db: c}
+	d.Anomalies = &AnomalyRepo{db: c}
+	d.Sync = &SyncRepo{db: c}
+	d.Enrich = &EnrichRepo{db: c}
+	return d, nil
+}
+
+// OpenState opens only the state database (rules, webhooks, nonces). It never
+// touches the cache file or needs the cache key.
+func OpenState(state Options) (*DB, error) {
+	if err := migrateLegacy(state); err != nil {
+		return nil, fmt.Errorf("state db: migrate legacy layout: %w", err)
+	}
+	s, err := openFile(state, stateSchema)
+	if err != nil {
+		return nil, fmt.Errorf("state db: %w", err)
+	}
+	return &DB{
+		state:    s,
+		Webhooks: &WebhookRepo{db: s},
+		Rules:    &RuleRepo{db: s},
+		Nonces:   &NonceRepo{db: s},
+	}, nil
+}
+
+// Close closes both connections.
+func (db *DB) Close() error {
+	var errs []error
+	if db.cache != nil {
+		errs = append(errs, db.cache.Close())
+	}
+	if db.state != nil {
+		errs = append(errs, db.state.Close())
+	}
+	return errors.Join(errs...)
+}
+
+// SQL returns the cache connection (messages, sync state, enrichment queue).
+// It is nil for a state-only DB.
+func (db *DB) SQL() *sql.DB { return db.cache }
+
+// StateSQL returns the state connection (rules, webhooks, nonces).
+func (db *DB) StateSQL() *sql.DB { return db.state }
+
+// sqliteMagic is the header of every plaintext SQLite database file.
+const sqliteMagic = "SQLite format 3\x00"
+
+// fileKind reports whether path is missing/empty, a plaintext SQLite file, or
+// something else (an encrypted file, or not a database at all).
+type fileKind int
+
+const (
+	fileNew fileKind = iota
+	filePlain
+	fileOpaque
+)
+
+func detect(path string) (fileKind, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fileNew, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	buf := make([]byte, len(sqliteMagic))
+	n, err := io.ReadFull(f, buf)
+	if n == 0 && (err == io.EOF || err == io.ErrUnexpectedEOF) {
+		return fileNew, nil
+	}
+	if string(buf[:n]) == sqliteMagic {
+		return filePlain, nil
+	}
+	return fileOpaque, nil
+}
+
+// dsn builds the driver DSN. busy_timeout comes first so it applies while
+// switching journal mode; the service and the hourly run-rules CLI share the
+// state file, so WAL + busy_timeout prevent SQLITE_BUSY. The key travels as a
+// URI parameter (never logged); adiantum derives the real key with Argon2id.
+func dsn(o Options) string {
+	q := url.Values{}
+	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "journal_mode(wal)")
+	q.Add("_pragma", "foreign_keys(1)")
+	if o.Key != "" {
+		q.Set("vfs", "adiantum")
+		q.Set("textkey", o.Key)
+		q.Add("_pragma", "temp_store(memory)") // keep temp data out of files
+	}
+	u := url.URL{Scheme: "file", Path: o.Path, RawQuery: q.Encode()}
+	return u.String()
+}
+
+// openFile opens one database, checking its encryption state against the
+// configured key before touching it, then applies schema.
+func openFile(o Options, schema string) (*sql.DB, error) {
+	if err := os.MkdirAll(filepath.Dir(o.Path), 0o750); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
-
-	// modernc.org/sqlite only honours _pragma=name(value) params; the mattn-style
-	// _journal/_fk/_timeout keys are silently ignored. busy_timeout goes first so
-	// it applies while switching journal mode. The service and the hourly
-	// run-rules CLI share this file, so WAL + busy_timeout prevent SQLITE_BUSY.
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", path)
-	conn, err := sql.Open("sqlite", dsn)
+	kind, err := detect(o.Path)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
+		return nil, fmt.Errorf("inspect %s: %w", o.Path, err)
+	}
+	switch {
+	case kind == filePlain && o.Key != "":
+		return nil, fmt.Errorf("%s is not encrypted but an encryption key is configured; "+
+			"refusing to open (see docs: enabling encryption on an existing database)", o.Path)
+	case kind == fileOpaque && o.Key == "":
+		return nil, fmt.Errorf("%s is encrypted (or not a SQLite database) and no encryption key is configured", o.Path)
 	}
 
-	conn.SetMaxOpenConns(1) // SQLite WAL: one writer, many readers via separate conns
+	conn, err := driver.Open(dsn(o), fts5.Register)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", o.Path, err)
+	}
+	conn.SetMaxOpenConns(1) // SQLite WAL: one writer per process
 
-	db := &DB{sql: conn}
-	if err := db.migrate(); err != nil {
+	if _, err := conn.Exec(schema); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("migrate: %w", err)
+		if o.Key != "" && strings.Contains(err.Error(), "not a database") {
+			return nil, fmt.Errorf("%s: wrong encryption key or corrupt file", o.Path)
+		}
+		return nil, fmt.Errorf("apply schema to %s: %w", o.Path, err)
 	}
-
-	db.Messages = &MessageRepo{db: conn}
-	db.Senders = &SenderRepo{db: conn}
-	db.KG = &KGRepo{db: conn}
-	db.Vectors = &VectorRepo{db: conn}
-	db.Folders = &FolderRepo{db: conn}
-	db.Anomalies = &AnomalyRepo{db: conn}
-	db.Sync = &SyncRepo{db: conn}
-	db.Webhooks = &WebhookRepo{db: conn}
-	db.Rules = &RuleRepo{db: conn}
-	db.Enrich = &EnrichRepo{db: conn}
-	db.Nonces = &NonceRepo{db: conn}
-
-	return db, nil
+	if o.Path != "" {
+		_ = os.Chmod(o.Path, 0o600)
+	}
+	return conn, nil
 }
 
-func (db *DB) Close() error {
-	return db.sql.Close()
-}
-
-func (db *DB) SQL() *sql.DB { return db.sql }
-
-func (db *DB) migrate() error {
-	_, err := db.sql.Exec(schema)
-	return err
-}
-
-// Placeholder repository types — each will be expanded with query methods.
+// Repository types — each will be expanded with query methods.
 
 type MessageRepo struct{ db *sql.DB }
 type SenderRepo struct{ db *sql.DB }

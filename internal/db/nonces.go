@@ -28,7 +28,7 @@ func (r *NonceRepo) SeenOrRecord(account, nonce string, ts time.Time) (bool, err
 	// Unique-constraint violation → already seen (replay).
 	var sqliteErr interface{ Error() string }
 	if errors.As(err, &sqliteErr) {
-		// modernc.org/sqlite reports constraint violations in the message;
+		// The driver reports constraint violations only in the message text;
 		// confirm it's the PK collision rather than a real error.
 		var exists int
 		if qerr := r.db.QueryRow(

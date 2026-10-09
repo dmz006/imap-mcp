@@ -137,8 +137,20 @@ type TokenConfig struct {
 	Scopes []string `yaml:"scopes"`
 }
 
+// DBConfig locates the two SQLite files (AGENT.md D1b). Path is the state DB
+// (rules, webhooks, nonces); Cache is the disposable mail cache. Each file is
+// optionally encrypted with its own key (D1, D5).
 type DBConfig struct {
-	Path string `yaml:"path"`
+	Path          string        `yaml:"path"`
+	EncryptionKey string        `yaml:"encryption_key"`
+	Cache         CacheDBConfig `yaml:"cache"`
+}
+
+// CacheDBConfig locates the cache DB. An empty Path means cache.db next to
+// the state DB.
+type CacheDBConfig struct {
+	Path          string `yaml:"path"`
+	EncryptionKey string `yaml:"encryption_key"`
 }
 
 type EnrichmentConfig struct {
@@ -256,6 +268,15 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("IMAP_MCP_DB_PATH"); v != "" {
 		cfg.DB.Path = v
 	}
+	if v := os.Getenv("IMAP_MCP_DB_CACHE_PATH"); v != "" {
+		cfg.DB.Cache.Path = v
+	}
+	if v := os.Getenv("IMAP_MCP_DB_ENCRYPTION_KEY"); v != "" {
+		cfg.DB.EncryptionKey = v
+	}
+	if v := os.Getenv("IMAP_MCP_DB_CACHE_ENCRYPTION_KEY"); v != "" {
+		cfg.DB.Cache.EncryptionKey = v
+	}
 	if v := os.Getenv("IMAP_MCP_OLLAMA_URL"); v != "" {
 		cfg.Enrichment.OllamaURL = v
 	}
@@ -273,6 +294,10 @@ func expandPaths(cfg *Config) {
 		return p
 	}
 	cfg.DB.Path = expand(cfg.DB.Path)
+	cfg.DB.Cache.Path = expand(cfg.DB.Cache.Path)
+	if cfg.DB.Cache.Path == "" {
+		cfg.DB.Cache.Path = filepath.Join(filepath.Dir(cfg.DB.Path), "cache.db")
+	}
 	cfg.WorkingDir = expand(cfg.WorkingDir)
 	for i := range cfg.Accounts {
 		cfg.Accounts[i].Auth.TokenFile = expand(cfg.Accounts[i].Auth.TokenFile)

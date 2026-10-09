@@ -178,8 +178,27 @@ server:
         token: ${IMAP_MCP_TOKEN_DATAWATCH}         # or ${secret:imap_mcp_token_datawatch}
         scopes: [read, send]
 
+# Two SQLite files (pure-Go driver, no cgo):
+#   path        state DB: rules, webhooks, inbound nonces. Not rebuildable — back it up.
+#   cache.path  mail cache: messages, full-text index, vectors, sender profiles,
+#               knowledge graph, sync state. Disposable: rebuilt from IMAP.
+# Upgrading from <0.6.0 splits a single-file imap.db automatically: it is backed
+# up first (imap.db.bak-<timestamp>-pre-0.6.0), the state tables are verified
+# unchanged, and the cache tables are dropped (cache.db is rebuilt from IMAP).
+#
+# Optional at-rest encryption, per file (whole-file, adiantum + Argon2id).
+# Keys must be ${secret:name} or ${ENV} passphrase references. A key is never
+# generated: a missing, unresolvable or wrong key refuses to open the file.
+# run-rules only opens the state DB, so it needs only db.encryption_key.
+# Env overrides: IMAP_MCP_DB_PATH, IMAP_MCP_DB_ENCRYPTION_KEY,
+#                IMAP_MCP_DB_CACHE_PATH, IMAP_MCP_DB_CACHE_ENCRYPTION_KEY.
+# Encryption state is reported in /api/health under "storage".
 db:
   path: ~/.local/share/imap-mcp/imap.db
+  # encryption_key: ${secret:imap_mcp_state_key}
+  cache:
+    path: ~/.local/share/imap-mcp/cache.db   # default: cache.db next to path
+    # encryption_key: ${secret:imap_mcp_cache_key}
 
 enrichment:
   enabled: true

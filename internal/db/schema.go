@@ -1,9 +1,10 @@
 package db
 
-// schema defines all tables, indexes, FTS5 virtual tables, and the
-// datawatch-inspired memory patterns: wing/room/hall tagging, temporal KG,
-// sender profiles, and anomaly episodic log.
-const schema = `
+// cacheSchema defines the disposable mail cache (cache.db, AGENT.md D1b):
+// messages, FTS5, vectors, and the datawatch-inspired memory patterns
+// (wing/room/hall tagging, temporal KG, sender profiles, anomaly log). Every
+// row can be rebuilt from IMAP.
+const cacheSchema = `
 -- ─── Messages ────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -194,7 +195,11 @@ CREATE TABLE IF NOT EXISTS enrichment_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_enrich_status ON enrichment_queue(status, queued_at);
+`
 
+// stateSchema holds operator state that cannot be rebuilt from IMAP: rules,
+// webhooks and inbound replay nonces. It lives in imap.db (AGENT.md D1b).
+const stateSchema = `
 -- ─── Webhooks ────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS webhooks (

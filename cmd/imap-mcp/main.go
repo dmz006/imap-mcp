@@ -99,11 +99,17 @@ func runRules(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	database, err := db.Open(cfg.DB.Path)
+	// run-rules only needs the state DB (rules); it never opens the cache.
+	keys, err := cfg.ResolveDBKeys(true, false)
+	if err != nil {
+		return err
+	}
+	database, err := db.OpenState(db.Options{Path: cfg.DB.Path, Key: keys.State})
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer database.Close()
+	logMigration(log)
 
 	pool := imap.NewPool(cfg, bus.New(), log)
 	if err := pool.Connect(ctx); err != nil {
@@ -158,6 +164,14 @@ func runServe(args []string) error {
 
 	srv := server.New(cfg, deps.pool, deps.db, deps.bus, deps.syncer, deps.pipeline, deps.out, log, authn)
 	return srv.Start(ctx)
+}
+
+// logMigration reports a legacy single-file split performed by db.OpenState.
+func logMigration(log *slog.Logger) {
+	if m := db.LastMigration; m != nil {
+		log.Info("migrated legacy imap.db: cache tables moved to cache.db (rebuilt from IMAP); state verified unchanged",
+			"backup", m.BackupPath, "rules", m.Counts["rules"], "webhooks", m.Counts["webhooks"], "nonces", m.Counts["inbound_nonces"])
+	}
 }
 
 // buildAuth resolves server.auth into an Authenticator. It returns nil only
@@ -232,10 +246,19 @@ type deps struct {
 func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps, func(), error) {
 	b := bus.New()
 
-	database, err := db.Open(cfg.DB.Path)
+	keys, err := cfg.ResolveDBKeys(true, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	database, err := db.Open(
+		db.Options{Path: cfg.DB.Path, Key: keys.State},
+		db.Options{Path: cfg.DB.Cache.Path, Key: keys.Cache},
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open db: %w", err)
 	}
+	logMigration(log)
+	log.Info("storage", "state_encrypted", keys.State != "", "cache_encrypted", keys.Cache != "")
 
 	pool := imap.NewPool(cfg, b, log)
 	if err := pool.Connect(ctx); err != nil {

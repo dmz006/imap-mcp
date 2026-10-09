@@ -166,6 +166,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":  config.Version,
 		"accounts": len(accounts),
 		"auth":     map[bool]string{true: "enabled", false: "disabled"}[s.authn != nil],
+		"storage": map[string]bool{
+			"state_encrypted": s.cfg.DB.EncryptionKey != "",
+			"cache_encrypted": s.cfg.DB.Cache.EncryptionKey != "",
+		},
 	})
 }
 
