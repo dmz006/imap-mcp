@@ -4,15 +4,15 @@
 |-------|-------|
 | Date | 2026-10-08 |
 | Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
-| Status | **Planned — D13a (local auth) pending**, then P1 (0.6.0) |
+| Status | **Planned — D13a follow-ups (auth timing, mandatory vs opt-in) pending**, then P1 (0.6.0) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
 
 ## Current status (2026-10-08)
 
 - Decided: D1, D1a, D1b, D5–D10, D11a, D11b, D12, D13 (D2–D4 resolved by D1).
   Each is recorded as a rule in `AGENT.md` § Recorded Decisions.
-- **Next: D13a (local auth).** v0.5.2 added `browserGuard`, but `/api` and `/mcp`
-  are still unauthenticated for local processes.
+- D13a decided: named, scoped tokens. **Next:** D13a follow-ups — when auth ships
+  (release) and whether it is mandatory or opt-in.
 - Then implement P1 (0.6.0, storage) per the phase table and AGENT.md release
   rules.
 
@@ -126,7 +126,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D11b | Load handling | **(1) Priority + caps:** two lanes (new mail always before backfill), per-provider concurrency cap (default 2), backfill rate limit, exponential backoff on errors/503, queue depth/rate/lag in `/api/health`. **(2) Yield to datawatch:** before each backfill batch read datawatch's capacity ledger + Ollama `/api/ps`; pause backfill when the target node's pool is held/has waiters or a large model is resident; never pauses new mail; degrades to (1) if datawatch is unreachable. **(3) Quiet hours:** optional backfill window (unset = no restriction) | **Decided** 2026-10-08 |
 | D12 | Phase order + release cadence | **Storage first, one minor release per phase:** 0.6.0 storage → 0.7.0 sync → 0.8.0 cleaning → 0.9.0 load/enrichment → 0.10.0 REST. Each live-validated, CHANGELOG'd, pushed before the next | **Decided** 2026-10-08 |
 | D13 | REST surface | Recommended MCP parity via shared service layer; **operator chose full platform** 2026-10-08: tool logic moves to an interface-based service layer used by both MCP and REST; all 25 stub routes implemented (reads, mailbox writes, rules CRUD/test, enrichment trigger) **plus** webhook delivery and the `/api/query` DSL. Webhook delivery and DSL design are raised as their own DIPs before P5 work on them starts. Write routes require the auth decided in D13a | **Decided** 2026-10-08 |
-| D13a | Local auth for `/api` and `/mcp` | — | Open |
+| D13a | Local auth for `/api` and `/mcp` | **Named tokens with scopes** (`server.auth.tokens: [{name, token: ${secret:…}/${ENV}, scopes}]`; scopes `read`, `write`, `send`, `admin`); every `/api` route and MCP tool maps to a required scope, checked once in middleware, constant-time compare; `/api/health` open; token name logged, value never. Operator directive: provision datawatch secrets for the local agent so the scheduled jobs and datawatch's `imap_mcp` backend keep working; datawatch-side code/config changes are coordinated with the datawatch agent (it owns datawatch), never made directly | **Decided** 2026-10-08 |
 
 ## Phases
 

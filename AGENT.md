@@ -292,6 +292,16 @@ they can be replaced or extended without touching call sites.
   mailbox writes, rules CRUD/test, enrichment trigger, webhook delivery and the
   `/api/query` DSL. Webhook delivery and the DSL each get their own DIP before
   implementation. Write routes ship only behind the auth chosen in D13a.
+- **2026-10-08 — D13a (local auth):** `/api` and `/mcp` use named bearer tokens
+  with scopes (`read`, `write`, `send`, `admin`), configured as
+  `server.auth.tokens` with `${secret:name}` / `${ENV}` references only. Every
+  REST route and MCP tool declares its required scope; enforcement is one
+  middleware with constant-time comparison. `/api/health` stays open. Log the
+  token name, never the value. Each client gets least privilege (datawatch's
+  `imap_mcp` backend: `read` + `send`). Tokens are provisioned as datawatch
+  secrets so scheduled jobs and the datawatch backend keep working. Changes to
+  datawatch code or local datawatch config go through the datawatch agent, which
+  owns datawatch; never edit the datawatch repo directly.
 
 ---
 
