@@ -350,7 +350,7 @@ GET    /api/events                                         read (SSE)
 GET|POST /api/webhooks, DELETE /api/webhooks/{id}          admin — durable outbox, metadata-only (D16; docs/webhooks.md)
 POST   /api/webhooks/{id}/enable | /test                   admin — re-enable after auto-disable; queue a webhook.test ping
 GET    /api/webhooks/{id}/deliveries?limit=N               admin — recent outbox rows
-POST   /api/query                                          admin — 501 pending query DSL DIP
+GET|POST /api/query                                        admin — JSON query DSL over cache views (D17; docs/query.md)
 ```
 
 ## Next Iterations

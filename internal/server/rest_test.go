@@ -245,3 +245,20 @@ func TestWebhookRoutesEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryEndToEnd(t *testing.T) {
+	ts := newRESTServer(t)
+	resp, b := do(t, ts, "GET", "/api/query", e2eAll, "", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(b), `"messages"`) {
+		t.Fatalf("describe: %d %s", resp.StatusCode, b)
+	}
+	resp, b = do(t, ts, "POST", "/api/query", e2eAll, `{"view":"messages","aggregate":[{"fn":"count","as":"n"}]}`, nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(b), `"columns":["n"]`) {
+		t.Fatalf("count: %d %s", resp.StatusCode, b)
+	}
+	for _, bad := range []string{`{"view":"messages","sql":"SELECT 1"}`, `{"view":"messages","fields":["x"]}`, `not json`} {
+		if resp, b = do(t, ts, "POST", "/api/query", e2eAll, bad, nil); resp.StatusCode != 400 {
+			t.Errorf("%s: %d %s", bad, resp.StatusCode, b)
+		}
+	}
+}

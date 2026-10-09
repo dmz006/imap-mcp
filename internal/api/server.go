@@ -5,10 +5,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/dmz006/imap-mcp/internal/enrichment"
-	"github.com/dmz006/imap-mcp/internal/httpauth"
-	"github.com/dmz006/imap-mcp/internal/mcp/tools"
-	"github.com/dmz006/imap-mcp/internal/service"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -17,7 +13,12 @@ import (
 	"github.com/dmz006/imap-mcp/internal/bus"
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
+	"github.com/dmz006/imap-mcp/internal/enrichment"
+	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"github.com/dmz006/imap-mcp/internal/imap"
+	"github.com/dmz006/imap-mcp/internal/mcp/tools"
+	"github.com/dmz006/imap-mcp/internal/query"
+	"github.com/dmz006/imap-mcp/internal/service"
 	imapsync "github.com/dmz006/imap-mcp/internal/sync"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -159,6 +160,7 @@ func (s *Server) Router() http.Handler {
 		r.With(write).Post("/api/rules/{id}/test", s.handleTestRule)
 
 		// ── Query DSL (algorithmic layer entry point) ─────────────────────────────
+		r.With(admin).Get("/api/query", s.handleQueryDescribe)
 		r.With(admin).Post("/api/query", s.handleQuery)
 
 		// ── Send message ─────────────────────────────────────────────────────────
@@ -268,14 +270,24 @@ func (s *Server) handleCacheSweep(w http.ResponseWriter, r *http.Request) {
 	respond(w)(s.svc.SweepCache(r.Context(), f, dryRun))
 }
 
-// ── Stub handlers (iteration 2) ───────────────────────────────────────────────
+// ── Query DSL ─────────────────────────────────────────────────────────────────
 
-func notImplemented(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-	writeJSON(w, map[string]string{"error": "not yet implemented — coming in iteration 2"})
+// POST /api/query — JSON DSL over fixed cache views (D17; docs/query.md).
+func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	var q query.Query
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&q); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	respond(w)(s.svc.Query(r.Context(), q))
 }
 
-func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
+// GET /api/query — the views, fields, operators and aggregates available.
+func (s *Server) handleQueryDescribe(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, query.Describe())
+}
 
 // handleEventStream streams bus events as SSE. Each event is one JSON line
 // prefixed with "data: " per the SSE spec. Clients reconnect on disconnect;

@@ -7,6 +7,19 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`/api/query` JSON query DSL (D17).** `POST /api/query` answers ad-hoc
+  questions over fixed, read-only views of the cache: `messages`, `senders`,
+  `anomalies` and `kg`.
+  - A query can use allowlisted fields, filters
+    (`eq`/`ne`/`lt`/`lte`/`gt`/`gte`/`in`/`nin`/`contains`/`prefix`/null
+    checks), `group_by` with
+    `count`/`count_distinct`/`min`/`max`/`sum`/`avg`, `order_by`, `limit`
+    (at most 1000) and `offset`.
+  - It is compiled to parameterized SQL; raw SQL is never accepted.
+  - Message bodies are returned only when named.
+  - Queries run read-only with a 10-second timeout and need the `admin`
+    scope.
+  - `GET /api/query` describes the views. See `docs/query.md`.
 - **Webhook delivery (D16).** `POST /api/webhooks {url, events}` registers an
   endpoint and returns its signing secret. The secret is shown only once.
   - **Durable outbox.** Deliveries are stored in `imap.db`
