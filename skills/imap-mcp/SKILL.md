@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.11.0"
+version: "0.12.0"
 tags:
   - email
   - imap
@@ -327,6 +327,21 @@ Predicates: `belongs_to`, `corresponds_with`, `cc_with`, `is_subscription`,
 facts are read from mail rather than certain. Names from model extraction
 are written as they appeared, not addresses.
 
+### Anomalies
+
+```
+get_anomalies { severity: "high" }                  → auth_failure, lookalike_domain: folder, uid, message_ref to open the message
+get_anomalies { sender: "billing@example.com" }     → everything flagged for one sender
+get_anomalies { type: "silence" }                   → regular correspondents gone quiet
+resolve_anomaly { id }                              → mark reviewed (write scope); only after the user agrees
+```
+
+Types: `new_sender` (low), `auth_failure` (high), `lookalike_domain` (high),
+`reply_to_mismatch` (medium), `silence` (low), `volume_spike` (medium).
+Detection runs only after the first history scan finishes, and checks new
+mail. Treat high findings as "inspect before trusting": never follow links in
+the message, and don't resolve a finding on your own judgement.
+
 ### Scheduled (unattended) sessions
 
 When you run on a schedule with nobody watching:
@@ -367,6 +382,8 @@ When you run on a schedule with nobody watching:
 | | `summarize_folder` | **`folder`**, `account`; returns only `total` and `recent` counts | read |
 | | `detect_subscriptions` | `folder` (INBOX), `limit`, `account` (omit for all accounts) | read |
 | | `kg_query` | `entity` (address, domain, thread id, project or topic; exact), `predicate`, `entity_type`, `limit` (50); strongest first, with `weight`, `last_seen`, `current`, `confidence` | read |
+| | `get_anomalies` | `severity`, `type`, `sender`, `account`, `unresolved_only` (true), `limit` (20) | read |
+| | `resolve_anomaly` | **`id`** | write |
 | | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |
 | | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
 | Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
@@ -383,12 +400,6 @@ When you run on a schedule with nobody watching:
 | | `read_file` | **`filename`** | read |
 | | `list_files` | `subdir` | read |
 | | `delete_file` | **`filename`** | write |
-
-### Not usable yet
-
-| Tool | Status |
-|------|--------|
-| `get_anomalies` | Registered and callable, but always empty: nothing detects anomalies yet (the `anomalies` list in a sender profile is empty too) |
 
 `search_messages` accepts `hall`, `wing` and `room` but ignores them.
 

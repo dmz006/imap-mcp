@@ -319,6 +319,7 @@ to 0.10.4 or later.
 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search` work. New `tools:` config block (defaults are fine). Attachment downloads and exports need the `write` scope. |
 | 0.12.0 | **Back up `imap.db` first.** The intelligence tables move from `cache.db` to `imap.db` (the empty cache copies are dropped; the cache is not rebuilt). A header scanner then reads all of your history once, at `intelligence.backfill_per_minute` (default 600 a minute). Expect a few hours for a large mailbox, with `/api/health` showing progress. Set `intelligence.enabled: false` to skip it. See [intelligence.md](intelligence.md). |
 | 0.13.0 | **Back up `imap.db` first.** Columns are added to `imap.db` in place. On first start the header scan starts again from the beginning to build the knowledge graph for all history. Profile counts don't change. It takes as long as the 0.12 scan. Set `intelligence.kg: false` to skip the graph, or `intelligence.kg_llm: false` to keep message bodies away from the model. |
+| 0.14.0 | **Back up `imap.db` first.** Columns are added to `anomalies` in place; no rescan. Anomaly detection starts once the history scan is complete, and only for new mail, so expect a few findings a day, not a flood. Set `intelligence.anomalies: false` to turn it off. New tool `resolve_anomaly` (write scope). |
 
 ### The one-time 0.6.0 split
 

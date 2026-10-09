@@ -144,6 +144,7 @@ unknown ones, needs a valid token.
 | GET | `/api/senders/{address}` | read |
 | GET | `/api/kg` | read |
 | GET | `/api/anomalies` | read |
+| POST | `/api/anomalies/{id}/resolve` | write |
 | GET | `/api/enrichment/status` | read |
 | POST | `/api/enrichment/trigger` | admin |
 | POST | `/api/cache/sweep` | admin |
@@ -169,7 +170,7 @@ See [rest-api.md](rest-api.md) for parameters and responses.
 | Scope | Tools |
 |-------|-------|
 | read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments` (listing), `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status`, `top_senders`, `list_rules`, `read_file`, `list_files` |
-| write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `export_message`, `get_attachments` with `part` (download), `write_file`, `delete_file` |
+| write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `resolve_anomaly`, `export_message`, `get_attachments` with `part` (download), `write_file`, `delete_file` |
 | send | `send_message` |
 | admin | `sync_account`, `trigger_enrichment`, `cache_sweep` |
 

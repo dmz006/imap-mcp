@@ -37,9 +37,7 @@ The response looks like this:
   relationships, with subject and object names).
   `messages` reads the cache (the sync window). `senders`, `anomalies` and
   `kg` read `imap.db`, which covers all history ([intelligence.md](intelligence.md)).
-  > **Currently empty:** nothing detects anomalies yet, so the `anomalies`
-  > view returns no rows. `senders` and `kg` are filled by the header
-  > scanner. See [known-limitations.md](known-limitations.md).
+  All three are filled by the header scanner.
 - **`fields`:** columns to return. If omitted, a default set is returned. For
   `messages`, the default never includes bodies: `body_text` and `body_html`
   are returned only when named.
@@ -85,8 +83,7 @@ Unread, flagged mail per folder:
  "aggregate": [{"fn": "count", "as": "n"}]}
 ```
 
-The next examples use the intelligence views. `senders` and `kg` return data;
-the `anomalies` example returns no rows until anomaly detection is built.
+The next examples use the intelligence views.
 
 Senders you have never replied to, ranked by volume:
 

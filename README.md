@@ -17,7 +17,7 @@ It runs fully standalone. Integration with [datawatch](https://github.com/dmz006
 
 ## Features
 
-### MCP tools (44)
+### MCP tools (45)
 
 Every tool takes an optional `account` parameter (the default account is used
 when omitted). Over HTTP with auth enabled, each tool needs the token scope
@@ -36,6 +36,7 @@ shown; `tools/list` only shows tools the caller's token can use.
 | Search | `search_messages`, `semantic_search`, `cross_account_search` | read |
 | Analytics | `summarize_folder`, `detect_subscriptions`, `top_senders`, `get_sender_history` | read |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status` | read |
+| | `resolve_anomaly` | write |
 | | `trigger_enrichment` | admin |
 | Cache | `cache_sweep` | admin |
 | Rules | `list_rules` | read |
@@ -60,7 +61,10 @@ Notes:
   conversations: who you correspond with, who appears together, organizations,
   threads, projects, topics, reporting lines and deadlines. Strongest
   relationships first, with weights and dates.
-- `get_anomalies` works but returns empty results: nothing detects anomalies yet.
+- `get_anomalies` lists findings from the same scan: new senders, DMARC/DKIM
+  failures from senders who used to pass, look-alike domains, Reply-To
+  mismatches, silences and volume spikes. Each one is also published as
+  `anomaly.detected`. `resolve_anomaly` marks one reviewed.
 
 See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 
@@ -74,7 +78,7 @@ See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 | Query DSL | `POST /api/query`: read-only JSON queries over the cache. Allowlisted views, fields and operators; never SQL. | [docs/query.md](docs/query.md) |
 | Sync cache | Read-only background sync into `cache.db` over a rolling window. SPECIAL-USE folder tokens, per-account overrides, CONDSTORE flag refresh, UIDVALIDITY rebuild, automatic cleaning and VACUUM. | [docs/sync-cache.md](docs/sync-cache.md) |
 | Enrichment | Embeddings (Ollama) and classification (Ollama or datawatch). New mail before backfill; backfill rate limits, quiet hours and GPU-yield gates. | [docs/enrichment.md](docs/enrichment.md) |
-| Sender intelligence | A resumable, header-only scan of all history builds a profile per sender in `imap.db` (contact dates, counts each way, reply times, DKIM/DMARC results, a role) and a knowledge graph (correspondents, co-recipients, organizations, threads, projects, topics, plus reporting lines and deadlines the classify model reads from recent conversations). | [docs/intelligence.md](docs/intelligence.md) |
+| Sender intelligence | A resumable, header-only scan of all history builds a profile per sender in `imap.db` (contact dates, counts each way, reply times, DKIM/DMARC results, a role) and a knowledge graph (correspondents, co-recipients, organizations, threads, projects, topics, plus reporting lines and deadlines the classify model reads from recent conversations), and flags anomalies (new senders, spoofing signs, look-alike domains, Reply-To mismatches, silences, bursts). | [docs/intelligence.md](docs/intelligence.md) |
 | Rules | Match on sender, subject, body text or age; actions `trash`, `move`, `flag`, `seen`. Run via MCP, REST or `imap-mcp run-rules`. | [docs/rules.md](docs/rules.md) |
 | Encryption | Separate state (`imap.db`) and cache (`cache.db`) files, each optionally encrypted at rest (adiantum + Argon2id). Fails closed on a missing or wrong key. | [docs/encryption.md](docs/encryption.md) |
 | Outbound mail | Per-account SMTP block; mail leaves through that domain's server. Password (PLAIN) auth only. | [config.example.yaml](config.example.yaml) |
@@ -306,7 +310,6 @@ See [AGENT.md](AGENT.md) for project conventions.
 
 Open items only:
 
-- Intelligence: anomaly detection on top of sender profiles and the knowledge graph, so `get_anomalies` and the `anomalies` view return data and `anomaly.detected` is published ([plan](docs/plans/2026-10-09-intelligence-and-stubs.md), P4).
 - IMAP IDLE for push delivery of new mail (sync is currently interval-based).
 - PGP gate for inbound commands (`require_pgp` currently fails closed).
 

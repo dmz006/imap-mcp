@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-09
 - **Starting version:** 0.10.5
-- **Status:** P1 (0.11.0), P2 (0.12.0) and P3 (0.13.0) done; P4 next. Decisions D19–D28 decided 2026-10-09 (DIP, one at a
+- **Status:** Done. P1 (0.11.0), P2 (0.12.0), P3 (0.13.0), P4 (0.14.0). P5 (docs and skill) was folded into each release. Decisions D19–D28 decided 2026-10-09 (DIP, one at a
   time); see the table below and AGENT.md § Recorded Decisions.
 
 ## Scope
@@ -84,8 +84,8 @@ anomaly baselines need profiles, and the graph uses profile roles.
 | P1 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search`, plus REST routes (D27); `list_messages` `thread_id` made consistent with the cache | D23–D27 | **Done (0.11.0)**: Tested=Yes (service tests against the in-memory IMAP server incl. live fallback, PEEK checks, mboxrd quoting, caps, FTS-literal input, per-account errors; MCP scope and sandbox tests; REST route and 403 tests). Validated=Yes on a side instance against two live accounts: threads from cache and with live fallback, attachment list/download (octet-stream, nosniff, read token 403), `.eml` byte-exact, thread `.mbox` counts match, cross-account search live and cache, server UNSEEN counts unchanged, MCP tool lists per scope |
 | P2 | 0.12.0 | State migration moving the intelligence tables to `imap.db`; header backfill (resumable, rate-limited). Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | **Done (0.12.0)**: Tested=Yes (header parsing, hashing, roles, scope, end-to-end scan against the in-memory server incl. duplicates across folders, reply pairing, hall and model roles, gated model, PEEK/`\Seen` checks, UIDVALIDITY rescan, mid-scan role refresh, progress registration, table move without cache rebuild; mutation-checked). Validated=Yes on a side instance against two live accounts (one with an All Mail folder, one with several hundred folders): full first scan with two mid-scan restarts and no double counting (incoming index rows = sum of received counts), replies paired, roles from signals, DKIM/DMARC results captured, REST/query views and scopes, cache tables dropped without rebuild. Found and fixed during validation: roles only at tick end, progress before a folder's first batch, read-to-write transaction upgrade |
 | P3 | 0.13.0 | Knowledge-graph builder: deterministic entities and relationships with `valid_from`/`valid_to`, initial build over backfilled data; then the gated LLM body-extraction lane for recent conversation/personal mail | D19, D21 | **Done (0.13.0)**: Tested=Yes (edge rules incl. webmail, cc cap, subscriptions, threads; exactly-once via kg_done across copies, ticks and the upgrade rescan; tag and model edges once per message; untrusted model output filtered; staleness; in-place state migration; mutation-checked). Validated=Yes on a side instance over copies of the production databases (encrypted): in-place migration and rescan of all history built header edges for every indexed message exactly once with profile counts unchanged; tag and model edges from real cached mail; model roles. The real classify model was probed with a synthetic example.com email. Found and fixed: model-role candidates without cached mail starved the pass; deadline date in the wrong field; placeholder names |
-| P4 | 0.14.0 | Anomaly detector: compares new mail with profile baselines, writes `anomalies`, publishes `anomaly.detected` (and so webhooks and SSE). Resolution through MCP and REST | D19, D22 | Planned |
-| P5 | after P4 | Docs and skill: examples.md "Not there yet" list removed or reduced, new agent workflows that use profiles, graph and anomalies, companion skill update and community PR, known-limitations and context file updated | P1–P4 | Planned |
+| P4 | 0.14.0 | Anomaly detector: compares new mail with profile baselines, writes `anomalies`, publishes `anomaly.detected` (and so webhooks and SSE). Resolution through MCP and REST | D19, D22 | **Done (0.14.0)**: Tested=Yes (each per-message check, the history-complete and lookback gates, once-per-message storage, payload fields, scores, silence crossing/resolution/ancient-silence skip, volume spike, de-duplication, migration, resolve via service/MCP scope/REST; mutation-checked). Validated=Yes on a side instance over copies of the production databases: the full-history scan tick flagged nothing; the next tick ran detection on new mail and periodic checks over real history (a handful of silence and volume-spike findings, no flood); details carry numbers only; resolve works and needs write. Webhook payloads keep type and severity |
+| P5 | with each release | Docs and skill: examples.md "Not there yet" list removed or reduced, new agent workflows that use profiles, graph and anomalies, companion skill update and community PR, known-limitations and context file updated | P1–P4 | **Done**: shipped with each release (examples workflows 10.12–10.15, "Not there yet" removed; skill 0.9.0–0.12.0 via community PRs #5–#7 and the 0.12.0 PR) |
 
 Every phase follows the usual rules:
 - tests for all new logic (Tested=Yes);
@@ -202,6 +202,49 @@ Every phase follows the usual rules:
 - **Reads.** `kg_query`, `GET /api/kg`, the `kg` query view and a profile's
   `relationships` return data. `/api/health` adds entity and relationship
   counts.
+
+## P4 design (anomalies)
+
+- **Per-message checks**, inline in the header scan for new incoming mail.
+  They run only after the account's history scan is complete and only for
+  mail within `intelligence.anomaly_lookback_days` (default 7). The first
+  scan and an upgrade rescan therefore produce no historical anomalies, and
+  "new" can't be wrong because older folders haven't been read yet.
+  - `new_sender` (low): the first-ever message from this address, in
+    person-to-person mail, from a sender who isn't a newsletter or bot and
+    whom you have never written to.
+  - `auth_failure` (high): the message fails DMARC (or DKIM when there is no
+    DMARC result), and at least `anomaly_auth_min_passes` (default 3) of the
+    sender's earlier messages passed.
+  - `lookalike_domain` (high): the sender's domain is not one you
+    correspond with, but it is within a small edit distance of one that is
+    (1, or 2 for domains of 10+ characters), or equal to one after common
+    confusables are folded (`rn`→`m`, `0`→`o`, `1`→`l`, `vv`→`w`).
+  - `reply_to_mismatch` (medium): person-to-person mail from a known sender
+    (at least 3 earlier messages) whose Reply-To domain differs from the From
+    domain.
+- **Periodic checks** at the end of each tick, once the history scan is
+  complete.
+  - `silence` (low): a person or colleague who has sent at least
+    `anomaly_silence_min_messages` (20) has been quiet for more than
+    max(`anomaly_silence_min_days` (30), 3× their usual gap).
+  - `volume_spike` (medium): a sender's last 24 hours exceed
+    max(`anomaly_spike_min` (10), `anomaly_spike_factor` (5) × their daily
+    average).
+- **Storage.** `anomalies` gains `folder`, `uid` and `message_ref` (the
+  Message-ID, so `get_thread` and search can find the message), and
+  `details` (JSON). There is at most one open anomaly per (account, sender,
+  type) for the periodic checks, and one per message and type for the
+  per-message checks. `senders.anomaly_score` is the severity-weighted
+  count of open anomalies.
+- **Events.** `anomaly.detected` is published after commit with
+  `{id, type, severity}` only (D16). Webhooks and SSE receive it, and
+  receivers fetch details with their own token.
+- **Resolution.** A new MCP tool, `resolve_anomaly` (write), and
+  `POST /api/anomalies/{id}/resolve` (write). `get_anomalies` and
+  `GET /api/anomalies` already filter open versus resolved.
+- **Config.** `intelligence.anomalies` (on) plus the thresholds above, each
+  with an `IMAP_MCP_INTELLIGENCE_*` override.
 
 ## Constraints carried from earlier decisions
 

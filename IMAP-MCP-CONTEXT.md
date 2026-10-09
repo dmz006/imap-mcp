@@ -15,7 +15,7 @@ is a quick reference of facts; the code is the source of truth when they differ.
 
 A Go binary that connects to one or more IMAP accounts and exposes them through:
 
-1. **MCP**: 44 tools, over stdio or Streamable HTTP at `/mcp`.
+1. **MCP**: 45 tools, over stdio or Streamable HTTP at `/mcp`.
 2. **REST API** at `/api`: mailbox operations, search, analytics, rules,
    webhooks, a JSON query DSL and an SSE event stream. Every route is implemented.
 3. **Local cache and enrichment**: a windowed SQLite cache of recent mail
@@ -32,9 +32,9 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.13.0 |
+| Current version | 0.14.0 |
 | Location | the repo root |
-| Status | 44 MCP tools registered (no stubs); sender profiles and knowledge graph built by a header scanner; `get_anomalies` empty until P4; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
+| Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
 
 ---
 
@@ -94,7 +94,8 @@ Defaults that matter: server `127.0.0.1:8765`; state DB
 (classify); `tools:` attachment inline 64 KB, attachment max 25 MB, export max
 500 messages / 100 MB; `intelligence:` on, scan every 15 min, backfill
 600 messages/min, batch 200, model roles 20 per tick; KG on, stale after 365
-days, model extraction 10 bodies per tick.
+days, model extraction 10 bodies per tick; anomalies on (lookback 7 days, auth 3 passes,
+silence 20 messages / 30 days, spike 10 / 5x).
 
 Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
 `IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
@@ -194,11 +195,11 @@ The PGP inbound gate is declared but fails closed until implemented.
 | `internal/enrichment/gates.go` | Backfill `LoadGate`s: time window, Ollama residency, datawatch capacity |
 | `internal/enrichment/cleaner.go` | `Cleaner` hook for content cleaning before models (iteration 3) |
 | `internal/service/` | Operations shared by MCP and REST: mail, search, intel, rules, send, stats, webhooks, query |
-| `internal/mcp/server.go` | MCP server; registers all 44 tools |
+| `internal/mcp/server.go` | MCP server; registers all 45 tools |
 | `internal/mcp/scopes.go` | Tool → scope table; middleware and `tools/list` filter |
 | `internal/mcp/tools/definitions.go` | All tool schemas (names, params, descriptions) |
 | `internal/mcp/tools/impl_*.go` | Tool handlers; `impl_content.go` holds threads, attachments, export, cross-account search |
-| `internal/intel/` | Header scanner (D19, D20, D21, D28): resumable, rate-limited, PEEK-only scan of all folders; sender profiles, hashed per-message index, reply pairing, roles (signals → cached hall tags → classify model via `Pipeline.ClassifyWhenIdle`); knowledge graph (`kg.go`: header edges once per message via `kg_done`, wing/room edges, gated model extraction, staleness) |
+| `internal/intel/` | Header scanner (D19, D20, D21, D28): resumable, rate-limited, PEEK-only scan of all folders; sender profiles, hashed per-message index, reply pairing, roles (signals → cached hall tags → classify model via `Pipeline.ClassifyWhenIdle`); knowledge graph (`kg.go`: header edges once per message via `kg_done`, wing/room edges, gated model extraction, staleness); anomalies (`anomaly.go`: per-message checks inline after the history scan completes, periodic silence/volume checks, scores, `anomaly.detected`) |
 | `internal/service/intelstats.go` | Scan progress for `/api/health` |
 | `internal/service/thread.go`, `attachments.go`, `export.go`, `xsearch.go` | Thread lookup (cache + live fallback), attachment list/fetch, .eml/.mbox export, cross-account search (D23–D27) |
 | `internal/api/server.go` | REST router with per-route scopes; SSE `/api/events` |
@@ -218,7 +219,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 
 ## MCP Tools Status
 
-44 tools registered in `internal/mcp/server.go`. Scopes from
+45 tools registered in `internal/mcp/server.go`. Scopes from
 `internal/mcp/scopes.go` (enforced over HTTP only; stdio has no auth).
 
 | Group | Tools | Scope |
@@ -236,7 +237,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Cache | `cache_sweep` (cache only, `dry_run` defaults to true) | admin |
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
 | Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
-| Intelligence | `get_sender_profile`, `kg_query` (built by `internal/intel`); `get_anomalies` (empty until P4) | read |
+| Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies` (built by `internal/intel`); `resolve_anomaly` | read; write |
 
 Behaviour notes:
 
@@ -286,7 +287,7 @@ intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In
 intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at)
 kg_entities        -- KG nodes: person, organization, thread, project, topic (P3, D21)
 kg_relationships   -- KG edges: weight, valid_from, last_seen, valid_to (stale), confidence; unique (subject, predicate, object)
-anomalies          -- anomaly log                (not populated yet: P4)
+anomalies          -- findings (D22): type, severity, description, details JSON; folder/uid/message_ref for per-message ones; resolved
 ```
 
 **`cache.db`** (disposable; rebuilt from IMAP; dropped and recreated when its
@@ -336,7 +337,7 @@ enqueuer subscribe to every event.
 | `rule.fired` | rules (`run_rules`, `run-rules`, REST) |
 | `account.connected`, `account.error` | IMAP pool |
 | `account.disconnected` | declared, not published |
-| `anomaly.detected` | declared, not published (no detector yet) |
+| `anomaly.detected` | intel scanner: `{id, type, severity}` (webhooks keep the same three fields) |
 | `webhook.delivered`, `webhook.failed` | webhook dispatcher |
 | `inbound.command`, `inbound.rejected` | inbound processor |
 
@@ -371,6 +372,7 @@ GET    /api/search                                                     read
 POST   /api/search/semantic                                            read
 GET    /api/senders, /api/senders/{address}                            read
 GET    /api/kg, /api/anomalies                                         read
+POST   /api/anomalies/{id}/resolve                                     write
 GET    /api/enrichment/status                                          read
 POST   /api/enrichment/trigger                                         admin
 POST   /api/cache/sweep                                                admin
@@ -391,7 +393,7 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 
 | Item | Notes |
 |------|-------|
-| Intelligence | Anomaly detector (P4): nothing writes `anomalies`; `anomaly.detected` never fires. Content cleaning (`Cleaner`) |
+| Intelligence | Content cleaning before models (`Cleaner`); LLM "asks for payment" anomaly (backlog) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

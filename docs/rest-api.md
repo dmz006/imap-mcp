@@ -183,6 +183,7 @@ curl -N -H "Authorization: Bearer <token>" http://127.0.0.1:8765/api/events
 | `enrichment.done` | no | The enrichment result: `{MessageID, Hall, Wing, Room, Embedding, Entities, Anomalies}`. The field names are Go names, and `Embedding` is the full vector. |
 | `enrichment.error` | no | `{message_id, error}`, sent when a message reaches `max_attempts` |
 | `rule.fired` | rule's `account` condition (empty for the default account) | `{rule_id, action, matched}` |
+| `anomaly.detected` | yes | `{id, type, severity}`. Fetch the finding with `GET /api/anomalies`. See [intelligence.md](intelligence.md#anomalies). |
 | `account.connected` | yes | none |
 | `account.error` | yes | Error text (string) |
 | `webhook.delivered` | no | `{id, delivery_id}` |
@@ -190,8 +191,7 @@ curl -N -H "Authorization: Bearer <token>" http://127.0.0.1:8765/api/events
 | `inbound.command` | yes | A verified inbound command. See [datawatch-integration.md](datawatch-integration.md). |
 | `inbound.rejected` | yes | The trust-gate result for a rejected command email |
 
-`anomaly.detected` and `account.disconnected` are defined but nothing
-publishes them yet.
+`account.disconnected` is defined but nothing publishes it yet.
 
 Webhooks receive a reduced, metadata-only form of these events. See
 [webhooks.md](webhooks.md).
@@ -475,14 +475,15 @@ truncated. Messages are fetched with `BODY.PEEK[]`.
 
 These routes read `imap.db`. Sender profiles and the knowledge graph come from
 the header scanner and cover all history ([intelligence.md](intelligence.md)).
-Nothing detects anomalies yet, so `GET /api/anomalies` returns an empty list.
+Anomalies come from the same scanner (see [intelligence.md](intelligence.md#anomalies)).
 
 | Route | Scope | Query | Response |
 |-------|-------|-------|----------|
 | `GET /api/senders` | `read` | `role`, `domain`, `limit` (default 50, max 500) | `{count, senders: [...]}`, most messages first |
 | `GET /api/senders/{address}` | `read` | | Profile fields ([intelligence.md](intelligence.md#what-a-profile-holds)) plus `cached_messages`, `scan_complete`, `relationships`, `anomalies`. 404 when there is neither a profile nor cached mail. |
 | `GET /api/kg` | `read` | `entity` (exact name, either end), `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence, weight, last_seen, current, properties}]}`, strongest (`weight`) first. See [intelligence.md](intelligence.md#knowledge-graph) |
-| `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [...]}` |
+| `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `type`, `sender`, `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [{id, account, sender, type, description, severity, detected_at, resolved, resolved_at, folder, uid, message_ref, details}]}`, newest first |
+| `POST /api/anomalies/{id}/resolve` | `write` | | The anomaly, now `resolved: true`. 404 for an unknown id. |
 
 ## Enrichment
 

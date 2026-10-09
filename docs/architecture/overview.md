@@ -24,7 +24,7 @@ wins. Current gaps are listed in [known limitations](../known-limitations.md).
                        │                  │ HTTP         │ + SSE       │
                        ▼                  └──────┬───────┴──────┬──────┘
                ┌────────────────────────────────▼──┐            │
-               │ MCP tools (44; scope per tool)    │            │
+               │ MCP tools (45; scope per tool)    │            │
                └───────────────┬───────────────────┘            │
                                ▼                                ▼
                ┌──────────────────────────────────────────────────────┐
@@ -59,9 +59,9 @@ wins. Current gaps are listed in [known limitations](../known-limitations.md).
 | Sync engine | `internal/sync` | Per account and configured folder: resolve SPECIAL-USE (`\Sent`), EXAMINE (read-only), `UID SEARCH SINCE` the window, fetch new mail, drop gone mail from the cache, update flags with CONDSTORE where available, rebuild a folder on UIDVALIDITY change. Never changes the mailbox |
 | Cache | `internal/db` | `cache.db`: messages, FTS5, vectors, sync state, enrichment queue. Disposable |
 | Enrichment pipeline | `internal/enrichment` | Embeds and classifies cached mail. See below |
-| Sender intelligence | `internal/intel` | Resumable, PEEK-only header scan of all folders; sender profiles, hashed per-message index, reply pairing, roles and the knowledge graph in `imap.db`. See [intelligence.md](../intelligence.md) |
+| Sender intelligence | `internal/intel` | Resumable, PEEK-only header scan of all folders; sender profiles, hashed per-message index, reply pairing, roles, the knowledge graph and anomaly detection in `imap.db`. See [intelligence.md](../intelligence.md) |
 | Service layer | `internal/service` | One implementation of each operation, called by MCP tools and REST handlers. Typed errors map to REST status codes and MCP tool errors. Some MCP cleanup tools (`move_bulk`, `flag_bulk`, `purge_sender`, `label_*`, `empty_trash`, `top_senders`, `summarize_folder`, `detect_subscriptions`) still call the IMAP pool directly |
-| MCP server | `internal/mcp` | Registers 44 tools; scope middleware and `tools/list` filter when HTTP auth is on |
+| MCP server | `internal/mcp` | Registers 45 tools; scope middleware and `tools/list` filter when HTTP auth is on |
 | REST API | `internal/api` | chi router, one scope per route, SSE at `/api/events` |
 | HTTP server | `internal/server` | Mounts `/mcp` and `/api` behind `browserGuard` and auth; graceful shutdown ends open streams |
 | Auth middleware | `internal/httpauth` | Named bearer tokens with scopes `read`, `write`, `send`, `admin` |
@@ -147,7 +147,7 @@ Operator data that cannot be rebuilt from IMAP. Default path
 | `intel_messages` | D28 index: one row per message (Message-ID hash, date, sender id, direction, In-Reply-To hash); no addresses or content |
 | `intel_scan` | Header-scan progress per account and folder |
 | `kg_entities`, `kg_relationships` | Temporal knowledge graph: people, organizations, threads, projects, topics; edges with weight, valid_from, last_seen, valid_to and confidence. Built by the header scanner, cached tags and the classify model |
-| `anomalies` | Anomaly log (not populated yet: plan P4) |
+| `anomalies` | Findings: new senders, auth failures, look-alike domains, Reply-To mismatches, silences, volume spikes; location for per-message ones; resolved flag |
 
 ### `cache.db`: cache
 
@@ -164,8 +164,7 @@ version changes the file is dropped and recreated.
 | `enrichment_queue` | Status, lane (0 new, 1 backfill), attempts, last error | By sync and enrichment |
 
 The `/api/query` DSL reads the view `messages` from `cache.db` and the views
-`senders`, `anomalies` and `kg` from `imap.db`; `anomalies` returns nothing
-until plan P4 fills it.
+`senders`, `anomalies` and `kg` from `imap.db`.
 
 ---
 
@@ -242,7 +241,8 @@ publishers ──► bus ──┬──► /api/events SSE clients  (data: {"ty
 | `account.connected`, `account.error` | IMAP pool |
 | `webhook.delivered`, `webhook.failed` | webhook dispatcher |
 | `inbound.command`, `inbound.rejected` | inbound processor |
-| `account.disconnected`, `anomaly.detected` | declared, never published |
+| `anomaly.detected` | intel scanner (`{id, type, severity}`) |
+| `account.disconnected` | declared, never published |
 
 Webhook payloads carry identifiers, counts and flags only, never subjects,
 addresses or bodies. Receivers fetch details over REST with their own token.

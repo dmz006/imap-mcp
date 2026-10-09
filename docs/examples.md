@@ -24,7 +24,7 @@ even if it is only `{}` ([rest-api.md](rest-api.md#request-guard)).
 ## 1. Ask your agent
 
 With imap-mcp attached to Claude Code (or a datawatch session) you can just
-ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-44):
+ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-45):
 
 | You say | Tools the agent uses |
 |---------|----------------------|
@@ -43,7 +43,7 @@ ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-44
 | "Export that thread so I can forward it to legal." | `export_message` with `thread_id` → `.mbox` |
 
 The [inbox-cleanup cookbook](cookbook-inbox-cleanup.md) walks through a full
-cleanup session end to end, and [section 10](#10-agent-workflows) has fourteen
+cleanup session end to end, and [section 10](#10-agent-workflows) has fifteen
 more multi-step workflows.
 
 ---
@@ -500,7 +500,9 @@ drop that filter and let the agent judge from the sender.
 
 1. `get_headers` returns `Authentication-Results` (SPF, DKIM, DMARC),
    `Return-Path`, `Reply-To` and the `Received` chain.
-2. `get_sender_profile` shows whether this address has written before, over
+2. `get_anomalies` with `sender` set to the address may already have flagged
+   it (`auth_failure`, `lookalike_domain`, `reply_to_mismatch`).
+   `get_sender_profile` shows whether this address has written before, over
    all history, and how its mail usually authenticates. A sender whose mail
    has always passed DMARC (`dmarc_pass` high, `dmarc_fail` 0) but whose
    message now fails it is a strong warning.
@@ -662,11 +664,24 @@ relationships (`weight` high) whose `last_seen` is old, or that are no longer
 `current`. Then `get_sender_profile` on each gives the reply history. The
 answer is a short list with "last contact" dates, not a mailbox dump.
 
-### Not there yet
+### 10.15 Morning security check
 
-`get_anomalies` works, but nothing detects anomalies yet, so it returns empty
-results. That is planned ([plans](plans/2026-10-09-intelligence-and-stubs.md),
-P4). Sender profiles and the knowledge graph are built
-([intelligence.md](intelligence.md)), and the workflows above use them. For example, 10.6 reads a sender's DMARC history from
-its profile instead of waiting for `get_anomalies`. See
-[known-limitations.md](known-limitations.md).
+> "Anything suspicious in my mail since yesterday?"
+
+1. `get_anomalies` with `severity: "high"`: `auth_failure` (a sender whose
+   mail used to pass DMARC now fails) and `lookalike_domain` (a domain one
+   character away from one you write to). Each has `folder`, `uid` and
+   `message_ref`.
+2. For each one, the agent runs the phishing check (10.6) on that message:
+   headers, sender profile and attachment list.
+3. `get_anomalies` with `severity: "medium"`: `reply_to_mismatch` and
+   `volume_spike`, summarised in one line each.
+4. The agent reports what it found and asks before acting: move to Junk,
+   or `resolve_anomaly` with a note on why it's fine (a known sender whose
+   mailing service fails DKIM, say).
+
+Run it from a scheduled session (10.9) with a `read` token: it can look at
+everything and report, and it can't resolve or move anything. To get the
+alert pushed instead, subscribe a webhook to `anomaly.detected` (section 5).
+The payload is just `{id, type, severity}`, so the receiver fetches the
+details with its own token.

@@ -6,6 +6,48 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-09
+
+This completes the intelligence plan: every tool now does real work.
+
+### Added
+- **Anomaly detection** (plan P4, D22). See
+  [docs/intelligence.md](docs/intelligence.md#anomalies).
+  - **Checks on each new message.** They run only after the account's
+    history scan is complete, and only for mail from the last
+    `anomaly_lookback_days`, so first scans and upgrade rescans flag nothing
+    historical:
+    - `new_sender` (low): the first person-to-person message from someone
+      you've never written to;
+    - `auth_failure` (high): DMARC, or DKIM without DMARC, fails for a
+      sender whose earlier mail passed;
+    - `lookalike_domain` (high): one or two characters away from a domain
+      you write to, or the same after folding look-alike characters;
+    - `reply_to_mismatch` (medium).
+  - **Periodic checks:**
+    - `silence` (low): a regular correspondent gone quiet. Reported while
+      the silence is new, and resolved when they write again;
+    - `volume_spike` (medium).
+  - **Each finding** has a description and `details`. Per-message findings
+    also have `folder`, `uid` and `message_ref` (Message-ID). Senders get an
+    `anomaly_score`.
+  - **`anomaly.detected`** is now published with `{id, type, severity}`.
+    Webhooks deliver the same three fields, never the sender.
+- **`resolve_anomaly`** MCP tool (write) and
+  `POST /api/anomalies/{id}/resolve` (write). `get_anomalies` and
+  `GET /api/anomalies` gain `type` and `sender` filters.
+- Config: `intelligence.anomalies`, `anomaly_lookback_days`,
+  `anomaly_auth_min_passes`, `anomaly_silence_min_messages`,
+  `anomaly_silence_min_days`, `anomaly_spike_min`, `anomaly_spike_factor`,
+  with `IMAP_MCP_INTELLIGENCE_*` overrides.
+- The `/api/query` `anomalies` view gains `folder`, `uid` and `message_ref`.
+- Companion skill 0.12.0 (anomalies). Example 10.15 "Morning security
+  check".
+
+### Changed
+- `imap.db`: `anomalies` gains four columns, added in place. No rescan is
+  needed. Back up `imap.db` first.
+
 ## [0.13.0] - 2026-10-09
 
 ### Added

@@ -3,16 +3,18 @@
 imap-mcp builds a profile of every sender you correspond with, and a
 knowledge graph of who you correspond with, who appears together, which
 organizations, threads, projects and topics they connect to, and what your
-recent mail says about reporting lines and deadlines. It reads your mail's
-history once and keeps both up to date as new mail arrives.
+recent mail says about reporting lines and deadlines. It also flags anomalies:
+new senders, spoofing signs, look-alike domains, silences and bursts. It reads
+your mail's history once and keeps everything up to date as new mail
+arrives.
 
 - Profiles: `get_sender_profile`, `GET /api/senders`, the `/api/query`
   `senders` view.
 - Graph: `kg_query`, `GET /api/kg`, the `/api/query` `kg` view, and the
   `relationships` list in each profile.
-
-Anomaly detection builds on both. It is planned work and still returns empty
-results ([known-limitations.md](known-limitations.md)).
+- Anomalies: `get_anomalies`, `resolve_anomaly`, `GET /api/anomalies`, the
+  `anomaly.detected` event (SSE and webhooks), and each profile's `anomalies`
+  list.
 
 ## What a profile holds
 
@@ -191,6 +193,58 @@ configured classify model, under the same gates as backfill enrichment
 `intelligence.kg_llm_per_tick` messages per tick. Turn it off with
 `intelligence.kg_llm: false`. The header and tag graph is then still built.
 
+## Anomalies
+
+Anomaly detection uses the profiles and the scan (AGENT.md D22). Each finding
+has a type, a severity, a plain description, and `details` with the numbers
+behind it.
+
+### Checks on each new message
+
+These checks run during the header scan for newly arrived incoming mail, and
+only:
+- after the account's history scan is complete. The first scan, and the
+  rescan after an upgrade, flag nothing. Otherwise "first message from this
+  sender" would be wrong until every folder had been read.
+- for mail from the last `intelligence.anomaly_lookback_days` (default 7).
+
+Each check compares the message with the sender's profile *before* this
+message is counted.
+
+| Type | Severity | When |
+|------|----------|------|
+| `new_sender` | low | The first message ever from this address, in person-to-person mail (no list, bulk or automated headers), from someone you have never written to |
+| `auth_failure` | high | The message fails DMARC (or DKIM, when it has no DMARC result), and at least `anomaly_auth_min_passes` (3) earlier messages from this sender passed. A sender whose mail always passed and now fails is a classic sign of spoofing |
+| `lookalike_domain` | high | The sender's domain is not one you write to, but looks like one: one character off (two for domains of 10+ characters), or the same after folding look-alike characters (`rn`→`m`, `vv`→`w`, `0`→`o`, `1`/`i`→`l`). Domains shorter than 6 characters are not compared |
+| `reply_to_mismatch` | medium | Person-to-person mail from a sender with at least 3 earlier messages, where replies would go to a different domain than the sender's |
+
+Per-message findings carry `folder`, `uid` and `message_ref` (the
+Message-ID), so an agent can open the message (`get_message`) or its
+conversation (`get_thread`). Each message produces at most one finding per
+type.
+
+### Periodic checks
+
+These run at the end of each scan tick, once the history scan is complete.
+
+| Type | Severity | When |
+|------|----------|------|
+| `silence` | low | A person or colleague with at least `anomaly_silence_min_messages` (20) messages has been quiet longer than both `anomaly_silence_min_days` (30) and three times their usual gap between messages. It is reported while the silence is new (within one more `anomaly_silence_min_days`), not for people you lost touch with years ago, and resolves itself when they write again |
+| `volume_spike` | medium | A sender's last 24 hours exceed both `anomaly_spike_min` (10) and `anomaly_spike_factor` (5) times their average per day |
+
+Only one finding per sender and type is open at a time.
+
+### Events, scores and resolution
+
+- Each new finding publishes `anomaly.detected` on the event stream and to
+  webhooks with `{id, type, severity}` only, never the sender. Receivers
+  fetch the details with their own token (`GET /api/anomalies`).
+- A sender's `anomaly_score` is their open findings weighted by severity:
+  high 1, medium 0.5, low 0.2.
+- `resolve_anomaly` (MCP, write scope) or `POST /api/anomalies/{id}/resolve`
+  marks a finding reviewed. It stays in the log with `resolved: true` and
+  drops out of the default listing and the score.
+
 ## Configuration
 
 ```yaml
@@ -206,6 +260,13 @@ intelligence:
   kg_stale_days: 365
   kg_llm: true
   kg_llm_per_tick: 10
+  anomalies: true
+  anomaly_lookback_days: 7
+  anomaly_auth_min_passes: 3
+  anomaly_silence_min_messages: 20
+  anomaly_silence_min_days: 30
+  anomaly_spike_min: 10
+  anomaly_spike_factor: 5
 ```
 
 | Setting | Default | Environment variable |
@@ -221,6 +282,13 @@ intelligence:
 | `kg_stale_days` | 365 | `IMAP_MCP_INTELLIGENCE_KG_STALE_DAYS` |
 | `kg_llm` | true | `IMAP_MCP_INTELLIGENCE_KG_LLM` |
 | `kg_llm_per_tick` | 10 | `IMAP_MCP_INTELLIGENCE_KG_LLM_PER_TICK` |
+| `anomalies` | true | `IMAP_MCP_INTELLIGENCE_ANOMALIES` |
+| `anomaly_lookback_days` | 7 | `IMAP_MCP_INTELLIGENCE_ANOMALY_LOOKBACK_DAYS` |
+| `anomaly_auth_min_passes` | 3 | `IMAP_MCP_INTELLIGENCE_ANOMALY_AUTH_MIN_PASSES` |
+| `anomaly_silence_min_messages` | 20 | `IMAP_MCP_INTELLIGENCE_ANOMALY_SILENCE_MIN_MESSAGES` |
+| `anomaly_silence_min_days` | 30 | `IMAP_MCP_INTELLIGENCE_ANOMALY_SILENCE_MIN_DAYS` |
+| `anomaly_spike_min` | 10 | `IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_MIN` |
+| `anomaly_spike_factor` | 5 | `IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_FACTOR` |
 
 At 600 messages a minute, a mailbox of 100,000 messages takes about three
 hours for its first scan. The scan shares each account's IMAP connection

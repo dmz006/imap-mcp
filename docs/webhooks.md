@@ -27,10 +27,10 @@ with your receiver; you need it to verify signatures.
   `enrichment.done`, `enrichment.error`, `anomaly.detected`, `rule.fired`,
   `account.connected`, `account.error`, `account.disconnected`.
   `webhook.*` and `inbound.*` are never delivered.
-- You can subscribe to all of these, but two are never published today:
-  `anomaly.detected` (nothing detects anomalies until iteration-3
-  intelligence lands) and `account.disconnected` (defined but not emitted).
-  See [known-limitations.md](known-limitations.md).
+- You can subscribe to all of these, but `account.disconnected` is never
+  published today (defined but not emitted). `anomaly.detected` carries
+  `{id, type, severity}`; fetch the finding with `GET /api/anomalies`. See
+  [intelligence.md](intelligence.md#anomalies).
 
 Other routes:
 
