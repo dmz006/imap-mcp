@@ -15,8 +15,8 @@ Each token carries one or more scopes. Each route requires exactly one scope:
 
 | Scope | Covers |
 |-------|--------|
-| `read` | Accounts, folders, messages, search, analytics, rules listing, the event stream |
-| `write` | Mailbox changes (delete, flags, move) and rule changes |
+| `read` | Accounts, folders, messages, threads, attachment lists, search, analytics, rules listing, the event stream |
+| `write` | Mailbox changes (delete, flags, move), rule changes, and content downloads (attachments, exports) |
 | `send` | Outbound mail |
 | `admin` | Sync, enrichment trigger, cache sweep, webhooks, query DSL |
 
@@ -66,7 +66,8 @@ so the guard does not affect them.
 | 503 | The subsystem is not running in this mode (for example no syncer or no enrichment pipeline) | text |
 | 500 | Anything else | text |
 
-Every route except `/api/events` has a 30-second request timeout. A request
+Every route except `/api/events` has a 30-second request timeout; the
+content downloads (attachment, `export.eml`, `POST /api/export`) have 5 minutes. A request
 that runs longer gets **504**, and its context is cancelled. A manual sync of a
 large account, for example, stops early. The next scheduled cycle picks up
 where it left off.
@@ -108,6 +109,7 @@ No token needed.
     "backfill_paused": "backfill_window: outside backfill window 22:00-07:00",
     "backoff_seconds": 40
   },
+  "tools": {"attachment_inline_kb": 64, "attachment_max_mb": 25, "export_max_messages": 500, "export_max_mb": 100},
   "storage": {"state_encrypted": false, "cache_encrypted": false}
 }
 ```
@@ -121,6 +123,7 @@ No token needed.
 | `enrichment.embed_provider`, `classify_provider`, `pending`, `done_last_hour`, `errors`, `oldest_pending_seconds` | Live queue state. These appear only when the pipeline is running and its stats query succeeds. |
 | `enrichment.backfill_paused` | Present only while a gate pauses backfill. Gives the reason. |
 | `enrichment.backoff_seconds` | Present only during a provider backoff |
+| `tools.*` | Limits for attachment downloads and exports (the `tools:` config block) |
 | `storage.*` | Whether each database has an encryption key configured. See [encryption.md](encryption.md). |
 
 For more enrichment detail, use `GET /api/enrichment/status`. See
@@ -251,8 +254,11 @@ These routes talk to the IMAP server directly. They do not read the cache.
                "to": ["you@example.com"], "date": "2026-10-09T11:58:00Z", "flags": ["\\Seen"], "size_bytes": 5120}]}
 ```
 
-`date` is the INTERNALDATE. `thread_id` appears when the message has
-In-Reply-To. An unknown folder gets 404.
+`date` is the INTERNALDATE. Each summary also has `message_id` and
+`thread_id`. `thread_id` is derived the same way as in the cache: the first
+References entry, else In-Reply-To, else the message's own Message-ID. Pass it
+to [`GET /api/threads/{thread_id}`](#get-apithreadsthread_id-read). An unknown
+folder gets 404.
 
 ### `GET /api/accounts/{account}/folders/{folder}/messages/{uid}` (`read`)
 
@@ -292,6 +298,69 @@ You must send at least one of `add` or `remove`. Response:
 Body: `{"destination": "Archive"}` (required). The server uses `MOVE` when it
 supports it. Otherwise it copies the message and deletes exactly that UID.
 Response: `{"uid": 4211, "status": "moved", "destination": "Archive"}`.
+
+### `GET /api/threads/{thread_id}` (`read`)
+
+Returns a conversation, oldest message first. URL-encode the thread ID; angle
+brackets are optional. The server reads the cache first: every cached folder,
+Sent included. It searches the server live by Message-ID, References and
+In-Reply-To when:
+- nothing is cached;
+- the thread's root message isn't cached (it is older than the sync window);
+- or `live=true` is set.
+
+| Query | Type | Default | Notes |
+|-------|------|---------|-------|
+| `account` | string | every account | |
+| `live` | bool | false | Search the server even when the cache looks complete |
+| `folders` | string | see notes | Comma-separated folders for the live search |
+| `limit` | int | 100 | Must be 1–500 |
+
+The default live scope is the `\All` mailbox if the server has one (Gmail's All
+Mail), else INBOX plus the `\Sent` and `\Archive` mailboxes.
+
+```json
+{"thread_id": "root@example.com", "count": 3, "live_search": true,
+ "messages": [{"account": "work", "folder": "INBOX", "uid": 4100, "message_id": "root@example.com",
+               "subject": "Plan", "from": "ann@example.com", "date": "2026-08-01T09:00:00Z", "flags": ["\\Seen"], "source": "live"}]}
+```
+
+`source` is `cache` or `live`. A message found in both is listed once. An
+account that fails during the live search appears in `errors` and does not
+fail the request. `truncated: true` means the thread has more than `limit`
+messages.
+
+### `GET /api/accounts/{account}/folders/{folder}/messages/{uid}/attachments` (`read`)
+
+Lists the attachment parts from the message's live BODYSTRUCTURE. No content is
+read, and the message is not marked read.
+
+```json
+{"uid": 4211, "count": 2, "attachments": [
+  {"part": "2", "filename": "invoice.pdf", "mime": "application/pdf", "size_bytes": 48211, "encoding": "base64", "disposition": "attachment"},
+  {"part": "3", "filename": "invite.ics", "mime": "text/calendar", "size_bytes": 812, "encoding": "7bit", "disposition": "attachment"}]}
+```
+
+An attachment is a part with an attachment disposition, a filename, or a
+non-text type (such as an inline image). The message's own text and HTML
+bodies are not listed. `size_bytes` is the encoded size on the server.
+
+### `GET /api/accounts/{account}/folders/{folder}/messages/{uid}/attachments/{part}` (`write`)
+
+Downloads one attachment, decoded. The response is always
+`application/octet-stream` with `X-Content-Type-Options: nosniff`, whatever
+type the message declares. `Content-Disposition` carries a sanitised filename,
+and nothing is written on the server.
+
+Errors:
+- 400 for a malformed `part`;
+- 404 when the part isn't an attachment;
+- 422 when it is larger than `tools.attachment_max_mb`.
+
+### `GET /api/accounts/{account}/folders/{folder}/messages/{uid}/export.eml` (`write`)
+
+Downloads the raw message (RFC 822, unchanged) as `<uid>.eml`. The fetch
+uses `BODY.PEEK[]`. A message larger than `tools.export_max_mb` gets 422.
 
 ## Search
 
@@ -342,6 +411,61 @@ You must send either `query` or `reference_uid`.
 includes a `note`. Errors: 503 if the pipeline is not running (for `query`),
 404 if the reference message is not cached and enriched, 502 if embedding
 fails.
+
+### `GET /api/search/cross` (`read`)
+
+Searches every account at once and merges the hits newest first.
+
+| Query | Type | Default | Notes |
+|-------|------|---------|-------|
+| `from` | string | | Sender address or name contains (case-insensitive) |
+| `subject` | string | | Subject contains |
+| `text` | string | | Words in the subject or body (full-text phrase) |
+| `since`, `before` | string | | `YYYY-MM-DD` |
+| `limit` | int | 20 | Per account, 1–200 |
+| `live` | bool | false | IMAP SEARCH on each account in parallel instead of the cache |
+| `folder` | string | `INBOX` | Live search only |
+
+Give at least one criterion. By default the search covers the cache, which
+means every cached folder but only mail inside the sync window. The response
+includes a `note` saying so. With `live=true` it covers each account's full
+history in one folder, and `total_matches` gives each account's exact count.
+
+```json
+{"source": "cache", "accounts": 2, "count": 3,
+ "hits": [{"account": "home", "folder": "INBOX", "uid": 812, "subject": "Invoice", "from": "billing@example.com",
+           "date": "2026-10-09T08:00:00Z", "thread_id": "inv-77@example.com", "source": "cache"}],
+ "note": "cache search: only mail inside the sync window; pass live: true for full history"}
+```
+
+An account that fails appears in `errors` and does not fail the search. The
+`text` value is matched as a literal phrase: full-text query syntax in it is
+not interpreted.
+
+## Export
+
+### `POST /api/export` (`write`)
+
+Downloads several messages as one mboxrd file, `export.mbox`. The
+`X-Export-Count` response header gives the number of messages. The body takes
+exactly one selector:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `uids` | int array | With `folder` (required) |
+| `thread_id` | string | The whole conversation, as `GET /api/threads/{thread_id}` finds it |
+| `from` | string | Every message in `folder` (default `INBOX`) whose From contains this |
+| `account` | string | Default account; for `thread_id`, omit to use every account |
+| `folder` | string | |
+
+```bash
+curl -sS -X POST "$IMAP_MCP/api/export" -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" -d '{"thread_id":"root@example.com"}' -o thread.mbox
+```
+
+A selection over `tools.export_max_messages` messages or `tools.export_max_mb`
+in total is refused with 422 before any content is downloaded. It is never
+truncated. Messages are fetched with `BODY.PEEK[]`.
 
 ## Intelligence (cache)
 

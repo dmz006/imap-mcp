@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-09
 - **Starting version:** 0.10.5
-- **Status:** Planned. Decisions D19–D26 decided 2026-10-09 (DIP, one at a
+- **Status:** P1 done (0.11.0); P2 next. Decisions D19–D27 decided 2026-10-09 (DIP, one at a
   time); see the table below and AGENT.md § Recorded Decisions.
 
 ## Scope
@@ -62,6 +62,7 @@ All decided 2026-10-09, one question at a time.
 
 | # | Decision | Blocks | Status |
 |---|----------|--------|--------|
+| D27 | REST shape for P1 | P1 | **Decided** 2026-10-09: read routes `GET /api/threads/{thread_id}`, `GET …/messages/{uid}/attachments`, `GET /api/search/cross`; content downloads `GET …/attachments/{part}`, `GET …/messages/{uid}/export.eml`, `POST /api/export` (.mbox) stream bytes as `application/octet-stream` with a safe filename, write nothing server-side, and need the `write` scope like MCP |
 | D19 | Intelligence store and history | P2–P4 | **Decided** 2026-10-09: tables move to `imap.db` (state migration, backup first); seeded by a one-off resumable, rate-limited, header-only backfill of all folders (never bodies, PEEK), then updated incrementally as mail syncs. The cache also feeds the builders with enriched signals for recent mail (classification tags, embeddings, bodies, attachment metadata); derived results are persisted in `imap.db` so they outlive the window. `/api/query` views `senders`/`kg`/`anomalies` read from `imap.db` |
 | D20 | Sender roles | P2 | **Decided** 2026-10-09: counts from headers (first/last seen, received, sent-to, avg reply time from Sent). Role from signals first (List-Id/List-Unsubscribe/Precedence → newsletter; noreply/Auto-Submitted → bot; sent-to → personal, or colleague on the account's domain; else majority cached classification tag). Only remaining `unknown` senders go to the classify LLM through the enrichment gates. Backfill fetches those header fields (`HEADER.FIELDS`, PEEK) |
 | D21 | Knowledge-graph source | P3 | **Decided** 2026-10-09: both. Deterministic: people, organizations (domain), threads, subscriptions from headers (edges `belongs_to`, `corresponds_with`, `cc_with`, `is_subscription`, `participates_in`); projects/topics from wing/room tags. Plus LLM extraction from cached bodies of recent conversation/personal mail (`manages`, `works_on`, mentioned organizations, deadlines) via the configured classify model and enrichment gates (bodies go nowhere else); LLM edges stored with confidence < 1.0 |
@@ -79,7 +80,7 @@ anomaly baselines need profiles, and the graph uses profile roles.
 
 | Phase | Version | Content | Needs | Status |
 |-------|---------|---------|-------|--------|
-| P1 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search`, plus REST routes for any that lack one; `list_messages` `thread_id` made consistent with the cache | D23–D26 | Planned |
+| P1 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search`, plus REST routes (D27); `list_messages` `thread_id` made consistent with the cache | D23–D27 | **Done (0.11.0)**: Tested=Yes (service tests against the in-memory IMAP server incl. live fallback, PEEK checks, mboxrd quoting, caps, FTS-literal input, per-account errors; MCP scope and sandbox tests; REST route and 403 tests). Validated=Yes on a side instance against two live accounts: threads from cache and with live fallback, attachment list/download (octet-stream, nosniff, read token 403), `.eml` byte-exact, thread `.mbox` counts match, cross-account search live and cache, server UNSEEN counts unchanged, MCP tool lists per scope |
 | P2 | 0.12.0 | State migration moving the intelligence tables to `imap.db`; header backfill (resumable, rate-limited). Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | Planned |
 | P3 | 0.13.0 | Knowledge-graph builder: deterministic entities and relationships with `valid_from`/`valid_to`, initial build over backfilled data; then the gated LLM body-extraction lane for recent conversation/personal mail | D19, D21 | Planned |
 | P4 | 0.14.0 | Anomaly detector: compares new mail with profile baselines, writes `anomalies`, publishes `anomaly.detected` (and so webhooks and SSE). Resolution through MCP and REST | D19, D22 | Planned |

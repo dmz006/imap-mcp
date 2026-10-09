@@ -6,6 +6,57 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
+The last four stub tools are implemented, so every registered tool now does
+real work. `get_sender_profile`, `kg_query` and `get_anomalies` still return
+empty data until the intelligence builders land (plan P2–P4).
+
+### Added
+- **`get_thread`** (D23). Returns a whole conversation, oldest first, from
+  the cache (every cached folder, Sent included). When the thread's root
+  message isn't cached, because it is older than the sync window, the tool
+  searches the server live by Message-ID, References and In-Reply-To. The
+  live scope is Gmail's All Mail or another `\All` mailbox, else INBOX,
+  `\Sent` and `\Archive`. Each message says whether it came from `cache` or
+  `live`. REST: `GET /api/threads/{thread_id}` (read).
+- **`get_attachments`** (D24). Without `part`, lists attachments (part,
+  filename, type, size) from the live BODYSTRUCTURE (read scope). With
+  `part`, it decodes that attachment and saves it into `working_dir` under a
+  sanitised name (write scope, via a new argument-dependent scope rule).
+  `text/*` attachments up to `tools.attachment_inline_kb` are also returned
+  inline; binary content never is. REST: `GET …/attachments` (read) and
+  `GET …/attachments/{part}` (write; a download).
+- **`export_message`** (D25). `uid` exports one raw `.eml`; `uids`, `thread_id`
+  or `from` exports one mboxrd `.mbox`, written into `working_dir`. Caps are
+  checked from RFC822.SIZE before anything is downloaded, and an over-cap
+  selection is refused, never truncated. REST: `GET …/export.eml` and
+  `POST /api/export` (write; downloads).
+- **`cross_account_search`** (D26). Searches every account at once. By
+  default it uses the cache's full-text index across all cached folders; with
+  `live: true` it runs IMAP SEARCH on each account in parallel for full
+  history. Hits carry `account`, `source` and `thread_id`. An account that
+  fails is reported in `errors` without failing the search. REST:
+  `GET /api/search/cross` (read).
+- **REST content downloads** (D27). Attachments and exports stream back as
+  `application/octet-stream` with `nosniff` and a sanitised filename. Nothing is
+  written on the server. They need the `write` scope and have a 5-minute
+  timeout.
+- **`tools:` config block**: `attachment_inline_kb` (64),
+  `attachment_max_mb` (25), `export_max_messages` (500), `export_max_mb`
+  (100), each with an `IMAP_MCP_TOOLS_*` override, shown in `/api/health`.
+- **Companion skill 0.9.0**: the new tools, an attachment safety rule, and a
+  "hand over a conversation" workflow. `docs/examples.md` gains workflow
+  10.12 and uses the new tools in the briefing, phishing and dossier
+  workflows.
+
+### Fixed
+- **Live `thread_id` now matches the cache.** `list_messages`, search,
+  `get_message` and `get_headers` built `thread_id` by joining In-Reply-To, so
+  it never matched the cache's (the References root). Every header fetch now
+  PEEKs the References field and uses the same derivation. Summaries also
+  carry `message_id`.
+
 ## [0.10.5] - 2026-10-09
 
 ### Added

@@ -29,11 +29,11 @@ shown; `tools/list` only shows tools the caller's token can use.
 | | `sync_account` | admin |
 | Folders & labels | `list_folders` | read |
 | | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash` | write |
-| Reading | `list_messages`, `get_message`, `get_headers`, `get_thread`\*, `get_attachments`\* | read |
-| | `export_message`\* | write |
+| Reading | `list_messages`, `get_message`, `get_headers`, `get_thread`, `get_attachments` (list) | read |
+| | `get_attachments` (download into `working_dir`), `export_message` (`.eml` / `.mbox` into `working_dir`) | write |
 | Writing | `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender` | write |
 | Sending | `send_message` | send |
-| Search | `search_messages`, `semantic_search`, `cross_account_search`\* | read |
+| Search | `search_messages`, `semantic_search`, `cross_account_search` | read |
 | Analytics | `summarize_folder`, `detect_subscriptions`, `top_senders`, `get_sender_history` | read |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status` | read |
 | | `trigger_enrichment` | admin |
@@ -43,10 +43,13 @@ shown; `tools/list` only shows tools the caller's token can use.
 | File sandbox (`working_dir`) | `read_file`, `list_files` | read |
 | | `write_file`, `delete_file` | write |
 
-\* Stub: registered but returns "not yet implemented".
-
 Notes:
 
+- `get_thread` answers from the cache and searches the server when the thread
+  reaches outside the sync window. `thread_id` comes from any message summary.
+- `cross_account_search` searches the cache across every account by default;
+  `live: true` runs IMAP SEARCH on each account in parallel.
+- Attachment downloads and exports are capped by the `tools:` config block.
 - `search_messages` is plain IMAP SEARCH (INBOX by default). Its `hall`/`wing`/`room`
   parameters are accepted but ignored. For meaning-based search use `semantic_search`.
 - `get_sender_profile`, `kg_query` and `get_anomalies` work but return empty results:
@@ -59,7 +62,7 @@ See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 | Feature | Summary | Docs |
 |---------|---------|------|
 | Bearer-token auth | Named tokens with `read`, `write`, `send`, `admin` scopes guard `/api` and `/mcp`. `serve` refuses to start without a token unless auth is explicitly disabled. `/api/health` stays open. | [docs/auth-tokens.md](docs/auth-tokens.md) |
-| REST API | Accounts, folders, messages, search, analytics, rules, webhooks, cache sweep, enrichment, send. SSE event stream at `GET /api/events`. | [docs/rest-api.md](docs/rest-api.md) |
+| REST API | Accounts, folders, messages, threads, attachments, export, search (incl. cross-account), analytics, rules, webhooks, cache sweep, enrichment, send. SSE event stream at `GET /api/events`. | [docs/rest-api.md](docs/rest-api.md) |
 | Webhooks | POST bus events to your endpoints through a durable outbox (`webhook_deliveries`) that survives restarts and receiver outages. | [docs/webhooks.md](docs/webhooks.md) |
 | Query DSL | `POST /api/query`: read-only JSON queries over the cache. Allowlisted views, fields and operators; never SQL. | [docs/query.md](docs/query.md) |
 | Sync cache | Read-only background sync into `cache.db` over a rolling window. SPECIAL-USE folder tokens, per-account overrides, CONDSTORE flag refresh, UIDVALIDITY rebuild, automatic cleaning and VACUUM. | [docs/sync-cache.md](docs/sync-cache.md) |
@@ -295,7 +298,6 @@ See [AGENT.md](AGENT.md) for project conventions.
 
 Open items only:
 
-- Implement the stub tools: `get_thread`, `get_attachments`, `export_message`, `cross_account_search`.
 - Intelligence (iteration 3): populate sender profiles, the knowledge graph and anomalies, so `get_sender_profile`, `kg_query`, `get_anomalies` and the matching `/api/query` views return data and `anomaly.detected` is published.
 - IMAP IDLE for push delivery of new mail (sync is currently interval-based).
 - PGP gate for inbound commands (`require_pgp` currently fails closed).

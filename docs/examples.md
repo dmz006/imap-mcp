@@ -35,9 +35,13 @@ ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-44
 | "Find mail similar to the invoice from yesterday." | `semantic_search` with `reference_uid` |
 | "Is enrichment caught up?" | `enrichment_status` |
 | "Forget the cached copies of Archive older than 90 days." | `cache_sweep` (dry run first) |
+| "Show me the whole conversation this came from." | `get_thread` with the message's `thread_id` |
+| "Search all my accounts for anything from example.net about the renewal." | `cross_account_search` (`live: true` for older mail) |
+| "Save the PDF from that invoice." | `get_attachments` to list, then with `part` to save |
+| "Export that thread so I can forward it to legal." | `export_message` with `thread_id` → `.mbox` |
 
 The [inbox-cleanup cookbook](cookbook-inbox-cleanup.md) walks through a full
-cleanup session end to end, and [section 10](#10-agent-workflows) has eleven
+cleanup session end to end, and [section 10](#10-agent-workflows) has twelve
 more multi-step workflows.
 
 ---
@@ -497,11 +501,15 @@ drop that filter and let the agent judge from the sender.
    the cache window).
 3. `semantic_search` with `folder: "INBOX"`, `reference_uid: 9120` compares it with the real
    resets from that service, if any are in the cache.
-4. The agent gives a verdict with reasons, for example:
+4. `get_attachments` without `part` lists any attachments by name and type,
+   without opening them. An `.html`, `.htm` or `.iso` on a "password reset" is
+   a red flag on its own.
+5. The agent gives a verdict with reasons, for example:
    - DMARC failed;
    - `Reply-To` goes to a different domain;
    - first message from this address in the cache;
-   - the link host doesn't match the brand.
+   - the link host doesn't match the brand;
+   - an unexpected HTML attachment.
 
    On a "yes, it's bad", it moves the message to Junk with `move_message`.
 
@@ -512,7 +520,10 @@ asking it.
 
 > "Draft replies to the three unanswered messages from 10.5. Don't send them."
 
-The agent writes each reply as a raw RFC 2822 message and uses
+For each one the agent first reads the conversation with `get_thread` (pass
+the message's `thread_id`), so the draft answers the latest point, not just
+the first message. It writes each reply as a raw RFC 2822 message, with
+`In-Reply-To` and `References` set from the thread, and uses
 `append_message` with `folder: "Drafts"` (`[Gmail]/Drafts` on Gmail) and
 `flags: "Draft"`. The drafts then show up in your normal mail client, ready to
 edit and send. No `send` scope is needed and nothing leaves the server.
@@ -528,9 +539,15 @@ tells it to show you the final text and wait for your go-ahead.
 
 1. `semantic_search` with queries like "flight confirmation", "hotel
    reservation" and "rental car", in all accounts (omit `account`).
-2. `get_message` on each hit pulls out dates, times and confirmation numbers.
-3. `write_file` saves `trips/october.md`: one dated itinerary with a link
-   back (folder and UID) to each source message.
+2. `cross_account_search` with `text: "confirmation"` and a `since` date
+   catches the keyword matches that meaning-based search ranks lower.
+3. `get_message` on each hit pulls out dates, times and confirmation numbers.
+4. `get_attachments` lists each hit's attachments. The agent saves the
+   boarding passes and booking PDFs with `part` (they land in
+   `attachments/<account>/…`). A small `.ics` invite comes back inline, so the
+   agent can read the times straight from it.
+5. `write_file` saves `trips/october.md`: one dated itinerary that links each
+   entry to its source message (folder and UID) and its saved attachment.
 
 The same pattern works for:
 - "every invoice from example.net this year, with totals";
@@ -586,15 +603,38 @@ Rules and agents can feed each other:
   `enrichment.done`, so new mail shows up in semantic search as soon as it's
   embedded.
 
+### 10.12 Hand over a conversation
+
+> "Legal needs the whole thread with example.net about the renewal, with
+> attachments, as files I can forward."
+
+1. `cross_account_search` with `from: "example.net"` and `subject: "renewal"`
+   finds the conversation in whichever account it lives in. Each hit carries
+   its `thread_id`.
+2. `get_thread` returns every message, Sent replies included. If the thread
+   started before the sync window, the tool searches the server for the older
+   part on its own (`live_search: true` in the result).
+3. The agent shows you the count and date range, and asks before exporting.
+4. `export_message` with `thread_id` writes one `.mbox` that any mail client
+   can import. `get_attachments` with `part` saves each attachment next to it.
+5. `write_file` adds a short `README.md` that lists the messages and files.
+
+Over REST, a script can do the same in one call:
+
+```bash
+curl -sS -X POST "$IMAP_MCP/api/export" -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" -d '{"thread_id":"<root-id@example.net>"}' -o renewal.mbox
+```
+
+Exports are capped (`tools.export_max_messages`, `tools.export_max_mb`). A
+selection over a cap is refused with a clear message, never cut short.
+
 ### Not there yet
 
-Some tools exist but have nothing to return yet:
-- `get_sender_profile`, `kg_query` and `get_anomalies` work, but nothing fills
-  sender profiles, the knowledge graph or anomalies yet.
-- `get_thread`, `get_attachments`, `export_message` and
-  `cross_account_search` are stubs.
-
-An agent that calls one of these gets an empty result or "not yet
-implemented". The workflows above avoid them: for example, 10.6 reconstructs
+`get_sender_profile`, `kg_query` and `get_anomalies` work, but nothing fills
+sender profiles, the knowledge graph or anomalies yet; they return empty
+results. Building them is planned
+([plans](plans/2026-10-09-intelligence-and-stubs.md), P2–P4). The workflows
+above avoid them: for example, 10.6 reconstructs
 sender history with `get_sender_history` instead of `get_sender_profile`. See
 [known-limitations.md](known-limitations.md).

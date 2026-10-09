@@ -349,6 +349,18 @@ they can be replaced or extended without touching call sites.
   `service:imap-mcp`), are never printed, and are referenced from the config as
   `${secret:…}`. A scheduled `run-rules` job needs the datawatch service token in
   its environment (e.g. a wrapper that loads a 0600 env file).
+- **2026-10-09 — D27 (REST for the P1 tools):** these routes are reads:
+  - `GET /api/threads/{thread_id}`;
+  - `GET …/messages/{uid}/attachments`;
+  - `GET /api/search/cross`.
+
+  Content downloads need the `write` scope, the same as the MCP tools:
+  - `GET …/attachments/{part}`;
+  - `GET …/messages/{uid}/export.eml`;
+  - `POST /api/export`, which returns an `.mbox`.
+
+  Downloads stream the bytes back as `application/octet-stream` with a safe
+  filename and write nothing on the server.
 - **2026-10-09 — D19 (intelligence store):** `senders`, `kg_*` and
   `anomalies` move to the durable state store `imap.db`, through a state
   migration with a backup first. History comes from two sources:

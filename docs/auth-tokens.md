@@ -131,7 +131,13 @@ unknown ones, needs a valid token.
 | DELETE | `/api/accounts/{account}/folders/{folder}/messages/{uid}` | write |
 | PUT | `/api/accounts/{account}/folders/{folder}/messages/{uid}/flags` | write |
 | POST | `/api/accounts/{account}/folders/{folder}/messages/{uid}/move` | write |
+| GET | `/api/accounts/{account}/folders/{folder}/messages/{uid}/attachments` | read |
+| GET | `/api/accounts/{account}/folders/{folder}/messages/{uid}/attachments/{part}` | write |
+| GET | `/api/accounts/{account}/folders/{folder}/messages/{uid}/export.eml` | write |
+| POST | `/api/export` | write |
+| GET | `/api/threads/{thread_id}` | read |
 | GET | `/api/search` | read |
+| GET | `/api/search/cross` | read |
 | POST | `/api/search/semantic` | read |
 | GET | `/api/accounts/{account}/stats` | read |
 | GET | `/api/senders` | read |
@@ -162,8 +168,8 @@ See [rest-api.md](rest-api.md) for parameters and responses.
 
 | Scope | Tools |
 |-------|-------|
-| read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments`, `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status`, `top_senders`, `list_rules`, `read_file`, `list_files` |
-| write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `export_message`, `write_file`, `delete_file` |
+| read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments` (listing), `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status`, `top_senders`, `list_rules`, `read_file`, `list_files` |
+| write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `export_message`, `get_attachments` with `part` (download), `write_file`, `delete_file` |
 | send | `send_message` |
 | admin | `sync_account`, `trigger_enrichment`, `cache_sweep` |
 

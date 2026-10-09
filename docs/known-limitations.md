@@ -1,12 +1,12 @@
 # Known limitations
 
-This page lists what imap-mcp does not do yet, as of 0.10.4, what you will see
+This page lists what imap-mcp does not do yet, as of 0.11.0, what you will see
 because of it, and how to work around it where possible. Planned work is
 tracked in [plans/README.md](plans/README.md).
 
 | Limitation | You will see | Workaround |
 |------------|--------------|------------|
-| [Four MCP tools are stubs](#four-mcp-tools-are-stubs) | `<tool>: not yet implemented` | Use the tools listed below |
+| [Cross-account search covers the cache window by default](#cross-account-search-covers-the-cache-window-by-default) | Older mail missing from `cross_account_search` | Pass `live: true` |
 | [Intelligence tables are never filled](#intelligence-tables-are-never-filled) | Empty sender profiles, knowledge graph and anomalies | Use `top_senders`, `get_sender_history`, `/api/query` on `messages` |
 | [`search_messages` is plain IMAP SEARCH](#search_messages-is-plain-imap-search) | `hall`/`wing`/`room` have no effect; INBOX only unless a folder is given | `semantic_search`, or `/api/query` filtered on `hall`/`wing`/`room` |
 | [SMTP send uses password auth only](#smtp-send-uses-password-auth-only) | OAuth-only accounts cannot send | Configure a password or app password for SMTP |
@@ -14,17 +14,14 @@ tracked in [plans/README.md](plans/README.md).
 | [PGP inbound gate fails closed](#pgp-inbound-gate-fails-closed) | Every inbound command rejected when `require_pgp` is on | Use the other gates |
 | [datawatch capacity gate and LLM proxy need a different token](#datawatch-capacity-gate-and-llm-proxy-need-a-different-token) | Yield-to-datawatch and the `datawatch` classify provider do not work with the imap-mcp service token | Use the Ollama checks and the `ollama` classify provider |
 
-## Four MCP tools are stubs
+## Cross-account search covers the cache window by default
 
-These tools are registered, appear in `tools/list` and have scopes, but every
-call returns a tool error `<tool>: not yet implemented`:
-
-| Tool | Scope | Instead |
-|------|-------|---------|
-| `get_thread` | read | The cache records a `thread_id` per message (from `References` / `In-Reply-To`). Query it with `/api/query` on the `messages` view, filtering on `thread_id`. |
-| `get_attachments` | read | None for attachment content. `/api/query` on the `messages` view can filter on `has_attachments`. |
-| `export_message` | write | `get_message`, then `write_file` into the output sandbox. |
-| `cross_account_search` | read | Call `search_messages` once per account, or `semantic_search` with `account` omitted (searches all accounts' enriched cache). |
+`cross_account_search` (and `GET /api/search/cross`) searches the local cache
+by default. That covers every cached folder of every account, but only mail
+inside the sync window (default 30 days). With `live: true` it runs IMAP
+SEARCH on each account instead, which covers full history but only one folder
+per account (default INBOX). `get_thread` has no such gap: it searches the
+server automatically when a thread reaches outside the window.
 
 ## Intelligence tables are never filled
 

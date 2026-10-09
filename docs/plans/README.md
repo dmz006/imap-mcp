@@ -4,7 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
-| 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | Planned — decisions D19–D26 decided; P1 next |
+| 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | In progress — P1 done (0.11.0); P2 next |
 | 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P5 built (0.5.3–0.10.0) |
 
 ## Bugs

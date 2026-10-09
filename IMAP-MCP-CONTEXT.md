@@ -15,7 +15,7 @@ is a quick reference of facts; the code is the source of truth when they differ.
 
 A Go binary that connects to one or more IMAP accounts and exposes them through:
 
-1. **MCP**: 44 tools (40 working, 4 stubs), over stdio or Streamable HTTP at `/mcp`.
+1. **MCP**: 44 tools, over stdio or Streamable HTTP at `/mcp`.
 2. **REST API** at `/api`: mailbox operations, search, analytics, rules,
    webhooks, a JSON query DSL and an SSE event stream. Every route is implemented.
 3. **Local cache and enrichment**: a windowed SQLite cache of recent mail
@@ -32,9 +32,9 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.10.4 |
+| Current version | 0.11.0 |
 | Location | the repo root |
-| Status | 44 MCP tools registered (4 stubs); all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
+| Status | 44 MCP tools registered (no stubs; 3 intelligence tools return empty data until P2–P4); all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
 
 ---
 
@@ -91,7 +91,8 @@ Defaults that matter: server `127.0.0.1:8765`; state DB
 `~/.local/share/imap-mcp/imap.db`; cache DB `cache.db` next to it; sync folders
 `INBOX` + `\Sent`, 30-day window, every 15 minutes; Ollama at
 `http://localhost:11434` with `nomic-embed-text` (embed) and `qwen3:1.7b`
-(classify).
+(classify); `tools:` attachment inline 64 KB, attachment max 25 MB, export max
+500 messages / 100 MB.
 
 Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
 `IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
@@ -194,7 +195,8 @@ The PGP inbound gate is declared but fails closed until implemented.
 | `internal/mcp/server.go` | MCP server; registers all 44 tools |
 | `internal/mcp/scopes.go` | Tool → scope table; middleware and `tools/list` filter |
 | `internal/mcp/tools/definitions.go` | All tool schemas (names, params, descriptions) |
-| `internal/mcp/tools/impl_*.go` | Tool handlers; `impl_stubs.go` holds the 4 stubs |
+| `internal/mcp/tools/impl_*.go` | Tool handlers; `impl_content.go` holds threads, attachments, export, cross-account search |
+| `internal/service/thread.go`, `attachments.go`, `export.go`, `xsearch.go` | Thread lookup (cache + live fallback), attachment list/fetch, .eml/.mbox export, cross-account search (D23–D27) |
 | `internal/api/server.go` | REST router with per-route scopes; SSE `/api/events` |
 | `internal/server/server.go` | Combined HTTP server: `browserGuard` → auth → `/mcp` + `/api` |
 | `internal/server/guard.go` | `browserGuard`: Host/Origin checks, JSON-only unsafe `/api` methods |
@@ -229,7 +231,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Enrichment | `enrichment_status`; `trigger_enrichment` | read; admin |
 | Cache | `cache_sweep` (cache only, `dry_run` defaults to true) | admin |
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
-| **Stubs** | `get_thread`, `get_attachments`, `cross_account_search` (read); `export_message` (write) | return "not yet implemented" |
+| Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
 | **Always empty** | `get_sender_profile`, `kg_query`, `get_anomalies` | read; nothing populates their tables yet |
 
 Behaviour notes:
@@ -243,6 +245,18 @@ Behaviour notes:
 - `purge_sender` loops until the folder has no matches; Trash is auto-detected
   (`\Trash` special-use, then common names).
 - `summarize_folder` returns only `total` and `recent` counts.
+- Message summaries carry `message_id` and a `thread_id` derived exactly as
+  sync derives it (`sync.ThreadID`: References root, else In-Reply-To, else
+  Message-ID); every header fetch also PEEKs the References field.
+- `get_thread` reads the cache, then searches live (`\All` mailbox, else INBOX
+  + `\Sent` + `\Archive`) when the root isn't cached.
+- `get_attachments` lists from live BODYSTRUCTURE; a download (`part`) needs
+  write scope (argument-dependent rule in `scopes.go`), is saved into
+  `working_dir`, and only `text/*` under `tools.attachment_inline_kb` comes back
+  inline.
+- `export_message`: `uid` → `.eml`; `uids` / `thread_id` / `from` → mboxrd
+  `.mbox`; over `tools.export_max_*` is refused, never truncated.
+- `cross_account_search`: cache FTS by default, `live: true` fans out IMAP SEARCH.
 - `get_message` returns the raw `BODY[TEXT]` section (not MIME-decoded).
 - `semantic_search` and `get_sender_history` read the cache, so they see only
   mail inside the sync window.
@@ -341,6 +355,12 @@ DELETE /api/accounts/{account}/folders/{folder}/messages/{uid}         write
 PUT    /api/accounts/{account}/folders/{folder}/messages/{uid}/flags   write
 POST   /api/accounts/{account}/folders/{folder}/messages/{uid}/move    write
 POST   /api/accounts/{account}/messages/send                           send
+GET    /api/accounts/{account}/folders/{folder}/messages/{uid}/attachments          read
+GET    /api/accounts/{account}/folders/{folder}/messages/{uid}/attachments/{part}   write (download)
+GET    /api/accounts/{account}/folders/{folder}/messages/{uid}/export.eml           write (download)
+POST   /api/export                                                     write (.mbox download)
+GET    /api/threads/{thread_id}                                        read
+GET    /api/search/cross                                               read
 GET    /api/search                                                     read
 POST   /api/search/semantic                                            read
 GET    /api/senders, /api/senders/{address}                            read
@@ -365,7 +385,6 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 
 | Item | Notes |
 |------|-------|
-| Stub tools | `get_thread`, `get_attachments`, `export_message`, `cross_account_search` |
 | Intelligence (iteration 3) | Sender-profile builder, KG extractor, anomaly detector: nothing writes `senders`, `kg_*` or `anomalies`; `anomaly.detected` never fires. Content cleaning (`Cleaner`) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
