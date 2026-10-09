@@ -4,16 +4,15 @@
 |-------|-------|
 | Date | 2026-10-08 |
 | Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
-| Status | **Planned — D13 pending**, then P1 (0.6.0) |
+| Status | **Planned — D13a (local auth) pending**, then P1 (0.6.0) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
 
 ## Current status (2026-10-08)
 
-- Decided: D1, D1a, D1b, D5–D10, D11a, D11b, D12 (D2–D4 resolved by D1). Each is
-  recorded as a rule in `AGENT.md` § Recorded Decisions.
-- **Next: D13 (REST surface).** Fold in the token-auth question: v0.5.2 added
-  `browserGuard`, but `/api` and `/mcp` are still unauthenticated for local
-  processes.
+- Decided: D1, D1a, D1b, D5–D10, D11a, D11b, D12, D13 (D2–D4 resolved by D1).
+  Each is recorded as a rule in `AGENT.md` § Recorded Decisions.
+- **Next: D13a (local auth).** v0.5.2 added `browserGuard`, but `/api` and `/mcp`
+  are still unauthenticated for local processes.
 - Then implement P1 (0.6.0, storage) per the phase table and AGENT.md release
   rules.
 
@@ -126,7 +125,8 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D11a | LLM routing | **Provider interface per call type.** `embed`: direct Ollama URL (either node; datawatch proxy has no embeddings). `classify`: `ollama` (direct, default) or `datawatch` (`POST /api/proxy/llm/<registry-llm-name>`, token via existing `datawatch:` block / `${secret:}`, needs `sessions:input` cap) for registry routing + failover. Models: keep nomic-embed-text + qwen3:1.7b; Qwen3-4B-Instruct-2507 upgrade only after the llm-research benchmark plan | **Decided** 2026-10-08 |
 | D11b | Load handling | **(1) Priority + caps:** two lanes (new mail always before backfill), per-provider concurrency cap (default 2), backfill rate limit, exponential backoff on errors/503, queue depth/rate/lag in `/api/health`. **(2) Yield to datawatch:** before each backfill batch read datawatch's capacity ledger + Ollama `/api/ps`; pause backfill when the target node's pool is held/has waiters or a large model is resident; never pauses new mail; degrades to (1) if datawatch is unreachable. **(3) Quiet hours:** optional backfill window (unset = no restriction) | **Decided** 2026-10-08 |
 | D12 | Phase order + release cadence | **Storage first, one minor release per phase:** 0.6.0 storage → 0.7.0 sync → 0.8.0 cleaning → 0.9.0 load/enrichment → 0.10.0 REST. Each live-validated, CHANGELOG'd, pushed before the next | **Decided** 2026-10-08 |
-| D13 | REST surface | Mirror the MCP read/search tools 1:1 for messages, folders, search | Open |
+| D13 | REST surface | Recommended MCP parity via shared service layer; **operator chose full platform** 2026-10-08: tool logic moves to an interface-based service layer used by both MCP and REST; all 25 stub routes implemented (reads, mailbox writes, rules CRUD/test, enrichment trigger) **plus** webhook delivery and the `/api/query` DSL. Webhook delivery and DSL design are raised as their own DIPs before P5 work on them starts. Write routes require the auth decided in D13a | **Decided** 2026-10-08 |
+| D13a | Local auth for `/api` and `/mcp` | — | Open |
 
 ## Phases
 
@@ -136,7 +136,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | P2 | 0.7.0 | Sync engine: SPECIAL-USE folder resolution, INTERNALDATE window with 3-level overrides, UID diff + CONDSTORE, UIDVALIDITY rebuild, headers + bodies + MIME decode (go-message), Message-ID de-dup, bus events | D6, D8, D9, D10 | Planned |
 | P3 | 0.8.0 | Cleaning: auto purge + orphans + VACUUM, `cache_sweep` (dry-run default), `\Flagged` exemption, window-resize purge/backfill; content-cleaning hook point | D7, D8 | Planned |
 | P4 | 0.9.0 | Load + enrichment: provider interface (Ollama / datawatch proxy), two-lane priority, caps/backoff, datawatch capacity yield, quiet hours, `/api/health` stats | D11a, D11b | Planned |
-| P5 | 0.10.0 | REST endpoints for messages, folders, search | D13 | Planned |
+| P5 | 0.10.0 | REST full platform: shared service layer (MCP + REST), all stub routes (reads, writes, rules, enrichment), webhook delivery, `/api/query` DSL | D13, D13a | Planned |
 | P6 | each release | Docs + release per phase: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation notes | all | Ongoing |
 
 Each phase follows AGENT.md:
