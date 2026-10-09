@@ -175,6 +175,10 @@ All notable changes to imap-mcp are documented here. The format is based on
   dropped and rebuilt from IMAP on first start.
 
 ### Changed
+- **Docs scrubbed of personal and internal details (v0.10.1).** Public docs, plans
+  and tests no longer contain local home paths, a personal mail domain or account
+  name, hardware specifics, or stats derived from live mailboxes. Examples use
+  `example.com` and `/path/to/imap-mcp`. No code changes.
 - **datawatch secrets come from the external-service endpoint (v0.10.0, D15).**
   `${secret:name}` now resolves via `GET /api/external/secrets/{name}`
   (datawatch v8.75.0 or later) with imap-mcp's service token, minted by the

@@ -32,7 +32,7 @@ session spawn, so it persists.
 
 stdio (reconnects per session):
 ```json
-{ "mcpServers": { "imap-mcp": { "command": "/home/dmz/workspace/imap-mcp/imap-mcp" } } }
+{ "mcpServers": { "imap-mcp": { "command": "/path/to/imap-mcp/imap-mcp" } } }
 ```
 
 HTTP (persistent connections — start `imap-mcp serve` first):
@@ -140,19 +140,19 @@ event only when a message passes every required gate.
 Each account sends through its own server, not a shared relay:
 ```yaml
 accounts:
-  - name: dmzs
-    imap: { host: mail.dmzs.com, port: 993, tls: true }
-    auth: { type: plain, username: me@dmzs.com, password: ${secret:dmzs_pw} }
+  - name: work
+    imap: { host: mail.example.com, port: 993, tls: true }
+    auth: { type: plain, username: me@example.com, password: ${secret:work_pw} }
     smtp:
-      host: mail.dmzs.com
+      host: mail.example.com
       port: 587          # 587=STARTTLS, 465=implicit TLS
       starttls: true
-      from: "Me <me@dmzs.com>"
+      from: "Me <me@example.com>"
       # username/password default to the auth block above
 ```
 Drive it with the `send_message` MCP tool:
 ```json
-{ "account": "dmzs", "to": "a@b.com", "subject": "hi", "body": "..." }
+{ "account": "work", "to": "a@b.com", "subject": "hi", "body": "..." }
 ```
 
 ### 3b. Inbound command channel (default-deny, composable gates)
@@ -165,10 +165,10 @@ required gate passes**. Because `From:` is spoofable, gates are layered:
       enabled: true
       watch_folder: INBOX
       gates:                       # ALL configured gates required (AND)
-        allowlist: [ops@dmzs.com]  # addresses or bare domains
+        allowlist: [ops@example.com]  # addresses or bare domains
         require_dkim: true         # dkim=pass in Authentication-Results
         require_dmarc: true        # dmarc=pass
-        hmac_secret: ${secret:dmzs_inbound_hmac}
+        hmac_secret: ${secret:work_inbound_hmac}
         replay_window_minutes: 10  # reject stale; nonces are single-use
         require_pgp: false         # BACKLOG — true fails closed until implemented
       capabilities: [status, mail.archive]   # allowed verbs (default-deny)

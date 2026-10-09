@@ -56,7 +56,7 @@ func acct(gates config.GateConfig, caps ...string) *config.AccountConfig {
 func TestEvaluate_DefaultDeny_InboundDisabled(t *testing.T) {
 	v := NewVerifier(newMemNonces())
 	a := &config.AccountConfig{Name: "x"} // no Inbound
-	r := v.Evaluate(a, &Message{From: "ops@dmzs.com", Body: envelope("status", "", "n1", time.Now(), "")})
+	r := v.Evaluate(a, &Message{From: "ops@example.com", Body: envelope("status", "", "n1", time.Now(), "")})
 	if r.Triggered {
 		t.Fatal("must not trigger when inbound is not enabled")
 	}
@@ -68,12 +68,12 @@ func TestEvaluate_Allowlist(t *testing.T) {
 	body := envelope("status", "", "n-allow", ts, "")
 
 	// domain-form allowlist, allowed sender
-	a := acct(config.GateConfig{Allowlist: []string{"dmzs.com"}}, "status")
-	if r := v.Evaluate(a, &Message{From: "Ops <ops@dmzs.com>", Body: body}); !r.Triggered {
+	a := acct(config.GateConfig{Allowlist: []string{"example.com"}}, "status")
+	if r := v.Evaluate(a, &Message{From: "Ops <ops@example.com>", Body: body}); !r.Triggered {
 		t.Fatalf("expected trigger, failed: %v", r.Reasons)
 	}
 	// not allowlisted
-	a2 := acct(config.GateConfig{Allowlist: []string{"dmzs.com"}}, "status")
+	a2 := acct(config.GateConfig{Allowlist: []string{"example.com"}}, "status")
 	if r := v.Evaluate(a2, &Message{From: "evil@elsewhere.com", Body: envelope("status", "", "n-allow2", ts, "")}); r.Triggered {
 		t.Fatal("must not trigger for non-allowlisted sender")
 	}
@@ -85,8 +85,8 @@ func TestEvaluate_DKIM_DMARC(t *testing.T) {
 	a := acct(config.GateConfig{RequireDKIM: true, RequireDMARC: true}, "status")
 
 	pass := &Message{
-		From:    "ops@dmzs.com",
-		Headers: map[string]string{"authentication-results": "mx.dmzs.com; dkim=pass header.d=dmzs.com; dmarc=pass"},
+		From:    "ops@example.com",
+		Headers: map[string]string{"authentication-results": "mx.example.com; dkim=pass header.d=example.com; dmarc=pass"},
 		Body:    envelope("status", "", "n-dkim", ts, ""),
 	}
 	if r := v.Evaluate(a, pass); !r.Triggered {
@@ -94,7 +94,7 @@ func TestEvaluate_DKIM_DMARC(t *testing.T) {
 	}
 
 	fail := &Message{
-		From:    "ops@dmzs.com",
+		From:    "ops@example.com",
 		Headers: map[string]string{"authentication-results": "mx; dkim=fail; dmarc=fail"},
 		Body:    envelope("status", "", "n-dkim2", ts, ""),
 	}
@@ -109,13 +109,13 @@ func TestEvaluate_HMAC(t *testing.T) {
 	secret := "shared-secret"
 	a := acct(config.GateConfig{HMACSecret: secret}, "mail.archive")
 
-	good := &Message{From: "ops@dmzs.com", Body: envelope("mail.archive", `{"folder":"INBOX"}`, "n-hmac", ts, secret)}
+	good := &Message{From: "ops@example.com", Body: envelope("mail.archive", `{"folder":"INBOX"}`, "n-hmac", ts, secret)}
 	if r := v.Evaluate(a, good); !r.Triggered {
 		t.Fatalf("expected trigger with valid hmac, failed: %v", r.Reasons)
 	}
 
 	// tampered args invalidate the hmac
-	bad := &Message{From: "ops@dmzs.com", Body: envelope("mail.archive", `{"folder":"INBOX"}`, "n-hmac2", ts, "wrong-secret")}
+	bad := &Message{From: "ops@example.com", Body: envelope("mail.archive", `{"folder":"INBOX"}`, "n-hmac2", ts, "wrong-secret")}
 	if r := v.Evaluate(acct(config.GateConfig{HMACSecret: secret}, "mail.archive"), bad); r.Triggered {
 		t.Fatal("must not trigger with wrong hmac")
 	}
@@ -125,21 +125,21 @@ func TestEvaluate_Replay(t *testing.T) {
 	store := newMemNonces()
 	v := NewVerifier(store)
 	ts := time.Now()
-	a := acct(config.GateConfig{Allowlist: []string{"dmzs.com"}, ReplayWindowMinutes: 10}, "status")
+	a := acct(config.GateConfig{Allowlist: []string{"example.com"}, ReplayWindowMinutes: 10}, "status")
 
-	msg := &Message{From: "ops@dmzs.com", Body: envelope("status", "", "same-nonce", ts, "")}
+	msg := &Message{From: "ops@example.com", Body: envelope("status", "", "same-nonce", ts, "")}
 	if r := v.Evaluate(a, msg); !r.Triggered {
 		t.Fatalf("first use should trigger: %v", r.Reasons)
 	}
 	// same nonce again → replay
-	msg2 := &Message{From: "ops@dmzs.com", Body: envelope("status", "", "same-nonce", ts, "")}
+	msg2 := &Message{From: "ops@example.com", Body: envelope("status", "", "same-nonce", ts, "")}
 	if r := v.Evaluate(a, msg2); r.Triggered {
 		t.Fatal("replayed nonce must not trigger")
 	}
 
 	// stale timestamp outside window
 	old := time.Now().Add(-30 * time.Minute)
-	stale := &Message{From: "ops@dmzs.com", Body: envelope("status", "", "fresh-nonce", old, "")}
+	stale := &Message{From: "ops@example.com", Body: envelope("status", "", "fresh-nonce", old, "")}
 	if r := v.Evaluate(a, stale); r.Triggered {
 		t.Fatal("stale command outside window must not trigger")
 	}
@@ -148,7 +148,7 @@ func TestEvaluate_Replay(t *testing.T) {
 func TestEvaluate_PGP_FailsClosed(t *testing.T) {
 	v := NewVerifier(newMemNonces())
 	a := acct(config.GateConfig{RequirePGP: true}, "status")
-	r := v.Evaluate(a, &Message{From: "ops@dmzs.com", Body: envelope("status", "", "n-pgp", time.Now(), "")})
+	r := v.Evaluate(a, &Message{From: "ops@example.com", Body: envelope("status", "", "n-pgp", time.Now(), "")})
 	if r.Triggered {
 		t.Fatal("pgp gate must fail closed until implemented")
 	}
@@ -161,8 +161,8 @@ func TestEvaluate_CapabilityScoping(t *testing.T) {
 	v := NewVerifier(newMemNonces())
 	ts := time.Now()
 	// gates pass, but verb not in capability list
-	a := acct(config.GateConfig{Allowlist: []string{"dmzs.com"}}, "status")
-	r := v.Evaluate(a, &Message{From: "ops@dmzs.com", Body: envelope("mail.delete", "", "n-cap", ts, "")})
+	a := acct(config.GateConfig{Allowlist: []string{"example.com"}}, "status")
+	r := v.Evaluate(a, &Message{From: "ops@example.com", Body: envelope("mail.delete", "", "n-cap", ts, "")})
 	if r.Triggered {
 		t.Fatal("verb outside capability list must not trigger")
 	}
@@ -176,7 +176,7 @@ func TestEvaluate_FullStack_HappyPath(t *testing.T) {
 	ts := time.Now()
 	secret := "s3cr3t"
 	a := acct(config.GateConfig{
-		Allowlist:           []string{"ops@dmzs.com"},
+		Allowlist:           []string{"ops@example.com"},
 		RequireDKIM:         true,
 		RequireDMARC:        true,
 		HMACSecret:          secret,
@@ -184,7 +184,7 @@ func TestEvaluate_FullStack_HappyPath(t *testing.T) {
 	}, "mail.archive")
 
 	msg := &Message{
-		From:    "Ops <ops@dmzs.com>",
+		From:    "Ops <ops@example.com>",
 		Headers: map[string]string{"authentication-results": "mx; dkim=pass; dmarc=pass"},
 		Body:    envelope("mail.archive", `{"from":"noise@x.com"}`, "n-full", ts, secret),
 	}

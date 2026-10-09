@@ -55,7 +55,7 @@ func TestLegacySplitPreservesState(t *testing.T) {
 	LastMigration = nil
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "imap.db")
-	want := makeLegacy(t, statePath, 272)
+	want := makeLegacy(t, statePath, 250)
 
 	d, err := Open(Options{Path: statePath}, Options{Path: filepath.Join(dir, "cache.db")})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestLegacySplitPreservesState(t *testing.T) {
 	if m == nil {
 		t.Fatal("expected a migration report")
 	}
-	if m.Counts["rules"] != 272 || m.Counts["webhooks"] != 1 || m.Counts["inbound_nonces"] != 2 {
+	if m.Counts["rules"] != 250 || m.Counts["webhooks"] != 1 || m.Counts["inbound_nonces"] != 2 {
 		t.Errorf("counts = %v", m.Counts)
 	}
 
@@ -76,8 +76,8 @@ func TestLegacySplitPreservesState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rules) != 272 {
-		t.Fatalf("rules after split = %d, want 272", len(rules))
+	if len(rules) != 250 {
+		t.Fatalf("rules after split = %d, want 250", len(rules))
 	}
 	for _, r := range rules {
 		if _, ok := want[r.Name]; !ok {
@@ -114,7 +114,7 @@ func TestLegacySplitPreservesState(t *testing.T) {
 	var msgs, nrules int
 	bk.QueryRow(`SELECT count(*) FROM messages`).Scan(&msgs)
 	bk.QueryRow(`SELECT count(*) FROM rules`).Scan(&nrules)
-	if msgs != 1 || nrules != 272 {
+	if msgs != 1 || nrules != 250 {
 		t.Errorf("backup has %d messages, %d rules", msgs, nrules)
 	}
 

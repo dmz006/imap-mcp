@@ -68,7 +68,7 @@ Claude Code `.claude/mcp.json` entry for stdio mode:
 {
   "mcpServers": {
     "imap": {
-      "command": "/home/dmz/workspace/imap-mcp/imap-mcp",
+      "command": "/path/to/imap-mcp/imap-mcp",
       "args": [],
       "env": { "IMAP_MCP_PERSONAL_PASSWORD": "${IMAP_MCP_PERSONAL_PASSWORD}" }
     }

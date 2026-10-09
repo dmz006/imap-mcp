@@ -22,9 +22,9 @@ func (m *memNonces) SeenOrRecord(a, n string, _ time.Time) (bool, error) {
 }
 
 func TestParseHeaderBlock_FoldingAndLowercase(t *testing.T) {
-	raw := "From: ops@dmzs.com\r\nAuthentication-Results: mx;\r\n dkim=pass;\r\n dmarc=pass\r\n"
+	raw := "From: ops@example.com\r\nAuthentication-Results: mx;\r\n dkim=pass;\r\n dmarc=pass\r\n"
 	h := parseHeaderBlock(raw)
-	if h["from"] != "ops@dmzs.com" {
+	if h["from"] != "ops@example.com" {
 		t.Errorf("from=%q", h["from"])
 	}
 	ar := h["authentication-results"]
@@ -52,11 +52,11 @@ func TestProcess_EmitsVerifiedCommand(t *testing.T) {
 		Name: "a",
 		Inbound: &config.InboundConfig{
 			Enabled:      true,
-			Gates:        config.GateConfig{Allowlist: []string{"dmzs.com"}},
+			Gates:        config.GateConfig{Allowlist: []string{"example.com"}},
 			Capabilities: []string{"status"},
 		},
 	}
-	res := p.Process(acct, &trust.Message{From: "ops@dmzs.com", Body: envelope("status", "n1", time.Now())})
+	res := p.Process(acct, &trust.Message{From: "ops@example.com", Body: envelope("status", "n1", time.Now())})
 	if !res.Triggered {
 		t.Fatalf("expected trigger: %v", res.Reasons)
 	}
@@ -79,7 +79,7 @@ func TestProcess_RejectedEnvelopeAudited(t *testing.T) {
 		Name: "a",
 		Inbound: &config.InboundConfig{
 			Enabled:      true,
-			Gates:        config.GateConfig{Allowlist: []string{"dmzs.com"}},
+			Gates:        config.GateConfig{Allowlist: []string{"example.com"}},
 			Capabilities: []string{"status"},
 		},
 	}
@@ -103,9 +103,9 @@ func TestProcess_NoEnvelopeIsSilent(t *testing.T) {
 
 	acct := &config.AccountConfig{
 		Name:    "a",
-		Inbound: &config.InboundConfig{Enabled: true, Gates: config.GateConfig{Allowlist: []string{"dmzs.com"}}, Capabilities: []string{"status"}},
+		Inbound: &config.InboundConfig{Enabled: true, Gates: config.GateConfig{Allowlist: []string{"example.com"}}, Capabilities: []string{"status"}},
 	}
-	p.Process(acct, &trust.Message{From: "ops@dmzs.com", Body: "just a normal email, no command here"})
+	p.Process(acct, &trust.Message{From: "ops@example.com", Body: "just a normal email, no command here"})
 	select {
 	case e := <-fired:
 		t.Fatalf("ordinary mail must not emit events, got %v", e.Type)

@@ -3,7 +3,7 @@
 **Load this file at the start of every session before writing any code.**
 
 ```bash
-Read /home/dmz/workspace/imap-mcp/IMAP-MCP-CONTEXT.md
+Read IMAP-MCP-CONTEXT.md
 ```
 
 Then re-read the relevant sections of `AGENT.md` for the task at hand.
@@ -31,8 +31,8 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.10.0 |
-| Location | `/home/dmz/workspace/imap-mcp` |
+| Current version | 0.10.1 |
+| Location | the repo root |
 | Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
 
 ## Cleanup & automation tooling (v0.3.0)
@@ -143,7 +143,7 @@ Add to `~/.mcp.json` (global — available in every Claude Code session):
   "mcpServers": {
     "datawatch": { ... },
     "imap-mcp": {
-      "command": "/home/dmz/workspace/imap-mcp/imap-mcp",
+      "command": "/path/to/imap-mcp/imap-mcp",
       "args": [],
       "env": {}
     }
@@ -171,7 +171,7 @@ https://github.com/dmz006/datawatch/issues/118
 {
   "mcpServers": {
     "imap-mcp": {
-      "command": "/home/dmz/workspace/imap-mcp/imap-mcp"
+      "command": "/path/to/imap-mcp/imap-mcp"
     }
   }
 }

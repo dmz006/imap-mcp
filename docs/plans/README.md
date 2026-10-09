@@ -4,7 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
-| 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P4 built (0.5.3–0.9.0) |
+| 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P5 built (0.5.3–0.10.0) |
 
 ## Bugs
 
@@ -22,6 +22,5 @@
 |------|-------|
 | PGP inbound gate | Declared but fails closed until implemented. |
 | Email community skills (operator request 2026-10-08) | Review `skills/imap-mcp/SKILL.md` and the published `skills/comms/imap-mcp` in datawatch-community each iteration 2 release; update it or add new email skills (e.g. auth/token setup, cache management) as the surface changes. Tracked as part of P6. |
-| datawatch capacity gate / LLM proxy credential | Per the datawatch agent (2026-10-09): the imap-mcp service token is accepted **only** by `GET /api/external/secrets/{name}`. `/api/capacity` (yield gate, `autonomous:read`) and `/api/proxy/llm/<name>` (classify provider, `sessions:input`) need a separate federation-peer token (`POST /api/federation/peers` with those capabilities; operator action on the datawatch side). imap-mcp currently sends `datawatch.token` to both, so enabling either feature needs a DIP: a separate config field for the peer token. `sessions:input` also gates session rollback and WS input, so the operator must sign off before it is granted. Both features are off in production. |
+| datawatch capacity gate / LLM proxy credential | Per the datawatch agent (2026-10-09): the imap-mcp service token is accepted **only** by `GET /api/external/secrets/{name}`. `/api/capacity` (yield gate, `autonomous:read`) and `/api/proxy/llm/<name>` (classify provider, `sessions:input`) need a separate federation-peer token (`POST /api/federation/peers` with those capabilities; operator action on the datawatch side). imap-mcp currently sends `datawatch.token` to both, so enabling either feature needs a DIP: a separate config field for the peer token. `sessions:input` also gates session rollback and WS input, so the operator must sign off before it is granted. Both features stay off until then. |
 | Auth rejection log volume | Stale MCP clients (Claude sessions started before the header helper existed) retry OAuth discovery in a loop: about 60 WARN lines per minute per client. Consider rate-limiting the per-request rejection log (e.g. one summary line per client per minute). |
-| DB encryption in production | `cache_encrypted`/`state_encrypted` are false. Enabling needs keys in datawatch and the token in the hourly job's environment (run-rules opens the state DB). Raise as a DIP. |

@@ -10,7 +10,7 @@ import (
 
 func testSender(t *testing.T) *Sender {
 	t.Helper()
-	s, err := NewSender(&config.SMTPConfig{Host: "mail.dmzs.com", Port: 587, From: "Me <me@dmzs.com>"})
+	s, err := NewSender(&config.SMTPConfig{Host: "mail.example.com", Port: 587, From: "Me <me@example.com>"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestBuild_Headers(t *testing.T) {
 	s := testSender(t)
 	raw := string(s.build(Message{To: []string{"a@x.com", "b@x.com"}, Subject: "hi", Body: "line1\nline2"}))
 	for _, want := range []string{
-		"From: Me <me@dmzs.com>\r\n",
+		"From: Me <me@example.com>\r\n",
 		"To: a@x.com, b@x.com\r\n",
 		"Subject: hi\r\n",
 		"Content-Type: text/plain; charset=UTF-8\r\n",
@@ -55,8 +55,8 @@ func TestBuild_HeaderInjectionStripped(t *testing.T) {
 
 func TestFromAddr(t *testing.T) {
 	cases := map[string]string{
-		"Me <me@dmzs.com>": "me@dmzs.com",
-		"plain@dmzs.com":   "plain@dmzs.com",
+		"Me <me@example.com>": "me@example.com",
+		"plain@example.com":   "plain@example.com",
 		"  spaced@x.com  ": "spaced@x.com",
 	}
 	for in, want := range cases {
