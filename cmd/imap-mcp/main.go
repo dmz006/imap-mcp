@@ -14,6 +14,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/enrichment"
+	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/imap/auth"
 	"github.com/dmz006/imap-mcp/internal/inbound"
@@ -75,7 +76,7 @@ func runStdio() error {
 	}
 	defer cleanup()
 
-	mcpSrv := mcpserver.NewServer(cfg, deps.pool, deps.db, deps.syncer, deps.out)
+	mcpSrv := mcpserver.NewServer(cfg, deps.pool, deps.db, deps.syncer, deps.out, false)
 	stdio := mcpgo.NewStdioServer(mcpSrv)
 
 	log.Info("imap-mcp running in stdio mode", "version", Version)
@@ -140,6 +141,12 @@ func runServe(args []string) error {
 		return err
 	}
 
+	// Resolve HTTP auth before connecting anything: it fails closed (D13a-2).
+	authn, err := buildAuth(cfg, log)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -149,8 +156,31 @@ func runServe(args []string) error {
 	}
 	defer cleanup()
 
-	srv := server.New(cfg, deps.pool, deps.db, deps.bus, deps.syncer, deps.pipeline, deps.out, log)
+	srv := server.New(cfg, deps.pool, deps.db, deps.bus, deps.syncer, deps.pipeline, deps.out, log, authn)
 	return srv.Start(ctx)
+}
+
+// buildAuth resolves server.auth into an Authenticator. It returns nil only
+// when auth is explicitly disabled, which is logged as a warning.
+func buildAuth(cfg *config.Config, log *slog.Logger) (*httpauth.Authenticator, error) {
+	tokens, disabled, err := cfg.ServeAuth()
+	if err != nil {
+		return nil, fmt.Errorf("server auth: %w", err)
+	}
+	if disabled {
+		log.Warn("server.auth.disabled is set: /api and /mcp accept unauthenticated requests from any local process (insecure)")
+		return nil, nil
+	}
+	authn, err := httpauth.New(tokens, []string{"/api/health"}, log)
+	if err != nil {
+		return nil, fmt.Errorf("server auth: %w", err)
+	}
+	names := make([]string, len(tokens))
+	for i, t := range tokens {
+		names[i] = t.Name
+	}
+	log.Info("server auth enabled", "tokens", names)
+	return authn, nil
 }
 
 // runAuthSetup runs the OAuth2 browser flow for an account.

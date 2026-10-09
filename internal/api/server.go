@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,14 +29,18 @@ type Server struct {
 	bus    *bus.Bus
 	syncer *imapsync.Syncer
 	log    *slog.Logger
+	authn  *httpauth.Authenticator // nil = auth disabled
 
 	// SSE fan-out: one bus subscription drives N connected clients.
 	sseMu    sync.RWMutex
 	sseChans []chan bus.Event
 }
 
-func NewServer(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus, syncer *imapsync.Syncer, log *slog.Logger) *Server {
+// NewServer builds the REST API. authn may be nil when auth is disabled; every
+// route except /api/health declares the scope it requires (AGENT.md D13a).
+func NewServer(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus, syncer *imapsync.Syncer, log *slog.Logger, authn *httpauth.Authenticator) *Server {
 	s := &Server{
+		authn:  authn,
 		cfg:    cfg,
 		pool:   pool,
 		db:     database,
@@ -88,56 +93,62 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
+	// Per-route scope requirements (no-ops when auth is disabled).
+	read := s.authn.RequireScope(httpauth.ScopeRead)
+	write := s.authn.RequireScope(httpauth.ScopeWrite)
+	send := s.authn.RequireScope(httpauth.ScopeSend)
+	admin := s.authn.RequireScope(httpauth.ScopeAdmin)
+
 	// ── Health ────────────────────────────────────────────────────────────────
 	r.Get("/api/health", s.handleHealth)
 
 	// ── Accounts ─────────────────────────────────────────────────────────────
-	r.Get("/api/accounts", s.handleListAccounts)
-	r.Post("/api/accounts/{account}/sync", s.handleSyncAccount)
+	r.With(read).Get("/api/accounts", s.handleListAccounts)
+	r.With(admin).Post("/api/accounts/{account}/sync", s.handleSyncAccount)
 
 	// ── Folders ──────────────────────────────────────────────────────────────
-	r.Get("/api/accounts/{account}/folders", s.handleListFolders)
+	r.With(read).Get("/api/accounts/{account}/folders", s.handleListFolders)
 
 	// ── Messages ─────────────────────────────────────────────────────────────
-	r.Get("/api/accounts/{account}/folders/{folder}/messages", s.handleListMessages)
-	r.Get("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleGetMessage)
-	r.Delete("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleDeleteMessage)
-	r.Put("/api/accounts/{account}/folders/{folder}/messages/{uid}/flags", s.handleSetFlags)
-	r.Post("/api/accounts/{account}/folders/{folder}/messages/{uid}/move", s.handleMoveMessage)
+	r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages", s.handleListMessages)
+	r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleGetMessage)
+	r.With(write).Delete("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleDeleteMessage)
+	r.With(write).Put("/api/accounts/{account}/folders/{folder}/messages/{uid}/flags", s.handleSetFlags)
+	r.With(write).Post("/api/accounts/{account}/folders/{folder}/messages/{uid}/move", s.handleMoveMessage)
 
 	// ── Search ───────────────────────────────────────────────────────────────
-	r.Get("/api/search", s.handleSearch)
-	r.Post("/api/search/semantic", s.handleSemanticSearch)
+	r.With(read).Get("/api/search", s.handleSearch)
+	r.With(read).Post("/api/search/semantic", s.handleSemanticSearch)
 
 	// ── Analytics (cache-based, fast) ────────────────────────────────────────
-	r.Get("/api/accounts/{account}/stats", s.handleAccountStats)
-	r.Get("/api/senders", s.handleListSenders)
-	r.Get("/api/senders/{address}", s.handleGetSender)
-	r.Get("/api/kg", s.handleKGQuery)
-	r.Get("/api/anomalies", s.handleGetAnomalies)
-	r.Get("/api/enrichment/status", s.handleEnrichmentStatus)
-	r.Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
+	r.With(read).Get("/api/accounts/{account}/stats", s.handleAccountStats)
+	r.With(read).Get("/api/senders", s.handleListSenders)
+	r.With(read).Get("/api/senders/{address}", s.handleGetSender)
+	r.With(read).Get("/api/kg", s.handleKGQuery)
+	r.With(read).Get("/api/anomalies", s.handleGetAnomalies)
+	r.With(read).Get("/api/enrichment/status", s.handleEnrichmentStatus)
+	r.With(admin).Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
 
 	// ── Webhooks ─────────────────────────────────────────────────────────────
-	r.Get("/api/webhooks", s.handleListWebhooks)
-	r.Post("/api/webhooks", s.handleCreateWebhook)
-	r.Delete("/api/webhooks/{id}", s.handleDeleteWebhook)
+	r.With(admin).Get("/api/webhooks", s.handleListWebhooks)
+	r.With(admin).Post("/api/webhooks", s.handleCreateWebhook)
+	r.With(admin).Delete("/api/webhooks/{id}", s.handleDeleteWebhook)
 
 	// ── Rules ────────────────────────────────────────────────────────────────
-	r.Get("/api/rules", s.handleListRules)
-	r.Post("/api/rules", s.handleCreateRule)
-	r.Put("/api/rules/{id}", s.handleUpdateRule)
-	r.Delete("/api/rules/{id}", s.handleDeleteRule)
-	r.Post("/api/rules/{id}/test", s.handleTestRule)
+	r.With(read).Get("/api/rules", s.handleListRules)
+	r.With(write).Post("/api/rules", s.handleCreateRule)
+	r.With(write).Put("/api/rules/{id}", s.handleUpdateRule)
+	r.With(write).Delete("/api/rules/{id}", s.handleDeleteRule)
+	r.With(write).Post("/api/rules/{id}/test", s.handleTestRule)
 
 	// ── Query DSL (algorithmic layer entry point) ─────────────────────────────
-	r.Post("/api/query", s.handleQuery)
+	r.With(admin).Post("/api/query", s.handleQuery)
 
 	// ── Event stream ────────────────────────────────────────────────────────
-	r.Get("/api/events", s.handleEventStream)
+	r.With(read).Get("/api/events", s.handleEventStream)
 
 	// ── Send message ─────────────────────────────────────────────────────────
-	r.Post("/api/accounts/{account}/messages/send", s.handleSendMessage)
+	r.With(send).Post("/api/accounts/{account}/messages/send", s.handleSendMessage)
 
 	return r
 }
@@ -150,6 +161,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":   "ok",
 		"version":  config.Version,
 		"accounts": len(accounts),
+		"auth":     map[bool]string{true: "enabled", false: "disabled"}[s.authn != nil],
 	})
 }
 
@@ -175,31 +187,33 @@ func notImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"error": "not yet implemented — coming in iteration 2"})
 }
 
-func (s *Server) handleSyncAccount(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
-func (s *Server) handleSetFlags(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
-func (s *Server) handleMoveMessage(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request)          { notImplemented(w, r) }
-func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
-func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleGetSender(w http.ResponseWriter, r *http.Request)       { notImplemented(w, r) }
-func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
-func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleEnrichmentStatus(w http.ResponseWriter, r *http.Request){ notImplemented(w, r) }
-func (s *Server) handleTriggerEnrichment(w http.ResponseWriter, r *http.Request){ notImplemented(w, r)}
-func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
-func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
-func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request)       { notImplemented(w, r) }
-func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
-func (s *Server) handleTestRule(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
-func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
+func (s *Server) handleSyncAccount(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
+func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
+func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
+func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request)       { notImplemented(w, r) }
+func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleSetFlags(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
+func (s *Server) handleMoveMessage(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request)           { notImplemented(w, r) }
+func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
+func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
+func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
+func (s *Server) handleGetSender(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
+func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request)          { notImplemented(w, r) }
+func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
+func (s *Server) handleEnrichmentStatus(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
+func (s *Server) handleTriggerEnrichment(w http.ResponseWriter, r *http.Request) {
+	notImplemented(w, r)
+}
+func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
+func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
+func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
+func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
+func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
+func (s *Server) handleTestRule(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
+func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
 
 // handleEventStream streams bus events as SSE. Each event is one JSON line
 // prefixed with "data: " per the SSE spec. Clients reconnect on disconnect;

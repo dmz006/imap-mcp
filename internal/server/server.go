@@ -14,6 +14,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/enrichment"
+	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	mcpserver "github.com/dmz006/imap-mcp/internal/mcp"
 	"github.com/dmz006/imap-mcp/internal/output"
@@ -32,6 +33,7 @@ type Server struct {
 	pipeline *enrichment.Pipeline
 	out      *output.Writer
 	log      *slog.Logger
+	authn    *httpauth.Authenticator // nil = auth disabled
 	http     *http.Server
 }
 
@@ -44,8 +46,10 @@ func New(
 	pipeline *enrichment.Pipeline,
 	out *output.Writer,
 	log *slog.Logger,
+	authn *httpauth.Authenticator,
 ) *Server {
 	return &Server{
+		authn:    authn,
 		cfg:      cfg,
 		pool:     pool,
 		db:       database,
@@ -57,23 +61,24 @@ func New(
 	}
 }
 
-func (s *Server) Start(ctx context.Context) error {
-	// Build MCP server
-	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer, s.out)
+// handler assembles the full HTTP handler: browserGuard → auth → MCP at /mcp
+// and REST at /api.
+func (s *Server) handler() http.Handler {
+	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer, s.out, s.authn != nil)
 	streamable := mcpgo.NewStreamableHTTPServer(mcpSrv)
+	apiSrv := api.NewServer(s.cfg, s.pool, s.db, s.bus, s.syncer, s.log, s.authn)
 
-	// Build REST API router
-	apiSrv := api.NewServer(s.cfg, s.pool, s.db, s.bus, s.syncer, s.log)
-
-	// Combine onto a single chi router
 	r := chi.NewRouter()
 	r.Mount("/mcp", streamable)
 	r.Mount("/", apiSrv.Router())
+	return browserGuard(s.cfg.Server.Host, s.authn.Middleware(r))
+}
 
+func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.Host, s.cfg.Server.Port)
 	s.http = &http.Server{
 		Addr:              addr,
-		Handler:           browserGuard(s.cfg.Server.Host, r),
+		Handler:           s.handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -83,6 +88,7 @@ func (s *Server) Start(ctx context.Context) error {
 		"addr", addr,
 		"mcp", fmt.Sprintf("http://%s/mcp", addr),
 		"api", fmt.Sprintf("http://%s/api", addr),
+		"auth", s.authn != nil,
 	)
 
 	errCh := make(chan error, 1)

@@ -114,8 +114,27 @@ type AuthConfig struct {
 }
 
 type ServerConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	Host string           `yaml:"host"`
+	Port int              `yaml:"port"`
+	Auth ServerAuthConfig `yaml:"auth"`
+}
+
+// ServerAuthConfig configures bearer-token auth for `serve` (AGENT.md D13a, D13a-2).
+// At least one token is required unless Disabled is explicitly set.
+type ServerAuthConfig struct {
+	// Disabled turns token auth off (insecure). Logged at every startup and
+	// reported in /api/health.
+	Disabled bool `yaml:"disabled"`
+	// Tokens are the accepted bearer tokens.
+	Tokens []TokenConfig `yaml:"tokens"`
+}
+
+// TokenConfig is one named bearer token. Token must be a ${secret:name} or
+// ${ENV} reference in YAML; Scopes is any of read, write, send, admin.
+type TokenConfig struct {
+	Name   string   `yaml:"name"`
+	Token  string   `yaml:"token"`
+	Scopes []string `yaml:"scopes"`
 }
 
 type DBConfig struct {
@@ -228,6 +247,11 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("IMAP_MCP_SERVER_HOST"); v != "" {
 		cfg.Server.Host = v
+	}
+	if v := os.Getenv("IMAP_MCP_SERVER_AUTH_DISABLED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Server.Auth.Disabled = b
+		}
 	}
 	if v := os.Getenv("IMAP_MCP_DB_PATH"); v != "" {
 		cfg.DB.Path = v

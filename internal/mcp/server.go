@@ -12,18 +12,24 @@ import (
 )
 
 // NewServer creates and configures the MCP server with all registered tools.
+// When enforceScopes is true (HTTP transport with auth enabled), every tool
+// call and tools/list is checked against the caller's token scopes.
 func NewServer(
 	cfg *config.Config,
 	pool *imap.Pool,
 	database *db.DB,
 	syncer *sync.Syncer,
 	out *output.Writer,
+	enforceScopes bool,
 ) *server.MCPServer {
-	s := server.NewMCPServer(
-		"imap-mcp",
-		config.Version,
-		server.WithToolCapabilities(true),
-	)
+	opts := []server.ServerOption{server.WithToolCapabilities(true)}
+	if enforceScopes {
+		opts = append(opts,
+			server.WithToolHandlerMiddleware(scopeMiddleware),
+			server.WithToolFilter(scopeFilter),
+		)
+	}
+	s := server.NewMCPServer("imap-mcp", config.Version, opts...)
 
 	h := tools.NewHandlers(cfg, pool, database, syncer, out)
 
