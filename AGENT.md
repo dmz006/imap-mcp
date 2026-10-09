@@ -329,6 +329,13 @@ they can be replaced or extended without touching call sites.
   certificate is pinned with `datawatch.ca_file`, added to the system roots
   for every imap-mcp → datawatch call. TLS verification is never disabled, and
   there is no skip-verify option. A missing or unusable `ca_file` fails closed.
+- **2026-10-09 — D16 (webhook delivery):** webhooks use a durable outbox in
+  `imap.db` with at-least-once delivery and a unique delivery id. Payloads
+  are metadata only: identifiers, counts and flags, never subject, sender,
+  addresses, body or error text. Every request is HMAC-SHA256 signed with a
+  per-webhook secret that imap-mcp generates and shows once. Only https URLs,
+  or http to loopback, are allowed, and redirects are never followed.
+  Registration needs the `admin` scope.
 
 ---
 
