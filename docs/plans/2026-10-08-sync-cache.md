@@ -135,7 +135,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 
 | Phase | Release | Scope | Depends on | Status |
 |-------|---------|-------|------------|--------|
-| P0 | 0.5.3 | Security: scoped token auth middleware for `/api` + `/mcp`, scope table for all routes/tools, config + example, tests; datawatch backend token (via datawatch agent), datawatch secrets, `~/.mcp.json` header | D13a, D13a-1 | **In Progress**: code + tests done (Tested=Yes); waiting on datawatch-side token support before deploy and live validation |
+| P0 | 0.5.3 | Security: scoped token auth middleware for `/api` + `/mcp`, scope table for all routes/tools, config + example, tests; datawatch backend token (via datawatch agent), datawatch secrets, `~/.mcp.json` header | D13a, D13a-1 | **In Progress**: code + tests done (Tested=Yes); waiting on datawatch-side token support (dmz006/datawatch#203) before deploy and live validation |
 | P1 | 0.6.0 | Storage: driver swap to ncruces + adiantum; split `cache.db` / `imap.db` with a verified one-time migration of rules, webhooks and nonces (backup first); per-file optional encryption + `${secret:}`/`${ENV}` key resolution, fail closed; systemd ordering after datawatch when needed | D1, D1a, D1b, D5 | Planned |
 | P2 | 0.7.0 | Sync engine: SPECIAL-USE folder resolution, INTERNALDATE window with 3-level overrides, UID diff + CONDSTORE, UIDVALIDITY rebuild, headers + bodies + MIME decode (go-message), Message-ID de-dup, bus events | D6, D8, D9, D10 | Planned |
 | P3 | 0.8.0 | Cleaning: auto purge + orphans + VACUUM, `cache_sweep` (dry-run default), `\Flagged` exemption, window-resize purge/backfill; content-cleaning hook point | D7, D8 | Planned |
