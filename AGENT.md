@@ -276,6 +276,9 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D10 (folders):** synced folders are set in config: SPECIAL-USE
   tokens or literal names, default INBOX + `\Sent`, per-account override. Enrichment
   is de-duplicated by Message-ID.
+- **2026-10-08 — D11a (LLM routing):** enrichment uses a provider interface per call
+  type. Embeddings go direct to Ollama; classification goes to direct Ollama (the
+  default) or through the datawatch `/api/proxy/llm/<name>` proxy.
 
 ---
 
