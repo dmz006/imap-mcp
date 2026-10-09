@@ -310,7 +310,7 @@ func TestCrossAccountSearchCache(t *testing.T) {
 	now := time.Now()
 	add := func(account string, uid uint32, from, subject, body string, age time.Duration) {
 		if _, err := s.db.Messages.Insert(ctx, &db.CachedMessage{
-			Account: account, Folder: "INBOX", UID: uid, MessageID: account + "-" + subject,
+			Account: account, Folder: "INBOX", UID: uid, MessageID: account + "-" + subject, ThreadID: "thread-" + account + "-" + subject,
 			FromAddr: from, Subject: subject, BodyText: body, Date: now.Add(-age), InternalDate: now.Add(-age), Flags: []string{},
 		}); err != nil {
 			t.Fatal(err)
@@ -328,7 +328,7 @@ func TestCrossAccountSearchCache(t *testing.T) {
 	if res.Source != "cache" || res.Count != 3 {
 		t.Fatalf("text search = %+v", res)
 	}
-	if res.Hits[0].Subject != "Invoice June" { // newest first across accounts
+	if res.Hits[0].Subject != "Invoice June" || res.Hits[0].ThreadID != "thread-work-Invoice June" { // newest first across accounts
 		t.Errorf("order = %+v", res.Hits)
 	}
 
@@ -381,7 +381,7 @@ func TestCrossAccountSearchLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Source != "live" || res.Count != 2 || res.Hits[0].Account != "b" || res.TotalMatches["a"] != 1 {
+	if res.Source != "live" || res.Count != 2 || res.Hits[0].Account != "b" || res.TotalMatches["a"] != 1 || res.Hits[0].ThreadID != "b1@example.com" {
 		t.Fatalf("live = %+v", res)
 	}
 	if len(res.Errors) != 1 || res.Errors[0].Account != "c" {

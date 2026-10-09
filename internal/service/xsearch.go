@@ -25,7 +25,9 @@ type CrossSearchHit struct {
 	Subject string `json:"subject"`
 	From    string `json:"from"`
 	Date    string `json:"date"`
-	Source  string `json:"source"` // cache | live
+	// ThreadID can be passed to get_thread / export_message.
+	ThreadID string `json:"thread_id,omitempty"`
+	Source   string `json:"source"` // cache | live
 }
 
 // CrossSearchResult merges every account's hits, newest first.
@@ -120,8 +122,9 @@ func (s *Service) cacheCrossSearch(ctx context.Context, p CrossSearchParams) (Cr
 		args = append(args, t.Unix())
 	}
 	args = append(args, p.Limit)
-	rows, err := s.db.SQL().QueryContext(ctx, `SELECT account, folder, uid, subject, from_addr, from_name, d FROM (
+	rows, err := s.db.SQL().QueryContext(ctx, `SELECT account, folder, uid, subject, from_addr, from_name, d, tid FROM (
 		SELECT account, folder, uid, COALESCE(subject,'') AS subject, from_addr, COALESCE(from_name,'') AS from_name,
+			COALESCE(thread_id,'') AS tid,
 			COALESCE(internal_date, date) AS d,
 			ROW_NUMBER() OVER (PARTITION BY account ORDER BY COALESCE(internal_date, date) DESC) AS rn
 		FROM messages WHERE `+strings.Join(where, " AND ")+`) WHERE rn <= ?`, args...)
@@ -133,7 +136,7 @@ func (s *Service) cacheCrossSearch(ctx context.Context, p CrossSearchParams) (Cr
 		var h CrossSearchHit
 		var name string
 		var d int64
-		if err := rows.Scan(&h.Account, &h.Folder, &h.UID, &h.Subject, &h.From, &name, &d); err != nil {
+		if err := rows.Scan(&h.Account, &h.Folder, &h.UID, &h.Subject, &h.From, &name, &d, &h.ThreadID); err != nil {
 			return res, err
 		}
 		if name != "" {
@@ -169,7 +172,7 @@ func (s *Service) liveCrossSearch(ctx context.Context, accounts []string, p Cros
 			res.TotalMatches[acct] = r.TotalMatches
 			for _, m := range r.Messages {
 				res.Hits = append(res.Hits, CrossSearchHit{Account: acct, Folder: folder, UID: m.UID,
-					Subject: m.Subject, From: m.From, Date: utcRFC3339(m.Date), Source: "live"})
+					Subject: m.Subject, From: m.From, Date: utcRFC3339(m.Date), ThreadID: m.ThreadID, Source: "live"})
 			}
 		}(acct)
 	}
