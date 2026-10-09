@@ -73,7 +73,7 @@ func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.Host, s.cfg.Server.Port)
 	s.http = &http.Server{
 		Addr:              addr,
-		Handler:           r,
+		Handler:           browserGuard(s.cfg.Server.Host, r),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,

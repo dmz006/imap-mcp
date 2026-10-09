@@ -6,6 +6,18 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+### Security
+- Browser-originated requests against the local HTTP server are now refused
+  (v0.5.2). Before, any web page open on the host could POST a `text/plain`
+  body to `/api/accounts/{account}/messages/send` without a CORS preflight and
+  make imap-mcp send mail, and DNS rebinding could reach `/mcp` tools. The new
+  `browserGuard` middleware (`internal/server/guard.go`):
+  - accepts only loopback names or the configured `server.host` in `Host`
+  - rejects foreign or `null` `Origin` headers
+  - requires `Content-Type: application/json` on unsafe `/api` methods
+
+  Non-browser clients (curl, datawatch, Claude Code) are unaffected.
+
 ### Fixed
 - SQLite connection pragmas were never applied (v0.5.1). The DSN used
   mattn-style `_journal`/`_fk`/`_timeout` params, which `modernc.org/sqlite`
