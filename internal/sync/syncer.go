@@ -514,7 +514,7 @@ func toCached(account, folder string, f *Fetched) *db.CachedMessage {
 		if len(env.ReplyTo) > 0 {
 			cm.ReplyTo = env.ReplyTo[0].Addr()
 		}
-		cm.ThreadID = threadID(refs, env.InReplyTo, env.MessageID)
+		cm.ThreadID = ThreadID(refs, env.InReplyTo, env.MessageID)
 	}
 	return cm
 }

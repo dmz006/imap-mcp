@@ -81,9 +81,9 @@ func decodeWord(s string) string {
 	return s
 }
 
-// threadID derives a stable thread key: the root of References, else the
+// ThreadID derives a stable thread key: the root of References, else the
 // first In-Reply-To, else the message's own Message-ID.
-func threadID(refs, inReplyTo []string, messageID string) string {
+func ThreadID(refs, inReplyTo []string, messageID string) string {
 	if len(refs) > 0 {
 		return strings.Trim(refs[0], "<>")
 	}

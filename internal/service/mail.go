@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -8,6 +10,11 @@ import (
 
 	imaplib "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message"
+	"github.com/emersion/go-message/mail"
+	"github.com/emersion/go-message/textproto"
+
+	imapsync "github.com/dmz006/imap-mcp/internal/sync"
 )
 
 // FolderInfo is one mailbox.
@@ -19,15 +26,19 @@ type FolderInfo struct {
 
 // MessageHeader is the summary of one message.
 type MessageHeader struct {
-	UID      uint32   `json:"uid"`
-	SeqNum   uint32   `json:"seq_num"`
-	Subject  string   `json:"subject"`
-	From     string   `json:"from"`
-	To       []string `json:"to"`
-	Date     string   `json:"date"`
-	Flags    []string `json:"flags"`
-	Size     int64    `json:"size_bytes"`
-	ThreadID string   `json:"thread_id,omitempty"`
+	UID     uint32   `json:"uid"`
+	SeqNum  uint32   `json:"seq_num"`
+	Subject string   `json:"subject"`
+	From    string   `json:"from"`
+	To      []string `json:"to"`
+	Date    string   `json:"date"`
+	Flags   []string `json:"flags"`
+	Size    int64    `json:"size_bytes"`
+	// MessageID is the Message-ID header without angle brackets.
+	MessageID string `json:"message_id,omitempty"`
+	// ThreadID is derived exactly as the cache derives it (sync.ThreadID), so
+	// it can be passed to get_thread.
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 // MessageDetail is a message with its text body.
@@ -158,7 +169,7 @@ func (s *Service) ListMessages(ctx context.Context, p ListMessagesParams) (Messa
 		}
 		seqSet.AddRange(start, end)
 	}
-	msgs, err := client.Fetch(seqSet, &imaplib.FetchOptions{Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true}).Collect()
+	msgs, err := client.Fetch(seqSet, headerFetch()).Collect()
 	if err != nil {
 		return page, upstream("fetch", err)
 	}
@@ -187,10 +198,8 @@ func (s *Service) GetMessage(ctx context.Context, account, folder string, uid ui
 	if _, err := client.Select(folder, nil).Wait(); err != nil {
 		return MessageDetail{}, notFound("select %s: %v", folder, err)
 	}
-	msgs, err := client.Fetch(imaplib.UIDSetNum(imaplib.UID(uid)), &imaplib.FetchOptions{
-		Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true,
-		BodySection: []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierText, Peek: true}}, // reading must not set \Seen
-	}).Collect()
+	// Peek: reading must not set \Seen.
+	msgs, err := client.Fetch(imaplib.UIDSetNum(imaplib.UID(uid)), headerFetch(&imaplib.FetchItemBodySection{Specifier: imaplib.PartSpecifierText, Peek: true})).Collect()
 	if err != nil {
 		return MessageDetail{}, upstream("uid fetch", err)
 	}
@@ -227,10 +236,7 @@ func (s *Service) GetHeaders(ctx context.Context, account, folder string, uid ui
 	if _, err := client.Select(folder, nil).Wait(); err != nil {
 		return Headers{}, notFound("select %s: %v", folder, err)
 	}
-	msgs, err := client.Fetch(imaplib.UIDSetNum(imaplib.UID(uid)), &imaplib.FetchOptions{
-		Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true,
-		BodySection: []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierHeader, Peek: true}},
-	}).Collect()
+	msgs, err := client.Fetch(imaplib.UIDSetNum(imaplib.UID(uid)), headerFetch(&imaplib.FetchItemBodySection{Specifier: imaplib.PartSpecifierHeader, Peek: true})).Collect()
 	if err != nil {
 		return Headers{}, upstream("fetch", err)
 	}
@@ -239,7 +245,7 @@ func (s *Service) GetHeaders(ctx context.Context, account, folder string, uid ui
 	}
 	h := Headers{MessageHeader: msgToHeader(msgs[0])}
 	for _, bs := range msgs[0].BodySection {
-		if bs.Section != nil && bs.Section.Specifier == imaplib.PartSpecifierHeader {
+		if bs.Section != nil && bs.Section.Specifier == imaplib.PartSpecifierHeader && len(bs.Section.HeaderFields) == 0 {
 			h.RawHeaders = string(bs.Bytes)
 		}
 	}
@@ -332,7 +338,7 @@ func (s *Service) Search(ctx context.Context, p SearchParams) (SearchResult, err
 	if len(uids) > p.Limit {
 		uids = uids[len(uids)-p.Limit:] // newest = highest UIDs
 	}
-	msgs, err := client.Fetch(imaplib.UIDSetNum(uids...), &imaplib.FetchOptions{Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true}).Collect()
+	msgs, err := client.Fetch(imaplib.UIDSetNum(uids...), headerFetch()).Collect()
 	if err != nil {
 		return res, upstream("fetch results", err)
 	}
@@ -542,11 +548,44 @@ func msgToHeader(m *imapclient.FetchMessageBuffer) MessageHeader {
 		for _, a := range env.To {
 			hdr.To = append(hdr.To, fmt.Sprintf("%s@%s", a.Mailbox, a.Host))
 		}
-		if len(env.InReplyTo) > 0 {
-			hdr.ThreadID = strings.Join(env.InReplyTo, " ")
-		}
+		hdr.MessageID = strings.Trim(env.MessageID, "<>")
+		hdr.ThreadID = imapsync.ThreadID(fetchedReferences(m), env.InReplyTo, env.MessageID)
 	}
 	return hdr
+}
+
+// referencesSection fetches only the References header, without setting \Seen.
+// It is part of every header fetch so thread_id matches the cache's.
+var referencesSection = &imaplib.FetchItemBodySection{
+	Specifier: imaplib.PartSpecifierHeader, HeaderFields: []string{"References"}, Peek: true,
+}
+
+// headerFetch is the fetch used for message summaries: envelope, flags, UID,
+// size, INTERNALDATE and the References header, plus any extra sections.
+func headerFetch(extra ...*imaplib.FetchItemBodySection) *imaplib.FetchOptions {
+	return &imaplib.FetchOptions{
+		Envelope: true, Flags: true, UID: true, RFC822Size: true, InternalDate: true,
+		BodySection: append([]*imaplib.FetchItemBodySection{referencesSection}, extra...),
+	}
+}
+
+// fetchedReferences parses the References header fetched by headerFetch.
+func fetchedReferences(m *imapclient.FetchMessageBuffer) []string {
+	for _, bs := range m.BodySection {
+		if bs.Section == nil || bs.Section.Specifier != imaplib.PartSpecifierHeader || len(bs.Section.HeaderFields) == 0 {
+			continue
+		}
+		h, err := textproto.ReadHeader(bufio.NewReader(bytes.NewReader(bs.Bytes)))
+		if err != nil {
+			return nil
+		}
+		refs, err := (&mail.Header{Header: message.Header{Header: h}}).MsgIDList("References")
+		if err != nil {
+			return nil
+		}
+		return refs
+	}
+	return nil
 }
 
 func reverse[T any](s []T) {
