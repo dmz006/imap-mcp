@@ -287,9 +287,24 @@ func (p *Pipeline) selectLane(ctx context.Context, lane, limit int) ([]queueItem
 	return items, rows.Err()
 }
 
-// process enriches items concurrently (bounded by the provider semaphores)
-// and returns how many succeeded.
+// process enriches items, lane by lane so every new-mail item finishes
+// before any backfill item starts, each lane concurrently within the
+// provider caps. It returns how many succeeded.
 func (p *Pipeline) process(ctx context.Context, items []queueItem) int {
+	ok := 0
+	for _, lane := range []int{LaneNew, LaneBackfill} {
+		var group []queueItem
+		for _, it := range items {
+			if it.lane == lane {
+				group = append(group, it)
+			}
+		}
+		ok += p.processGroup(ctx, group)
+	}
+	return ok
+}
+
+func (p *Pipeline) processGroup(ctx context.Context, items []queueItem) int {
 	var wg gosync.WaitGroup
 	var mu gosync.Mutex
 	ok := 0
