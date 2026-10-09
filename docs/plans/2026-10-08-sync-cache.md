@@ -19,8 +19,10 @@ starved. Live tools and the rules engine query IMAP directly and are unaffected.
 - **R1 Folders** — sync INBOX and Sent by default; operator can select other folders.
 - **R2 Window** — rolling 30-day cache, adjustable. Changing it purges or backfills
   to match.
-- **R3 Encryption option** — at-rest encryption of the cache. **Bodies are cached
-  only when encryption is on.**
+- **R3 Encryption option** — at-rest encryption of the cache, operator-selectable.
+  The cache stores headers, bodies, vectors, and enrichment details **in both modes**.
+  Encryption is a security setting, not a feature gate. (Clarified by the operator
+  2026-10-08 at D6.)
 - **R4 Cleaning option** — modeled on datawatch's cleaning.
 - **R5 Load handling** — investigate. Use the datawatch compute nodes, MCP/service,
   skills, and existing integrations where they help.
@@ -106,7 +108,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D3 | Search over encrypted content | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D4 | Embeddings when encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D5 | Key source | **Per-file `encryption.key` = `${secret:name}` (datawatch secrets) or `${ENV}` passphrase → Argon2id (adiantum).** Never auto-generate; fail closed (refuse to open) if the key is missing or wrong. Both files may reference the same secret. systemd unit gains `After=`/`Wants=datawatch.service` when a `${secret:}` key is used. TPM-sealed systemd creds = possible later add-on | **Decided** 2026-10-08 |
-| D6 | Unencrypted mode and enrichment | Body fetched transiently for enrichment and never persisted. Headers plus a short snippet? (see options) | Open |
+| D6 | Content in unencrypted mode | **Same as encrypted: headers + bodies + vectors + enrichment details.** Security posture is the operator's configuration (D1b/D5) | **Decided** 2026-10-08 |
 | D7 | Meaning of "cleaning" | Retention sweep à la datawatch (dry-run, counts) plus optional content normalization before the LLM | Open |
 | D8 | Window semantics | INTERNALDATE, cache-only purge, global default with per-account override | Open |
 | D9 | Change detection | CONDSTORE where available plus a per-cycle UID-set diff in the window. IDLE deferred to iteration 4 | Open |

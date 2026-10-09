@@ -260,6 +260,9 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D5 (key source):** encryption keys come only from `${secret:name}`
   or `${ENV}` passphrase references (Argon2id). Never auto-generate a key, and fail
   closed when the key is missing.
+- **2026-10-08 — D6 (cache content):** the cache stores headers, bodies, vectors and
+  enrichment details whether or not it is encrypted. Encryption is a security
+  setting and must never gate features.
 
 ---
 
