@@ -17,6 +17,7 @@ const (
 	EventFolderSynced      EventType = "folder.synced"
 	EventSyncComplete      EventType = "sync.complete"
 	EventSyncError         EventType = "sync.error"
+	EventCacheCleaned      EventType = "cache.cleaned" // payload: sync.CleanReport
 	EventEnrichmentDone    EventType = "enrichment.done"
 	EventEnrichmentError   EventType = "enrichment.error"
 	EventAnomalyDetected   EventType = "anomaly.detected"

@@ -240,6 +240,16 @@ sync:
   #   \Sent: 90
   # Messages larger than this are cached headers-only (no body).
   max_message_mb: 25
+  # Cleaning (cache only — the mailbox is never touched). After every cycle:
+  # folders/accounts no longer configured are dropped from the cache, orphaned
+  # vectors/queue rows removed, the full-text index verified (rebuilt if
+  # inconsistent) and the WAL checkpointed. On demand: the cache_sweep tool /
+  # POST /api/cache/sweep (admin scope; dry_run defaults to true).
+  # Keep \Flagged messages cached (and fetch them) even outside the window.
+  keep_flagged: false
+  # VACUUM the cache file at most this often (hours; 0 = never automatically).
+  vacuum_interval_hours: 24
+  # Env overrides: IMAP_MCP_SYNC_KEEP_FLAGGED, IMAP_MCP_SYNC_VACUUM_INTERVAL_HOURS.
 
 log:
   level: info

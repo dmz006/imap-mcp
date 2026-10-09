@@ -7,6 +7,33 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Cache cleaning (v0.8.0).** Cleaning touches the cache only, never the
+  mailbox.
+  - **After every sync cycle:**
+    - Folders dropped from config or gone from the server, and accounts
+      removed from config, are pruned from the cache. Pruning runs per account,
+      and only after that account's folder list was read, so a disconnected
+      account is never wiped.
+    - Orphaned vectors and queue rows are removed.
+    - The FTS5 index is integrity-checked and rebuilt if it's inconsistent.
+    - The WAL is checkpointed. VACUUM runs at most every
+      `sync.vacuum_interval_hours` (default 24).
+  - **`cache_sweep`** (MCP tool, `admin` scope) and **`POST /api/cache/sweep`**:
+    - Filter by account, folder, `older_than_days`, `errors_only` or `all`. At
+      least one filter is required.
+    - `dry_run` defaults to true and returns per-folder counts.
+    - A real sweep deletes the cached copies, resets their sync state, cleans
+      orphans and runs VACUUM. Mail still inside the window comes back on the
+      next sync.
+  - **`sync.keep_flagged`** (default off) keeps `\Flagged` mail cached even
+    outside the window.
+  - A `cache.cleaned` bus event is published for each pass.
+  - **Content-cleaning hook:** an `enrichment.Cleaner` interface, no-op by
+    default, shapes the text sent to the embedding and classification models.
+    The cached body is never changed. Real cleaners are planned for
+    iteration 3.
+  - New env overrides: `IMAP_MCP_SYNC_KEEP_FLAGGED` and
+    `IMAP_MCP_SYNC_VACUUM_INTERVAL_HOURS`.
 - **Mail cache sync (v0.7.0).** The background sync now fills `cache.db`.
   Before, it only stamped `sync_state`. Per account and per configured folder:
   - **Folders:** `sync.folders` takes SPECIAL-USE tokens (`\Sent`, `\Archive`,

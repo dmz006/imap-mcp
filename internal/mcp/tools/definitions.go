@@ -295,6 +295,20 @@ func TriggerEnrichmentTool() mcp.Tool {
 	)
 }
 
+func CacheSweepTool() mcp.Tool {
+	return mcp.NewTool("cache_sweep",
+		mcp.WithDescription("Clean the local mail CACHE (never the mailbox). Counts cached messages matching the filters "+
+			"per account/folder; with dry_run=false deletes those cached copies, cleans orphans and compacts the cache file. "+
+			"Messages still inside the sync window are re-fetched on the next sync. Requires at least one filter or all=true."),
+		mcp.WithString("account", mcp.Description("Only this account")),
+		mcp.WithString("folder", mcp.Description("Only this folder (resolved mailbox name, e.g. \"[Gmail]/Sent Mail\")")),
+		mcp.WithNumber("older_than_days", mcp.Description("Only messages older than this many days (by INTERNALDATE)")),
+		mcp.WithBoolean("errors_only", mcp.Description("Only messages whose enrichment failed")),
+		mcp.WithBoolean("all", mcp.Description("Select the whole cache (full rebuild)")),
+		mcp.WithBoolean("dry_run", mcp.Description("Count only, delete nothing (default: true)")),
+	)
+}
+
 // ── Working directory file I/O ────────────────────────────────────────────────
 // All file output must go through these tools. The working_dir config value
 // is the only permitted write destination — paths are enforced server-side.

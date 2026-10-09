@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, search, and export — using the imap-mcp MCP server.
-version: "0.3.0"
+version: "0.4.0"
 tags:
   - email
   - imap
@@ -141,6 +141,9 @@ export_message / write_file           → save to working_dir for the record
 - **Search:** `search_messages`, `cross_account_search`, `semantic_search`
 - **Intelligence:** `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status`, `trigger_enrichment`
 - **File output (sandbox):** `write_file`, `read_file`, `list_files`, `delete_file`
+- **Cache maintenance (admin):** `cache_sweep`. It only touches the local cache,
+  never the mailbox. Always run it with the default `dry_run` first and show
+  the operator the counts.
 
 imap-mcp 0.7.0+ keeps a local cache of recent mail: by default INBOX and Sent
 for the last 30 days, configured by the operator. Sync is read-only against

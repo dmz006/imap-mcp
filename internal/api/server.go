@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/dmz006/imap-mcp/internal/httpauth"
+	"github.com/dmz006/imap-mcp/internal/mcp/tools"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -135,6 +136,9 @@ func (s *Server) Router() http.Handler {
 		r.With(read).Get("/api/enrichment/status", s.handleEnrichmentStatus)
 		r.With(admin).Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
 
+		// ── Cache maintenance (cache only, never the mailbox) ───────────────
+		r.With(admin).Post("/api/cache/sweep", s.handleCacheSweep)
+
 		// ── Webhooks ─────────────────────────────────────────────────────────────
 		r.With(admin).Get("/api/webhooks", s.handleListWebhooks)
 		r.With(admin).Post("/api/webhooks", s.handleCreateWebhook)
@@ -167,10 +171,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"accounts": len(accounts),
 		"auth":     map[bool]string{true: "enabled", false: "disabled"}[s.authn != nil],
 		"sync": map[string]any{
-			"interval_minutes": s.cfg.Sync.IntervalMinutes,
-			"window_days":      s.cfg.WindowDays(nil, ""),
-			"max_message_mb":   s.cfg.Sync.MaxMessageMB,
-			"folders":          s.cfg.SyncFolders(nil),
+			"interval_minutes":      s.cfg.Sync.IntervalMinutes,
+			"window_days":           s.cfg.WindowDays(nil, ""),
+			"max_message_mb":        s.cfg.Sync.MaxMessageMB,
+			"keep_flagged":          s.cfg.Sync.KeepFlagged,
+			"vacuum_interval_hours": s.cfg.Sync.VacuumIntervalHours,
+			"folders":               s.cfg.SyncFolders(nil),
 		},
 		"storage": map[string]bool{
 			"state_encrypted": s.cfg.DB.EncryptionKey != "",
@@ -192,6 +198,32 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		result = append(result, info{Name: a.Name, Default: a.Default, Connected: s.pool.Probe(a.Name)})
 	}
 	writeJSON(w, result)
+}
+
+// handleCacheSweep is the REST form of cache_sweep (D7).
+// POST /api/cache/sweep
+// Body: {"account","folder","older_than_days","errors_only","all","dry_run"}; dry_run defaults to true.
+func (s *Server) handleCacheSweep(w http.ResponseWriter, r *http.Request) {
+	if s.syncer == nil {
+		http.Error(w, "cache sync not running", http.StatusServiceUnavailable)
+		return
+	}
+	args := map[string]any{}
+	if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	f, dryRun := tools.SweepFilterFromArgs(args)
+	if f.Empty() && !f.All {
+		http.Error(w, "refusing to sweep without a filter: set account, folder, older_than_days, errors_only, or all=true", http.StatusBadRequest)
+		return
+	}
+	res, err := s.syncer.Sweep(r.Context(), f, dryRun)
+	if err != nil {
+		http.Error(w, "cache sweep failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, res)
 }
 
 // ── Stub handlers (iteration 2) ───────────────────────────────────────────────

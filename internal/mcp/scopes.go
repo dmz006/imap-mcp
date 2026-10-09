@@ -63,6 +63,7 @@ var toolScopes = map[string]httpauth.Scope{
 	// admin — operational triggers
 	"sync_account":       httpauth.ScopeAdmin,
 	"trigger_enrichment": httpauth.ScopeAdmin,
+	"cache_sweep":        httpauth.ScopeAdmin,
 }
 
 // scopeMiddleware denies a tool call unless the caller's principal holds the

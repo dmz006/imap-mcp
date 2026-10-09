@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.7.0"
+var Version = "0.8.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -178,6 +178,12 @@ type SyncConfig struct {
 	// MaxMessageMB caps the size of a message whose full body is fetched;
 	// larger messages are cached headers-only (default 25).
 	MaxMessageMB int `yaml:"max_message_mb"`
+	// KeepFlagged keeps \Flagged messages cached (and fetches them) even
+	// outside the window (D7). Default off.
+	KeepFlagged bool `yaml:"keep_flagged"`
+	// VacuumIntervalHours is how often the cache file is VACUUMed after a sync
+	// cycle that removed messages (default 24; 0 disables automatic VACUUM).
+	VacuumIntervalHours int `yaml:"vacuum_interval_hours"`
 }
 
 // AccountSyncConfig overrides SyncConfig for one account. Folders replaces
@@ -272,11 +278,12 @@ func defaults() *Config {
 			AutoSync:   true,
 		},
 		Sync: SyncConfig{
-			IntervalMinutes: 15,
-			FullSyncOnStart: true,
-			Folders:         []string{"INBOX", `\Sent`},
-			WindowDays:      30,
-			MaxMessageMB:    25,
+			IntervalMinutes:     15,
+			FullSyncOnStart:     true,
+			Folders:             []string{"INBOX", `\Sent`},
+			WindowDays:          30,
+			MaxMessageMB:        25,
+			VacuumIntervalHours: 24,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -326,6 +333,16 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("IMAP_MCP_SYNC_MAX_MESSAGE_MB"); v != "" {
 		if d, err := strconv.Atoi(v); err == nil {
 			cfg.Sync.MaxMessageMB = d
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_SYNC_KEEP_FLAGGED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Sync.KeepFlagged = b
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_SYNC_VACUUM_INTERVAL_HOURS"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil {
+			cfg.Sync.VacuumIntervalHours = d
 		}
 	}
 	if v := os.Getenv("IMAP_MCP_SYNC_INTERVAL_MINUTES"); v != "" {

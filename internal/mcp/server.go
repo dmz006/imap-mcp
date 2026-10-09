@@ -90,6 +90,9 @@ func NewServer(
 	s.AddTool(tools.EnrichmentStatusTool(), h.EnrichmentStatus)
 	s.AddTool(tools.TriggerEnrichmentTool(), h.TriggerEnrichment)
 
+	// ── Cache maintenance (cache.db only, never the mailbox) ────────────────
+	s.AddTool(tools.CacheSweepTool(), h.CacheSweep)
+
 	// ── Working directory file I/O (enforced output sandbox) ─────────────────
 	s.AddTool(tools.WriteFileTool(), h.WriteFile)
 	s.AddTool(tools.ReadFileTool(), h.ReadFile)

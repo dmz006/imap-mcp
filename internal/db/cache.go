@@ -272,3 +272,180 @@ func boolInt(b bool) int {
 	}
 	return 0
 }
+
+// SweepFilter selects cached messages for cache_sweep. Zero fields don't
+// filter; All selects everything (a full cache rebuild).
+type SweepFilter struct {
+	Account       string
+	Folder        string
+	OlderThanDays int  // by INTERNALDATE
+	ErrorsOnly    bool // enrichment_status = 'error'
+	All           bool
+}
+
+func (f SweepFilter) where(now time.Time) (string, []any) {
+	var conds []string
+	var args []any
+	if f.Account != "" {
+		conds = append(conds, "account = ?")
+		args = append(args, f.Account)
+	}
+	if f.Folder != "" {
+		conds = append(conds, "folder = ?")
+		args = append(args, f.Folder)
+	}
+	if f.OlderThanDays > 0 {
+		conds = append(conds, "COALESCE(internal_date, date) < ?")
+		args = append(args, now.AddDate(0, 0, -f.OlderThanDays).Unix())
+	}
+	if f.ErrorsOnly {
+		conds = append(conds, "enrichment_status = 'error'")
+	}
+	if len(conds) == 0 {
+		return "1", nil
+	}
+	return strings.Join(conds, " AND "), args
+}
+
+// Empty reports whether the filter selects nothing in particular; callers
+// must set All to sweep the whole cache.
+func (f SweepFilter) Empty() bool {
+	return f.Account == "" && f.Folder == "" && f.OlderThanDays == 0 && !f.ErrorsOnly
+}
+
+// Sweep counts (dryRun) or deletes the selected cached messages, returning
+// per-folder counts. Deleting also resets sync state for affected folders so
+// anything still inside the window is re-fetched. Cache only — never the
+// mailbox.
+func (r *MessageRepo) Sweep(ctx context.Context, f SweepFilter, dryRun bool, now time.Time) ([]FolderCount, error) {
+	where, args := f.where(now)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT account, folder, count(*) FROM messages WHERE `+where+` GROUP BY account, folder ORDER BY account, folder`, args...)
+	if err != nil {
+		return nil, err
+	}
+	var out []FolderCount
+	for rows.Next() {
+		var c FolderCount
+		if err := rows.Scan(&c.Account, &c.Folder, &c.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || dryRun || len(out) == 0 {
+		return out, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE `+where, args...); err != nil {
+		return nil, err
+	}
+	for _, c := range out {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sync_state WHERE account=? AND folder=?`, c.Account, c.Folder); err != nil {
+			return nil, err
+		}
+	}
+	return out, tx.Commit()
+}
+
+// OrphanReport counts what CleanOrphans removed.
+type OrphanReport struct {
+	Vectors      int64 `json:"vectors"`
+	QueueEntries int64 `json:"queue_entries"`
+	FTSRebuilt   bool  `json:"fts_rebuilt"`
+}
+
+// CleanOrphans removes vectors and queue entries whose message is gone and
+// rebuilds the full-text index if its integrity check fails.
+func (r *MessageRepo) CleanOrphans(ctx context.Context) (OrphanReport, error) {
+	var rep OrphanReport
+	res, err := r.db.ExecContext(ctx, `DELETE FROM message_vectors WHERE message_id NOT IN (SELECT id FROM messages)`)
+	if err != nil {
+		return rep, err
+	}
+	rep.Vectors, _ = res.RowsAffected()
+	res, err = r.db.ExecContext(ctx, `DELETE FROM enrichment_queue WHERE message_id NOT IN (SELECT id FROM messages)`)
+	if err != nil {
+		return rep, err
+	}
+	rep.QueueEntries, _ = res.RowsAffected()
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)`); err != nil {
+		if _, err := r.db.ExecContext(ctx, `INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`); err != nil {
+			return rep, fmt.Errorf("rebuild fts: %w", err)
+		}
+		rep.FTSRebuilt = true
+	}
+	return rep, nil
+}
+
+// PruneFolders removes the cache (messages and sync state) of every folder of
+// account that is not in keep — folders dropped from config or gone from the
+// server. Call it only after the account's folder list was read successfully.
+func (r *MessageRepo) PruneFolders(ctx context.Context, account string, keep []string) ([]FolderCount, error) {
+	return r.pruneWhere(ctx, func(a, f string) bool { return a == account && !slicesContains(keep, f) })
+}
+
+// PruneAccounts removes the cache of every account not in keep (accounts
+// removed from config).
+func (r *MessageRepo) PruneAccounts(ctx context.Context, keep []string) ([]FolderCount, error) {
+	return r.pruneWhere(ctx, func(a, _ string) bool { return !slicesContains(keep, a) })
+}
+
+func (r *MessageRepo) pruneWhere(ctx context.Context, drop func(account, folder string) bool) ([]FolderCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT account, folder, (SELECT count(*) FROM messages m WHERE m.account = k.account AND m.folder = k.folder)
+		FROM (SELECT account, folder FROM messages UNION SELECT account, folder FROM sync_state) k`)
+	if err != nil {
+		return nil, err
+	}
+	var stale []FolderCount
+	for rows.Next() {
+		var c FolderCount
+		if err := rows.Scan(&c.Account, &c.Folder, &c.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if drop(c.Account, c.Folder) {
+			stale = append(stale, c)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, c := range stale {
+		if _, err := r.db.ExecContext(ctx, `DELETE FROM messages WHERE account=? AND folder=?`, c.Account, c.Folder); err != nil {
+			return nil, err
+		}
+		if _, err := r.db.ExecContext(ctx, `DELETE FROM sync_state WHERE account=? AND folder=?`, c.Account, c.Folder); err != nil {
+			return nil, err
+		}
+	}
+	return stale, nil
+}
+
+// Compact checkpoints the WAL and, when vacuum is set, rebuilds the file to
+// return freed pages to the filesystem.
+func (r *MessageRepo) Compact(ctx context.Context, vacuum bool) error {
+	if vacuum {
+		if _, err := r.db.ExecContext(ctx, `VACUUM`); err != nil {
+			return err
+		}
+	}
+	_, err := r.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
+}
+
+func slicesContains(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}

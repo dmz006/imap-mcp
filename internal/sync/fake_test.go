@@ -78,7 +78,7 @@ func (f *fakeSource) Status(_ context.Context, name string) (FolderStatus, error
 	return st, nil
 }
 
-func (f *fakeSource) SearchSince(_ context.Context, name string, v uint32, since time.Time) ([]uint32, error) {
+func (f *fakeSource) SearchSince(_ context.Context, name string, v uint32, since time.Time, orFlagged bool) ([]uint32, error) {
 	fo, err := f.folder(name, v)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (f *fakeSource) SearchSince(_ context.Context, name string, v uint32, since
 	f.lastSince = since
 	var out []uint32
 	for _, m := range fo.msgs {
-		if !m.internal.Before(since) {
+		if !m.internal.Before(since) || (orFlagged && slices.Contains(m.flags, `\Flagged`)) {
 			out = append(out, m.uid)
 		}
 	}
@@ -223,11 +223,11 @@ func (h *harness) drain() map[bus.EventType]int {
 
 func TestSyncWindowNewGoneAndOrder(t *testing.T) {
 	h := newHarness(t, false, nil)
-	h.add("INBOX", 1, 40, "old@x")   // outside window
-	h.add("INBOX", 2, 10, "a@x")     //
-	h.add("INBOX", 3, 1, "b@x")      //
-	h.add("Sent Mail", 5, 2, "s@x")  // resolved via \Sent
-	h.add("Archive", 9, 1, "arc@x")  // not configured
+	h.add("INBOX", 1, 40, "old@x")  // outside window
+	h.add("INBOX", 2, 10, "a@x")    //
+	h.add("INBOX", 3, 1, "b@x")     //
+	h.add("Sent Mail", 5, 2, "s@x") // resolved via \Sent
+	h.add("Archive", 9, 1, "arc@x") // not configured
 	h.sync(t)
 
 	if got := h.cached(t, "INBOX"); !slices.Equal(got, []uint32{2, 3}) {
@@ -451,5 +451,88 @@ func TestResolveFolder(t *testing.T) {
 		if _, ok := resolveFolder(miss, folders); ok {
 			t.Errorf("%q should not resolve", miss)
 		}
+	}
+}
+
+func TestKeepFlaggedOutsideWindow(t *testing.T) {
+	h := newHarness(t, false, func(c *config.Config) { c.Sync.KeepFlagged = true })
+	h.add("INBOX", 1, 90, "old-flagged@x", `\Flagged`)
+	h.add("INBOX", 2, 90, "old@x")
+	h.add("INBOX", 3, 1, "new@x")
+	h.sync(t)
+	if got := h.cached(t, "INBOX"); !slices.Equal(got, []uint32{1, 3}) {
+		t.Fatalf("keep_flagged: cached %v, want [1 3]", got)
+	}
+	// Unflag on the server: it ages out of the cache on the next cycle.
+	h.src.folders["INBOX"].msgs[0].flags = nil
+	h.sync(t)
+	if got := h.cached(t, "INBOX"); !slices.Equal(got, []uint32{3}) {
+		t.Fatalf("after unflag: %v", got)
+	}
+}
+
+func TestFolderDroppedFromConfigIsPruned(t *testing.T) {
+	h := newHarness(t, false, nil)
+	h.add("INBOX", 1, 1, "a@x")
+	h.add("Sent Mail", 2, 1, "s@x")
+	h.sync(t)
+	h.s.cfg.Sync.Folders = []string{"INBOX"}
+	h.sync(t)
+	if got := h.cached(t, "Sent Mail"); len(got) != 0 {
+		t.Fatalf("Sent still cached after removal from config: %v", got)
+	}
+	if got := h.cached(t, "INBOX"); len(got) != 1 {
+		t.Fatalf("INBOX lost: %v", got)
+	}
+}
+
+func TestCleanAndVacuumInterval(t *testing.T) {
+	h := newHarness(t, false, func(c *config.Config) { c.Sync.VacuumIntervalHours = 24 })
+	h.add("INBOX", 1, 1, "a@x")
+	h.sync(t)
+	h.s.lastVacuum = h.now
+	h.s.clean(context.Background())
+	if h.s.LastClean().Vacuumed {
+		t.Error("vacuumed before the interval elapsed")
+	}
+	h.now = h.now.Add(25 * time.Hour)
+	h.s.clean(context.Background())
+	if !h.s.LastClean().Vacuumed {
+		t.Error("did not vacuum after the interval")
+	}
+	// Accounts removed from config are pruned.
+	h.s.cfg.Accounts = nil
+	h.s.clean(context.Background())
+	if got := h.cached(t, "INBOX"); len(got) != 0 {
+		t.Errorf("removed account still cached: %v", got)
+	}
+	ev := h.drain()
+	if ev[bus.EventCacheCleaned] < 3 {
+		t.Errorf("cache.cleaned events = %d", ev[bus.EventCacheCleaned])
+	}
+}
+
+func TestSweepThroughSyncer(t *testing.T) {
+	h := newHarness(t, false, nil)
+	h.add("INBOX", 1, 1, "a@x")
+	h.add("INBOX", 2, 2, "b@x")
+	h.sync(t)
+	res, err := h.s.Sweep(context.Background(), db.SweepFilter{Account: "personal"}, true)
+	if err != nil || !res.DryRun || res.Total != 2 {
+		t.Fatalf("dry run = %+v, %v", res, err)
+	}
+	res, err = h.s.Sweep(context.Background(), db.SweepFilter{Account: "personal"}, false)
+	if err != nil || res.Total != 2 || res.Orphans == nil {
+		t.Fatalf("sweep = %+v, %v", res, err)
+	}
+	if got := h.cached(t, "INBOX"); len(got) != 0 {
+		t.Fatal("sweep left rows")
+	}
+	h.sync(t) // still inside the window → re-fetched
+	if got := h.cached(t, "INBOX"); len(got) != 2 {
+		t.Fatalf("re-fetch after sweep = %v", got)
+	}
+	if len(h.src.folders["INBOX"].msgs) != 2 {
+		t.Fatal("sweep touched the mailbox")
 	}
 }

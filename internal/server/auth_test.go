@@ -83,6 +83,8 @@ func TestRESTAuthEndToEnd(t *testing.T) {
 		{"query admin denied for datawatch", "POST", "/api/query", e2eDW, `{}`, 403},
 		{"delete message denied for datawatch", "DELETE", "/api/accounts/a/folders/INBOX/messages/1", e2eDW, `{}`, 403},
 		{"rules write allowed for claude (stub)", "POST", "/api/rules", e2eAll, `{}`, 501},
+		{"cache sweep admin denied for datawatch", "POST", "/api/cache/sweep", e2eDW, `{"all":true}`, 403},
+		{"cache sweep allowed for claude (no syncer in test)", "POST", "/api/cache/sweep", e2eAll, `{"all":true}`, 503},
 		{"unknown path still needs token", "GET", "/api/nope", "", "", 401},
 		{"mcp needs token", "POST", "/mcp", "", `{}`, 401},
 	}

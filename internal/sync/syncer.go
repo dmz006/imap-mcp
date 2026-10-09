@@ -47,8 +47,19 @@ type Syncer struct {
 	// now is the clock (overridable in tests).
 	now func() time.Time
 
-	mu    gosync.Mutex
-	stats map[string]FolderStats // key: account + "\x00" + folder entry
+	mu         gosync.Mutex
+	stats      map[string]FolderStats // key: account + "\x00" + folder entry
+	lastVacuum time.Time
+	lastClean  CleanReport // accumulating during a cycle
+	lastReport CleanReport // last completed pass
+}
+
+// CleanReport summarises one cleaning pass (D7): cache only, never the mailbox.
+type CleanReport struct {
+	StaleFolders []db.FolderCount `json:"stale_folders,omitempty"`
+	Orphans      db.OrphanReport  `json:"orphans"`
+	Vacuumed     bool             `json:"vacuumed"`
+	At           time.Time        `json:"at"`
 }
 
 // FolderStats is the outcome of the last sync of one folder entry.
@@ -69,14 +80,15 @@ type FolderStats struct {
 
 func New(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus, log *slog.Logger) *Syncer {
 	return &Syncer{
-		cfg:       cfg,
-		pool:      pool,
-		db:        database,
-		bus:       b,
-		log:       log,
-		newSource: NewIMAPSource,
-		now:       time.Now,
-		stats:     map[string]FolderStats{},
+		cfg:        cfg,
+		pool:       pool,
+		db:         database,
+		bus:        b,
+		log:        log,
+		newSource:  NewIMAPSource,
+		now:        time.Now,
+		stats:      map[string]FolderStats{},
+		lastVacuum: time.Now(), // no VACUUM right at startup
 	}
 }
 
@@ -149,6 +161,7 @@ func (s *Syncer) record(st FolderStats) {
 }
 
 func (s *Syncer) syncAll(ctx context.Context) {
+	defer s.clean(ctx)
 	for _, name := range s.pool.AccountNames() {
 		if ctx.Err() != nil {
 			return
@@ -178,6 +191,18 @@ func (s *Syncer) syncAccount(ctx context.Context, account string, src Source) er
 		return err
 	}
 	seen := map[string]bool{}
+	defer func() {
+		// Folders dropped from config or gone from the server: drop their cache.
+		keep := make([]string, 0, len(seen))
+		for f := range seen {
+			keep = append(keep, f)
+		}
+		if stale, err := s.db.Messages.PruneFolders(ctx, account, keep); err != nil {
+			s.log.Warn("prune folders failed", "account", account, "err", err)
+		} else {
+			s.addStale(stale)
+		}
+	}()
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -209,6 +234,114 @@ func (s *Syncer) syncAccount(ctx context.Context, account string, src Source) er
 	return nil
 }
 
+func (s *Syncer) addStale(stale []db.FolderCount) {
+	if len(stale) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.lastClean.StaleFolders = append(s.lastClean.StaleFolders, stale...)
+	s.mu.Unlock()
+	for _, c := range stale {
+		s.log.Info("dropped cache of folder no longer synced", "account", c.Account, "folder", c.Folder, "messages", c.Count)
+	}
+}
+
+// clean runs after every sync cycle: drop accounts no longer configured,
+// remove orphans, checkpoint the WAL, and VACUUM at most every
+// vacuum_interval_hours. Cache only.
+func (s *Syncer) clean(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	names := make([]string, 0, len(s.cfg.Accounts))
+	for _, a := range s.cfg.Accounts {
+		names = append(names, a.Name)
+	}
+	stale, err := s.db.Messages.PruneAccounts(ctx, names)
+	if err != nil {
+		s.log.Warn("prune accounts failed", "err", err)
+	}
+	s.addStale(stale)
+	orphans, err := s.db.Messages.CleanOrphans(ctx)
+	if err != nil {
+		s.log.Warn("orphan cleanup failed", "err", err)
+	}
+	s.mu.Lock()
+	interval := time.Duration(s.cfg.Sync.VacuumIntervalHours) * time.Hour
+	vacuum := interval > 0 && s.now().Sub(s.lastVacuum) >= interval
+	s.mu.Unlock()
+	if err := s.db.Messages.Compact(ctx, vacuum); err != nil {
+		s.log.Warn("cache compact failed", "vacuum", vacuum, "err", err)
+		vacuum = false
+	}
+	s.mu.Lock()
+	if vacuum {
+		s.lastVacuum = s.now()
+	}
+	s.lastClean.Orphans, s.lastClean.Vacuumed, s.lastClean.At = orphans, vacuum, s.now()
+	rep := s.lastClean
+	s.lastClean = CleanReport{}
+	s.mu.Unlock()
+	s.publishClean(rep)
+}
+
+func (s *Syncer) publishClean(rep CleanReport) {
+	s.mu.Lock()
+	s.lastReport = rep
+	s.mu.Unlock()
+	s.bus.PublishAsync(bus.Event{Type: bus.EventCacheCleaned, Payload: rep})
+}
+
+// LastClean returns the most recent cleaning pass.
+func (s *Syncer) LastClean() CleanReport {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastReport
+}
+
+// SweepResult is the outcome of an on-demand cache_sweep.
+type SweepResult struct {
+	DryRun  bool             `json:"dry_run"`
+	Folders []db.FolderCount `json:"folders"`
+	Total   int64            `json:"total"`
+	Orphans *db.OrphanReport `json:"orphans,omitempty"`
+	Note    string           `json:"note,omitempty"`
+}
+
+// Sweep is the on-demand cache_sweep (D7): with dryRun it only counts. A real
+// sweep deletes the selected cached messages (never mailbox mail), resets
+// their folders' sync state, cleans orphans and VACUUMs. Anything still inside
+// the sync window comes back on the next cycle.
+func (s *Syncer) Sweep(ctx context.Context, f db.SweepFilter, dryRun bool) (SweepResult, error) {
+	res := SweepResult{DryRun: dryRun}
+	counts, err := s.db.Messages.Sweep(ctx, f, dryRun, s.now())
+	if err != nil {
+		return res, err
+	}
+	res.Folders = counts
+	for _, c := range counts {
+		res.Total += c.Count
+	}
+	if dryRun {
+		res.Note = "dry run: nothing deleted; repeat with dry_run=false to delete these cached copies (the mailbox is never touched)"
+		return res, nil
+	}
+	orphans, err := s.db.Messages.CleanOrphans(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.Orphans = &orphans
+	if err := s.db.Messages.Compact(ctx, true); err != nil {
+		return res, err
+	}
+	s.mu.Lock()
+	s.lastVacuum = s.now()
+	s.mu.Unlock()
+	res.Note = "deleted from the cache only; messages still inside the sync window are re-fetched on the next cycle"
+	s.bus.PublishAsync(bus.Event{Type: bus.EventCacheCleaned, Payload: res})
+	return res, nil
+}
+
 // syncFolder brings one folder's cache in line with the server inside the
 // window. st carries the folder identity in and the counters out.
 func (s *Syncer) syncFolder(ctx context.Context, src Source, st *FolderStats) error {
@@ -235,7 +368,7 @@ func (s *Syncer) syncFolder(ctx context.Context, src Source, st *FolderStats) er
 
 	y, m, d := s.now().AddDate(0, 0, -st.WindowDays).Date()
 	since := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-	server, err := src.SearchSince(ctx, folder, status.UIDValidity, since)
+	server, err := src.SearchSince(ctx, folder, status.UIDValidity, since, s.cfg.Sync.KeepFlagged)
 	if err != nil {
 		return err
 	}

@@ -54,7 +54,9 @@ type FlagUpdate struct {
 type Source interface {
 	Folders(ctx context.Context) ([]Folder, error)
 	Status(ctx context.Context, folder string) (FolderStatus, error)
-	SearchSince(ctx context.Context, folder string, validity uint32, since time.Time) ([]uint32, error)
+	// SearchSince returns UIDs with INTERNALDATE on/after since, plus every
+	// \\Flagged message when orFlagged is set.
+	SearchSince(ctx context.Context, folder string, validity uint32, since time.Time, orFlagged bool) ([]uint32, error)
 	Fetch(ctx context.Context, folder string, validity uint32, uids []uint32, maxBytes int64) ([]Fetched, error)
 	Flags(ctx context.Context, folder string, validity uint32, uids []uint32, changedSince uint64) ([]FlagUpdate, error)
 }
@@ -121,13 +123,19 @@ func (s *imapSource) Status(ctx context.Context, folder string) (FolderStatus, e
 	return s.examine(folder)
 }
 
-func (s *imapSource) SearchSince(ctx context.Context, folder string, validity uint32, since time.Time) ([]uint32, error) {
+func (s *imapSource) SearchSince(ctx context.Context, folder string, validity uint32, since time.Time, orFlagged bool) ([]uint32, error) {
 	s.conn.Lock()
 	defer s.conn.Unlock()
 	if err := s.examineChecked(folder, validity); err != nil {
 		return nil, err
 	}
-	sd, err := s.conn.Client().UIDSearch(&imaplib.SearchCriteria{Since: since}, nil).Wait()
+	criteria := &imaplib.SearchCriteria{Since: since}
+	if orFlagged {
+		criteria = &imaplib.SearchCriteria{Or: [][2]imaplib.SearchCriteria{{
+			{Since: since}, {Flag: []imaplib.Flag{imaplib.FlagFlagged}},
+		}}}
+	}
+	sd, err := s.conn.Client().UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return nil, err
 	}

@@ -18,11 +18,12 @@ import (
 // Pipeline processes messages from the enrichment queue: embeds, classifies,
 // extracts KG entities, and detects anomalies using local Ollama models.
 type Pipeline struct {
-	cfg    config.EnrichmentConfig
-	db     *db.DB
-	ollama *OllamaClient
-	bus    *bus.Bus
-	log    *slog.Logger
+	cfg     config.EnrichmentConfig
+	db      *db.DB
+	ollama  *OllamaClient
+	bus     *bus.Bus
+	log     *slog.Logger
+	cleaner Cleaner
 }
 
 // EnrichResult holds the output of enriching a single message.
@@ -51,11 +52,12 @@ type AnomalyHint struct {
 
 func NewPipeline(cfg config.EnrichmentConfig, database *db.DB, b *bus.Bus, log *slog.Logger) *Pipeline {
 	return &Pipeline{
-		cfg:    cfg,
-		db:     database,
-		ollama: NewOllamaClient(cfg.OllamaURL),
-		bus:    b,
-		log:    log,
+		cfg:     cfg,
+		db:      database,
+		ollama:  NewOllamaClient(cfg.OllamaURL),
+		bus:     b,
+		log:     log,
+		cleaner: NopCleaner{},
 	}
 }
 
@@ -151,6 +153,7 @@ func (p *Pipeline) processBatch(ctx context.Context) error {
 
 func (p *Pipeline) enrich(ctx context.Context, messageID int64, subject, body, fromAddr, fromName string) (*EnrichResult, error) {
 	result := &EnrichResult{MessageID: messageID}
+	subject, body = p.cleaner.Clean(subject, body)
 
 	// 1. Embed subject + first 500 chars of body for semantic search
 	embedText := subject
