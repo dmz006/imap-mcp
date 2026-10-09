@@ -321,9 +321,12 @@ they can be replaced or extended without touching call sites.
 - **2026-10-09 — D15 (datawatch secrets path):** `${secret:name}` resolves
   only through datawatch's external-service endpoint
   `GET /api/external/secrets/{name}` (datawatch ≥ v8.75.0), authenticated with
-  the imap-mcp service token. The operator mints that token in a real terminal
-  (`datawatch secrets mint-service-token imap-mcp`), never through an agent; it
-  reaches imap-mcp through an `${ENV}` reference only. Secrets are scoped
+  the imap-mcp service token, which reaches imap-mcp through an `${ENV}`
+  reference only. **Amended 2026-10-09:** the operator authorized the agent to
+  mint the token and set the scoped secrets via its datawatch access. Secret
+  values must never be printed, logged, committed or otherwise placed in a
+  transcript: they go straight from a generator into datawatch or into a 0600
+  file outside every repo. Secrets are scoped
   `service:imap-mcp`. There is no fallback to the agent endpoint.
 - **2026-10-09 — D15a (datawatch TLS trust):** datawatch's self-signed
   certificate is pinned with `datawatch.ca_file`, added to the system roots
@@ -336,6 +339,10 @@ they can be replaced or extended without touching call sites.
   per-webhook secret that imap-mcp generates and shows once. Only https URLs,
   or http to loopback, are allowed, and redirects are never followed.
   Registration needs the `admin` scope.
+- **2026-10-09 — D17 (`/api/query`):** the query endpoint takes structured
+  JSON over fixed views (`messages`, `senders`, `anomalies`, `kg`) with
+  allowlisted fields, compiled to parameterized SQL. It never accepts raw SQL.
+  Message bodies are returned only when a query names them explicitly.
 
 ---
 
