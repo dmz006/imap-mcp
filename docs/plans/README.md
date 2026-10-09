@@ -1,5 +1,11 @@
 # Plans, bugs & backlog
 
+## Active plans
+
+| Date | Plan | Status |
+|------|------|--------|
+| 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | Planned — decisions pending |
+
 ## Bugs
 
 | Date | Bug | Status |
@@ -10,5 +16,5 @@
 
 | Item | Notes |
 |------|-------|
-| Background sync is a scaffold | `internal/sync/syncer.go` `syncFolder` selects the folder and stamps `sync_state.last_synced` but fetches no messages (`messages` stays empty). The `sync.interval_minutes` loop runs but caches nothing, so enrichment, FTS, and semantic search have no data. Live tools and the rules engine query IMAP directly and are unaffected. |
+| Background sync is a scaffold (→ [plan](2026-10-08-sync-cache.md)) | `internal/sync/syncer.go` `syncFolder` selects the folder and stamps `sync_state.last_synced` but fetches no messages (`messages` stays empty). The `sync.interval_minutes` loop runs but caches nothing, so enrichment, FTS, and semantic search have no data. Live tools and the rules engine query IMAP directly and are unaffected. |
 | PGP inbound gate | Declared but fails closed until implemented. |
