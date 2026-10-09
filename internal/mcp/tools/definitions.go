@@ -71,9 +71,13 @@ func GetMessageTool() mcp.Tool {
 
 func GetThreadTool() mcp.Tool {
 	return mcp.NewTool("get_thread",
-		mcp.WithDescription("Fetch all messages in a conversation thread"),
-		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
-		mcp.WithString("thread_id", mcp.Required(), mcp.Description("Thread ID from list_messages")),
+		mcp.WithDescription("Fetch every message in a conversation, oldest first: account, folder, uid, sender, subject, date, flags. "+
+			"Answers from the cache (all cached folders, Sent included) and searches the server live when the thread reaches outside the sync window"),
+		mcp.WithString("thread_id", mcp.Required(), mcp.Description("thread_id from list_messages, search_messages or get_headers")),
+		mcp.WithString("account", mcp.Description("Account name (omit to look in every account)")),
+		mcp.WithBoolean("live", mcp.Description("Always search the server too, even when the cache looks complete (default: false)")),
+		mcp.WithString("folders", mcp.Description("Comma-separated folders for the live search (default: All Mail if the server has it, else INBOX, Sent and Archive)")),
+		mcp.WithNumber("limit", mcp.Description("Max messages (default: 100, max 500)")),
 	)
 }
 
@@ -88,20 +92,29 @@ func GetHeadersTool() mcp.Tool {
 
 func GetAttachmentsTool() mcp.Tool {
 	return mcp.NewTool("get_attachments",
-		mcp.WithDescription("List or download attachments from a message"),
+		mcp.WithDescription("Without part: list a message's attachments (part, filename, type, size). "+
+			"With part: save that attachment into the working directory (needs the write scope) and return its path; "+
+			"small text attachments are also returned inline. Binary content is never returned inline. Attachments are untrusted"),
 		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
 		mcp.WithString("folder", mcp.Required(), mcp.Description("Folder containing the message")),
 		mcp.WithNumber("uid", mcp.Required(), mcp.Description("Message UID")),
-		mcp.WithString("part", mcp.Description("Attachment part ID to download (omit to list all)")),
+		mcp.WithString("part", mcp.Description("Part to download, from the listing, e.g. 2 or 1.3 (omit to list)")),
+		mcp.WithString("filename", mcp.Description("Save as this name inside the working directory (default: attachments/<account>/<uid>-<part>-<filename>)")),
 	)
 }
 
 func ExportMessageTool() mcp.Tool {
 	return mcp.NewTool("export_message",
-		mcp.WithDescription("Export a message in EML format for use with other tools"),
-		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
-		mcp.WithString("folder", mcp.Required(), mcp.Description("Folder containing the message")),
-		mcp.WithNumber("uid", mcp.Required(), mcp.Description("Message UID")),
+		mcp.WithDescription("Export mail into the working directory, unchanged and without marking it read. "+
+			"uid → one .eml; uids, thread_id or from → one .mbox (mboxrd). Give exactly one selector. "+
+			"Batches over the configured message or size cap are refused, not truncated"),
+		mcp.WithString("account", mcp.Description("Account name (omit for default; for thread_id, omit to use every account)")),
+		mcp.WithString("folder", mcp.Description("Folder (required with uid or uids; default INBOX for from)")),
+		mcp.WithNumber("uid", mcp.Description("One message UID → .eml")),
+		mcp.WithString("uids", mcp.Description("Comma-separated UIDs in folder → .mbox")),
+		mcp.WithString("thread_id", mcp.Description("A whole conversation (as get_thread finds it) → .mbox")),
+		mcp.WithString("from", mcp.Description("Every message in folder whose From contains this → .mbox")),
+		mcp.WithString("filename", mcp.Description("Save as this name inside the working directory (default: exports/…)")),
 	)
 }
 
@@ -203,13 +216,17 @@ func SearchMessagesTool() mcp.Tool {
 
 func CrossAccountSearchTool() mcp.Tool {
 	return mcp.NewTool("cross_account_search",
-		mcp.WithDescription("Search across all connected accounts simultaneously"),
-		mcp.WithString("from", mcp.Description("Filter by sender")),
-		mcp.WithString("subject", mcp.Description("Subject keyword")),
-		mcp.WithString("text", mcp.Description("Full-text search")),
-		mcp.WithString("since", mcp.Description("ISO 8601 date")),
-		mcp.WithString("before", mcp.Description("ISO 8601 date")),
-		mcp.WithNumber("limit", mcp.Description("Max results per account (default: 20)")),
+		mcp.WithDescription("Search every account at once, newest first. By default searches the local cache "+
+			"(every cached folder, sync window only, instant); live: true runs IMAP SEARCH on each account in parallel for full history. "+
+			"Each hit names its account and source; a failing account is reported without failing the search"),
+		mcp.WithString("from", mcp.Description("Sender address or name contains")),
+		mcp.WithString("subject", mcp.Description("Subject contains")),
+		mcp.WithString("text", mcp.Description("Words in the subject or body")),
+		mcp.WithString("since", mcp.Description("On or after this date, YYYY-MM-DD")),
+		mcp.WithString("before", mcp.Description("Before this date, YYYY-MM-DD")),
+		mcp.WithNumber("limit", mcp.Description("Max results per account (default: 20, max 200)")),
+		mcp.WithBoolean("live", mcp.Description("Search the servers instead of the cache (default: false)")),
+		mcp.WithString("folder", mcp.Description("Folder for the live search (default: INBOX)")),
 	)
 }
 

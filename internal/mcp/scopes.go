@@ -66,8 +66,20 @@ var toolScopes = map[string]httpauth.Scope{
 	"cache_sweep":        httpauth.ScopeAdmin,
 }
 
+// argScopes adds a scope requirement that depends on a call's arguments: a
+// tool listed in toolScopes for its read form needs more for its write form.
+var argScopes = map[string]func(args map[string]any) httpauth.Scope{
+	// Listing attachments is a read; downloading one writes into working_dir (D24).
+	"get_attachments": func(args map[string]any) httpauth.Scope {
+		if part, _ := args["part"].(string); part != "" {
+			return httpauth.ScopeWrite
+		}
+		return ""
+	},
+}
+
 // scopeMiddleware denies a tool call unless the caller's principal holds the
-// tool's scope. It is installed only when HTTP auth is enforced, so a missing
+// tool's scope (and any argument-dependent scope from argScopes). It is installed only when HTTP auth is enforced, so a missing
 // principal is itself a denial (fail closed).
 func scopeMiddleware(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -76,8 +88,14 @@ func scopeMiddleware(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		if !ok {
 			return mcp.NewToolResultError(fmt.Sprintf("forbidden: tool %q has no scope mapping", name)), nil
 		}
-		if !httpauth.FromContext(ctx).Has(scope) {
+		p := httpauth.FromContext(ctx)
+		if !p.Has(scope) {
 			return mcp.NewToolResultError(fmt.Sprintf("forbidden: tool %q requires scope %q", name, scope)), nil
+		}
+		if extra, ok := argScopes[name]; ok {
+			if need := extra(req.GetArguments()); need != "" && !p.Has(need) {
+				return mcp.NewToolResultError(fmt.Sprintf("forbidden: tool %q with these arguments requires scope %q", name, need)), nil
+			}
 		}
 		return next(ctx, req)
 	}

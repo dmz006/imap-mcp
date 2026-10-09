@@ -84,3 +84,37 @@ func principal(t *testing.T, value string, scopes ...httpauth.Scope) *httpauth.P
 	serveWithToken(h, value)
 	return p
 }
+
+// TestAttachmentDownloadNeedsWrite: listing attachments is a read, but a
+// download writes into working_dir, so it needs the write scope (D24).
+func TestAttachmentDownloadNeedsWrite(t *testing.T) {
+	called := false
+	h := scopeMiddleware(func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		called = true
+		return mcp.NewToolResultText("ok"), nil
+	})
+	call := func(ctx context.Context, args map[string]any) bool {
+		called = false
+		req := mcp.CallToolRequest{}
+		req.Params.Name = "get_attachments"
+		req.Params.Arguments = args
+		res, err := h(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return !res.IsError && called
+	}
+	ro := httpauth.WithPrincipal(context.Background(), principal(t, "ro-token-attachments", httpauth.ScopeRead))
+	rw := httpauth.WithPrincipal(context.Background(), principal(t, "rw-token-attachments", httpauth.ScopeRead, httpauth.ScopeWrite))
+	list := map[string]any{"folder": "INBOX", "uid": float64(1)}
+	download := map[string]any{"folder": "INBOX", "uid": float64(1), "part": "2"}
+	if !call(ro, list) {
+		t.Error("read token should list attachments")
+	}
+	if call(ro, download) {
+		t.Error("read token must not download an attachment")
+	}
+	if !call(rw, download) {
+		t.Error("read+write token should download an attachment")
+	}
+}

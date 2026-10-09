@@ -107,6 +107,14 @@ func (s *Server) Router() http.Handler {
 	// ── Event stream (long-lived: no request timeout) ───────────────────────
 	r.With(read).Get("/api/events", s.handleEventStream)
 
+	// ── Content downloads (D27): write scope, a longer timeout for big exports.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Timeout(5 * time.Minute))
+		r.With(write).Get("/api/accounts/{account}/folders/{folder}/messages/{uid}/attachments/{part}", s.handleDownloadAttachment)
+		r.With(write).Get("/api/accounts/{account}/folders/{folder}/messages/{uid}/export.eml", s.handleExportEML)
+		r.With(write).Post("/api/export", s.handleExportMbox)
+	})
+
 	// Every other route gets a 30 s request timeout.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Timeout(30 * time.Second))
@@ -127,10 +135,13 @@ func (s *Server) Router() http.Handler {
 		r.With(write).Delete("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleDeleteMessage)
 		r.With(write).Put("/api/accounts/{account}/folders/{folder}/messages/{uid}/flags", s.handleSetFlags)
 		r.With(write).Post("/api/accounts/{account}/folders/{folder}/messages/{uid}/move", s.handleMoveMessage)
+		r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages/{uid}/attachments", s.handleListAttachments)
+		r.With(read).Get("/api/threads/{thread_id}", s.handleGetThread)
 
 		// ── Search ───────────────────────────────────────────────────────────────
 		r.With(read).Get("/api/search", s.handleSearch)
 		r.With(read).Post("/api/search/semantic", s.handleSemanticSearch)
+		r.With(read).Get("/api/search/cross", s.handleCrossSearch)
 
 		// ── Analytics (cache-based, fast) ────────────────────────────────────────
 		r.With(read).Get("/api/accounts/{account}/stats", s.handleAccountStats)
@@ -188,6 +199,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"folders":               s.cfg.SyncFolders(nil),
 		},
 		"enrichment": s.enrichmentHealth(r),
+		"tools": map[string]int{
+			"attachment_inline_kb": s.cfg.Tools.AttachmentInlineKB,
+			"attachment_max_mb":    s.cfg.Tools.AttachmentMaxMB,
+			"export_max_messages":  s.cfg.Tools.ExportMaxMessages,
+			"export_max_mb":        s.cfg.Tools.ExportMaxMB,
+		},
 		"storage": map[string]bool{
 			"state_encrypted": s.cfg.DB.EncryptionKey != "",
 			"cache_encrypted": s.cfg.DB.Cache.EncryptionKey != "",
