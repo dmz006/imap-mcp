@@ -19,3 +19,4 @@
 |------|-------|
 | Background sync is a scaffold (→ [plan](2026-10-08-sync-cache.md)) | `internal/sync/syncer.go` `syncFolder` selects the folder and stamps `sync_state.last_synced` but fetches no messages (`messages` stays empty). The `sync.interval_minutes` loop runs but caches nothing, so enrichment, FTS, and semantic search have no data. Live tools and the rules engine query IMAP directly and are unaffected. |
 | PGP inbound gate | Declared but fails closed until implemented. |
+| Email community skills (operator request 2026-10-08) | Review `skills/imap-mcp/SKILL.md` and the published `skills/comms/imap-mcp` in datawatch-community each iteration 2 release; update it or add new email skills (e.g. auth/token setup, cache management) as the surface changes. Tracked as part of P6. |

@@ -137,7 +137,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | P3 | 0.8.0 | Cleaning: auto purge + orphans + VACUUM, `cache_sweep` (dry-run default), `\Flagged` exemption, window-resize purge/backfill; content-cleaning hook point | D7, D8 | Planned |
 | P4 | 0.9.0 | Load + enrichment: provider interface (Ollama / datawatch proxy), two-lane priority, caps/backoff, datawatch capacity yield, quiet hours, `/api/health` stats | D11a, D11b | Planned |
 | P5 | 0.10.0 | REST full platform: shared service layer (MCP + REST), all stub routes (reads, writes, rules, enrichment), webhook delivery, `/api/query` DSL | D13, D13a | Planned |
-| P6 | each release | Docs + release per phase: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation notes | all | Ongoing |
+| P6 | each release | Docs + release per phase: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation notes; **email community skill** (`skills/imap-mcp/SKILL.md` → datawatch-community `skills/comms/imap-mcp`) updated per release, or new email skills added, covering new tools (`cache_sweep`), auth/token setup, REST routes, sync window and encryption config | all | Ongoing |
 
 Each phase follows AGENT.md:
 - `go build ./...` and `go test ./...` pass, with functional tests (Tested=Yes).
