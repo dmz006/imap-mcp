@@ -308,6 +308,12 @@ type KGEdge struct {
 	ValidFrom   int64   `json:"valid_from,omitempty"`
 	ValidTo     int64   `json:"valid_to,omitempty"`
 	Confidence  float64 `json:"confidence"`
+	// Weight is the number of messages supporting the edge; LastSeen the
+	// latest one. Current is false once valid_to is set (stale history).
+	Weight     int             `json:"weight"`
+	LastSeen   int64           `json:"last_seen,omitempty"`
+	Current    bool            `json:"current"`
+	Properties json.RawMessage `json:"properties,omitempty"`
 }
 
 // KGQuery returns relationships touching an entity (as subject or object).
@@ -329,9 +335,9 @@ func (s *Service) KGQuery(ctx context.Context, p KGParams) ([]KGEdge, error) {
 		where, args = append(where, "(a.entity_type = ? OR b.entity_type = ?)"), append(args, p.EntityType, p.EntityType)
 	}
 	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT a.name, a.entity_type, r.predicate, b.name, b.entity_type,
-		COALESCE(r.valid_from,0), COALESCE(r.valid_to,0), COALESCE(r.confidence,1)
+		COALESCE(r.valid_from,0), COALESCE(r.valid_to,0), COALESCE(r.confidence,1), r.weight, COALESCE(r.last_seen,0), COALESCE(r.properties,'')
 		FROM kg_relationships r JOIN kg_entities a ON a.id = r.subject_id JOIN kg_entities b ON b.id = r.object_id
-		WHERE `+strings.Join(where, " AND ")+` ORDER BY r.created_at DESC LIMIT ?`, append(args, p.Limit)...)
+		WHERE `+strings.Join(where, " AND ")+` ORDER BY r.weight DESC, r.last_seen DESC LIMIT ?`, append(args, p.Limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -339,8 +345,14 @@ func (s *Service) KGQuery(ctx context.Context, p KGParams) ([]KGEdge, error) {
 	out := []KGEdge{}
 	for rows.Next() {
 		var e KGEdge
-		if err := rows.Scan(&e.Subject, &e.SubjectType, &e.Predicate, &e.Object, &e.ObjectType, &e.ValidFrom, &e.ValidTo, &e.Confidence); err != nil {
+		var props string
+		if err := rows.Scan(&e.Subject, &e.SubjectType, &e.Predicate, &e.Object, &e.ObjectType, &e.ValidFrom, &e.ValidTo, &e.Confidence,
+			&e.Weight, &e.LastSeen, &props); err != nil {
 			return nil, err
+		}
+		e.Current = e.ValidTo == 0
+		if props != "" && json.Valid([]byte(props)) {
+			e.Properties = json.RawMessage(props)
 		}
 		out = append(out, e)
 	}

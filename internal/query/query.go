@@ -136,6 +136,8 @@ var Views = map[string]*View{
 		{"valid_to", "r.valid_to", KindTime, false, false},
 		{"current", "(r.valid_to IS NULL)", KindBool, false, false},
 		{"confidence", "r.confidence", KindReal, true, false},
+		{"weight", "r.weight", KindInt, true, false},
+		{"last_seen", "r.last_seen", KindTime, false, false},
 	}},
 }
 

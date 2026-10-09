@@ -11,7 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-message"
+	"github.com/emersion/go-message/mail"
 	"github.com/emersion/go-message/textproto"
+
+	imapsync "github.com/dmz006/imap-mcp/internal/sync"
 )
 
 // Address is one mailbox from an envelope.
@@ -30,16 +34,31 @@ type Header struct {
 	From      Address
 	To, Cc    []Address
 
-	List   bool   // List-Id or List-Unsubscribe present
-	Bulk   bool   // Precedence: bulk, list or junk
-	Auto   bool   // Auto-Submitted present and not "no"
-	DKIM   string // pass | fail | "" (no result); from the receiving server's Authentication-Results
-	DMARC  string // pass | fail | ""
-	NoMsID bool   // Message-ID was missing
+	List  bool   // List-Id or List-Unsubscribe present
+	Bulk  bool   // Precedence: bulk, list or junk
+	Auto  bool   // Auto-Submitted present and not "no"
+	DKIM  string // pass | fail | "" (no result); from the receiving server's Authentication-Results
+	DMARC string // pass | fail | ""
+	// References is the References header, oldest first (thread root first).
+	References []string
 }
 
+// ThreadRoot is the thread key, derived exactly as the cache and get_thread
+// derive it (sync.ThreadID).
+func (h Header) ThreadRoot() string {
+	var irt []string
+	if h.InReplyTo != "" {
+		irt = []string{h.InReplyTo}
+	}
+	return imapsync.ThreadID(h.References, irt, h.MessageID)
+}
+
+// Conversation reports whether the message is person-to-person mail rather
+// than list, bulk or automated mail.
+func (h Header) Conversation() bool { return !h.List && !h.Bulk && !h.Auto }
+
 // scanFields are the header fields fetched with BODY.PEEK[HEADER.FIELDS (...)].
-var scanFields = []string{"List-Id", "List-Unsubscribe", "Precedence", "Auto-Submitted", "Authentication-Results"}
+var scanFields = []string{"List-Id", "List-Unsubscribe", "Precedence", "Auto-Submitted", "Authentication-Results", "References"}
 
 var (
 	dkimRe  = regexp.MustCompile(`(?i)\bdkim\s*=\s*([a-z]+)`)
@@ -62,6 +81,9 @@ func parseFields(h *Header, raw []byte) {
 	}
 	if v := strings.ToLower(strings.TrimSpace(hdr.Get("Auto-Submitted"))); v != "" && v != "no" {
 		h.Auto = true
+	}
+	if refs, err := (&mail.Header{Header: message.Header{Header: hdr}}).MsgIDList("References"); err == nil {
+		h.References = refs
 	}
 	if ar := hdr.Get("Authentication-Results"); ar != "" { // Get returns the first (topmost)
 		h.DKIM = authResult(dkimRe, ar)

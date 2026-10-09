@@ -36,12 +36,13 @@ func (st *store) state(ctx context.Context, account, folder string) (scanState, 
 // applied reports what one batch changed.
 type applied struct {
 	New, Duplicate int
+	Edges          int // messages whose graph edges were added
 }
 
 // apply records one batch and the folder's new progress in a single
 // transaction, so a crash between batches never counts a message twice:
 // either the batch and its progress are both stored, or neither is.
-func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool) (applied, error) {
+func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool, kg *kgTarget) (applied, error) {
 	var res applied
 	tx, err := st.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -49,9 +50,7 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	var last uint32
 	for _, h := range b.Headers {
-		last = max(last, h.UID)
 		if h.From.Addr == "" || h.Date.IsZero() {
 			continue
 		}
@@ -60,7 +59,6 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 			hash = keyHash(folder, h)
 		}
 		outgoing := own[h.From.Addr]
-		var senderID sql.NullInt64
 		var replyHash sql.NullInt64
 		if outgoing {
 			if rh := msgHash(h.InReplyTo); rh != 0 {
@@ -74,15 +72,50 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 		}
 		if n, _ := r.RowsAffected(); n == 0 {
 			res.Duplicate++ // already seen in another folder or label (D28)
-			continue
+		} else {
+			res.New++
+			if err := st.profile(ctx, tx, account, hash, h, outgoing, own); err != nil {
+				return res, err
+			}
 		}
-		res.New++
+		if kg != nil {
+			// Claim the row (a write), so each message adds its edges once,
+			// including on the one-time rescan after an upgrade.
+			r, err := tx.ExecContext(ctx, `UPDATE intel_messages SET kg_done = 1 WHERE account = ? AND msg_hash = ? AND kg_done = 0`, account, hash)
+			if err != nil {
+				return res, err
+			}
+			if n, _ := r.RowsAffected(); n > 0 {
+				if kg.w == nil || kg.w.tx != tx {
+					kg.w = newKGWriter(ctx, tx)
+				}
+				if err := kg.w.addMessage(h, kg.owner, own); err != nil {
+					return res, err
+				}
+				res.Edges++
+			}
+		}
+	}
+	return st.finish(ctx, tx, res, account, folder, validity, b)
+}
+
+// kgTarget carries the knowledge-graph state for a batch: the mailbox
+// owner's address and a writer bound to the batch transaction.
+type kgTarget struct {
+	owner string
+	w     *kgWriter
+}
+
+// profile updates sender profiles for one newly indexed message.
+func (st *store) profile(ctx context.Context, tx *sql.Tx, account string, hash int64, h Header, outgoing bool, own map[string]bool) error {
+	var senderID sql.NullInt64
+	{
 		when := h.Date.Unix()
 		if outgoing {
 			seen := map[string]bool{}
 			for _, a := range append(append([]Address{}, h.To...), h.Cc...) {
 				if a.Addr == "" || own[a.Addr] || seen[a.Addr] {
-					continue
+					return nil
 				}
 				seen[a.Addr] = true
 				if _, err := tx.ExecContext(ctx, `INSERT INTO senders(address, name, domain, first_seen, last_seen, sent_count, dirty)
@@ -93,14 +126,14 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 						last_seen = MAX(COALESCE(senders.last_seen, excluded.last_seen), excluded.last_seen),
 						sent_count = senders.sent_count + 1, dirty = 1, updated_at = unixepoch()`,
 					a.Addr, a.Name, domainOf(a.Addr), when, when); err != nil {
-					return res, err
+					return err
 				}
 			}
-			continue
+			return nil
 		}
 		dkimP, dkimF := passFail(h.DKIM)
 		dmarcP, dmarcF := passFail(h.DMARC)
-		err = tx.QueryRowContext(ctx, `INSERT INTO senders(address, name, domain, first_seen, last_seen, message_count,
+		err := tx.QueryRowContext(ctx, `INSERT INTO senders(address, name, domain, first_seen, last_seen, message_count,
 				list_count, bulk_count, auto_count, dkim_pass, dkim_fail, dmarc_pass, dmarc_fail, dirty)
 			VALUES(?,?,?,?,?,1,?,?,?,?,?,?,?,1)
 			ON CONFLICT(address) DO UPDATE SET
@@ -120,14 +153,22 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 			h.From.Addr, h.From.Name, domainOf(h.From.Addr), when, when,
 			boolInt(h.List), boolInt(h.Bulk), boolInt(h.Auto), dkimP, dkimF, dmarcP, dmarcF).Scan(&senderID)
 		if err != nil {
-			return res, err
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE intel_messages SET sender_id=? WHERE account=? AND msg_hash=?`,
 			senderID, account, hash); err != nil {
-			return res, err
+			return err
 		}
 	}
+	return nil
+}
 
+// finish records the folder's progress and commits the batch.
+func (st *store) finish(ctx context.Context, tx *sql.Tx, res applied, account, folder string, validity uint32, b Batch) (applied, error) {
+	var last uint32
+	for _, h := range b.Headers {
+		last = max(last, h.UID)
+	}
 	complete := !b.More
 	if _, err := tx.ExecContext(ctx, `INSERT INTO intel_scan(account, folder, uidvalidity, last_uid, scanned, completed_at, updated_at)
 		VALUES(?,?,?,?,?,CASE WHEN ? THEN unixepoch() END, unixepoch())

@@ -141,7 +141,7 @@ func TestSenderKGAnomalies(t *testing.T) {
 		t.Fatalf("history = %+v %v", hist, err)
 	}
 	edges, _ := s.KGQuery(ctx, KGParams{Entity: "Example Inc"})
-	if len(edges) != 1 || edges[0].Predicate != "belongs_to" {
+	if len(edges) != 1 || edges[0].Predicate != "belongs_to" || edges[0].Weight != 1 || !edges[0].Current {
 		t.Fatalf("kg = %+v", edges)
 	}
 	if e, _ := s.KGQuery(ctx, KGParams{Predicate: "manages"}); len(e) != 0 {

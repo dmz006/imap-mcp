@@ -16,6 +16,9 @@ type IntelStats struct {
 	Senders          int            `json:"senders"`
 	Roles            map[string]int `json:"roles"`
 	RepliesPaired    int64          `json:"replies_paired"`
+	KGEntities       int64          `json:"kg_entities"`
+	KGRelationships  int64          `json:"kg_relationships"`
+	KGModelMessages  int64          `json:"kg_model_messages"` // bodies read by the extraction model
 	LastScan         string         `json:"last_scan,omitempty"`
 }
 
@@ -35,7 +38,12 @@ func (s *Service) IntelStats(ctx context.Context) (IntelStats, error) {
 	if last > 0 {
 		st.LastScan = time.Unix(last, 0).UTC().Format(time.RFC3339)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(paired),0) FROM intel_messages`).Scan(&st.MessagesIndexed, &st.RepliesPaired); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(paired),0), COALESCE(sum(kg_llm_done),0) FROM intel_messages`).
+		Scan(&st.MessagesIndexed, &st.RepliesPaired, &st.KGModelMessages); err != nil {
+		return st, err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM kg_entities), (SELECT count(*) FROM kg_relationships)`).
+		Scan(&st.KGEntities, &st.KGRelationships); err != nil {
 		return st, err
 	}
 	rows, err := db.QueryContext(ctx, `SELECT COALESCE(role,'unknown'), count(*) FROM senders GROUP BY 1`)

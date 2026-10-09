@@ -164,7 +164,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	cfg := &config.Config{Accounts: []config.AccountConfig{f.srv.Account("test")}, Intel: config.IntelConfig{
-		ScanIntervalMinutes: 15, BackfillPerMinute: 600, BatchSize: 2, LLMRolesPerTick: 5,
+		ScanIntervalMinutes: 15, BackfillPerMinute: 600, BatchSize: 2, LLMRolesPerTick: 5, KGStaleDays: 365, KGLLMPerTick: 5,
 		ExcludeFolders: []string{"Junk", "Drafts"}, // the test server has no SPECIAL-USE attributes
 	}}
 	classify := func(ctx context.Context, prompt string) (string, error) {
@@ -373,7 +373,7 @@ func TestProgressCountsUnstartedFolders(t *testing.T) {
 	f.sc.Tick(ctx) //nolint:errcheck
 	var total, done int
 	f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done) //nolint:errcheck
-	if total != 3 || done == total { // INBOX, Sent, Archive (Junk and Drafts excluded)
+	if total != 3 || done == total {                                                                    // INBOX, Sent, Archive (Junk and Drafts excluded)
 		t.Errorf("registered %d folders, %d complete", total, done)
 	}
 	// A folder that leaves the scope stops counting toward progress.

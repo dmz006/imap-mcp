@@ -324,6 +324,10 @@ intelligence:
   exclude_folders: []          # skipped in addition to \Junk and \Drafts
   llm_roles: true              # let the classify model name roles the header signals leave unknown
   llm_roles_per_tick: 20       # model calls per tick; only when enrichment backfill gates allow
+  kg: true                     # build the knowledge graph (people, organizations, threads, projects, topics)
+  kg_stale_days: 365           # relationships without evidence this long become history (valid_to set)
+  kg_llm: true                 # let the classify model read recent conversation bodies for richer relations
+  kg_llm_per_tick: 10          # bodies read per tick; only when enrichment backfill gates allow
 
 log:
   level: info

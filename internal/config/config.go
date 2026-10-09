@@ -335,7 +335,24 @@ type IntelConfig struct {
 	LLMRoles *bool `yaml:"llm_roles"`
 	// LLMRolesPerTick caps model calls per scan tick. Default 20.
 	LLMRolesPerTick int `yaml:"llm_roles_per_tick"`
+	// KG builds the knowledge graph from the scan and the cache (D21).
+	// Pointer: default true.
+	KG *bool `yaml:"kg"`
+	// KGStaleDays: a relationship without evidence for this long gets
+	// valid_to set (it is history, not current). Default 365.
+	KGStaleDays int `yaml:"kg_stale_days"`
+	// KGLLM lets the classify model extract relations from recent
+	// conversation bodies (gated like backfill enrichment). Default true.
+	KGLLM *bool `yaml:"kg_llm"`
+	// KGLLMPerTick caps extraction model calls per tick. Default 10.
+	KGLLMPerTick int `yaml:"kg_llm_per_tick"`
 }
+
+// KGOn reports whether the knowledge graph is built (default true).
+func (c IntelConfig) KGOn() bool { return c.KG == nil || *c.KG }
+
+// KGLLMOn reports whether model extraction from bodies is allowed (default true).
+func (c IntelConfig) KGLLMOn() bool { return c.KGLLM == nil || *c.KGLLM }
 
 // On reports whether the scanner runs (default true).
 func (c IntelConfig) On() bool { return c.Enabled == nil || *c.Enabled }
@@ -419,6 +436,8 @@ func defaults() *Config {
 			BackfillPerMinute:   600,
 			BatchSize:           200,
 			LLMRolesPerTick:     20,
+			KGStaleDays:         365,
+			KGLLMPerTick:        10,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -519,9 +538,13 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_INTELLIGENCE_BACKFILL_PER_MINUTE", &cfg.Intel.BackfillPerMinute)
 	envInt("IMAP_MCP_INTELLIGENCE_BATCH_SIZE", &cfg.Intel.BatchSize)
 	envInt("IMAP_MCP_INTELLIGENCE_LLM_ROLES_PER_TICK", &cfg.Intel.LLMRolesPerTick)
+	envInt("IMAP_MCP_INTELLIGENCE_KG_STALE_DAYS", &cfg.Intel.KGStaleDays)
+	envInt("IMAP_MCP_INTELLIGENCE_KG_LLM_PER_TICK", &cfg.Intel.KGLLMPerTick)
 	for key, dst := range map[string]**bool{
 		"IMAP_MCP_INTELLIGENCE_ENABLED":   &cfg.Intel.Enabled,
 		"IMAP_MCP_INTELLIGENCE_LLM_ROLES": &cfg.Intel.LLMRoles,
+		"IMAP_MCP_INTELLIGENCE_KG":        &cfg.Intel.KG,
+		"IMAP_MCP_INTELLIGENCE_KG_LLM":    &cfg.Intel.KGLLM,
 	} {
 		if v := os.Getenv(key); v != "" {
 			if b, err := strconv.ParseBool(v); err == nil {
@@ -581,8 +604,9 @@ func validate(cfg *Config) error {
 	if t.AttachmentInlineKB < 0 || t.AttachmentMaxMB < 1 || t.ExportMaxMessages < 1 || t.ExportMaxMB < 1 {
 		return fmt.Errorf("tools: attachment_inline_kb must be >= 0; attachment_max_mb, export_max_messages and export_max_mb must be >= 1")
 	}
-	if in := cfg.Intel; in.ScanIntervalMinutes < 1 || in.BackfillPerMinute < 1 || in.BatchSize < 1 || in.BatchSize > 1000 || in.LLMRolesPerTick < 0 {
-		return fmt.Errorf("intelligence: scan_interval_minutes, backfill_per_minute must be >= 1; batch_size 1-1000; llm_roles_per_tick >= 0")
+	if in := cfg.Intel; in.ScanIntervalMinutes < 1 || in.BackfillPerMinute < 1 || in.BatchSize < 1 || in.BatchSize > 1000 || in.LLMRolesPerTick < 0 ||
+		in.KGStaleDays < 1 || in.KGLLMPerTick < 0 {
+		return fmt.Errorf("intelligence: scan_interval_minutes, backfill_per_minute, kg_stale_days must be >= 1; batch_size 1-1000; llm_roles_per_tick, kg_llm_per_tick >= 0")
 	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")

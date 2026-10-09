@@ -33,6 +33,7 @@ type Scanner struct {
 	st         *store
 	classify   ClassifyFunc
 	own        map[string]map[string]bool // account → own addresses
+	owner      map[string]string          // account → the address that stands for the mailbox owner (KG)
 	ownDomains map[string]bool
 	log        *slog.Logger
 	now        func() time.Time
@@ -49,7 +50,7 @@ type Scanner struct {
 func New(cfg *config.Config, src Source, state, cache *sql.DB, classify ClassifyFunc, log *slog.Logger) *Scanner {
 	sc := &Scanner{
 		cfg: cfg.Intel, src: src, state: state, cache: cache, st: &store{db: state},
-		own: map[string]map[string]bool{}, ownDomains: map[string]bool{},
+		own: map[string]map[string]bool{}, owner: map[string]string{}, ownDomains: map[string]bool{},
 		log: log, now: time.Now, sleep: sleepCtx, refreshEvery: 5000,
 	}
 	if cfg.Intel.LLMRolesOn() {
@@ -65,6 +66,9 @@ func New(cfg *config.Config, src Source, state, cache *sql.DB, classify Classify
 			if strings.Contains(addr, "@") {
 				set[addr] = true
 				sc.ownDomains[domainOf(addr)] = true
+				if sc.owner[a.Name] == "" {
+					sc.owner[a.Name] = addr // the login address comes first
+				}
 			}
 		}
 		sc.own[a.Name] = set
@@ -109,6 +113,7 @@ func (sc *Scanner) Run(ctx context.Context) {
 // TickResult summarises one tick (for logs and tests).
 type TickResult struct {
 	Scanned, New, Duplicate, Paired, Roles, ModelRoles int
+	Edges, TagEdges, ModelEdges                        int // messages that added graph edges, per source
 }
 
 // Tick scans every account's folders for new UIDs, pairs replies, recomputes
@@ -159,9 +164,21 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 	if res.ModelRoles, err = sc.modelRoles(ctx, sc.cfg.LLMRolesPerTick); err != nil {
 		return err
 	}
-	if res.Scanned > 0 || res.Roles > 0 || res.ModelRoles > 0 {
+	if sc.cfg.KGOn() {
+		if res.TagEdges, err = sc.tagEdges(ctx); err != nil {
+			return err
+		}
+		if res.ModelEdges, err = sc.modelEdges(ctx, sc.cfg.KGLLMPerTick); err != nil {
+			return err
+		}
+		if err := sc.markStale(ctx); err != nil {
+			return err
+		}
+	}
+	if res.Scanned > 0 || res.Roles > 0 || res.ModelRoles > 0 || res.TagEdges > 0 || res.ModelEdges > 0 {
 		sc.log.Info("intel: scan tick", "scanned", res.Scanned, "new", res.New, "duplicates", res.Duplicate,
 			"replies_paired", res.Paired, "roles", res.Roles, "model_roles", res.ModelRoles,
+			"kg_messages", res.Edges, "kg_tag_messages", res.TagEdges, "kg_model_messages", res.ModelEdges,
 			"took", sc.now().Sub(start).Round(time.Millisecond))
 	}
 	return nil
@@ -207,6 +224,10 @@ func (sc *Scanner) scanFolder(ctx context.Context, account, folder string, res *
 		return err
 	}
 	own := sc.own[account]
+	var kg *kgTarget
+	if sc.cfg.KGOn() {
+		kg = &kgTarget{owner: sc.owner[account]}
+	}
 	batch := max(sc.cfg.BatchSize, 1)
 	after := st.LastUID
 	for ctx.Err() == nil {
@@ -223,14 +244,15 @@ func (sc *Scanner) scanFolder(ctx context.Context, account, folder string, res *
 			continue
 		}
 		st.UIDValidity = b.UIDValidity
-		a, err := sc.st.apply(ctx, account, folder, b.UIDValidity, b, own)
+		a, err := sc.st.apply(ctx, account, folder, b.UIDValidity, b, own, kg)
 		if err != nil {
 			return err
 		}
 		res.Scanned += len(b.Headers)
 		res.New += a.New
 		res.Duplicate += a.Duplicate
-		if sc.sinceRefresh += a.New; sc.sinceRefresh >= sc.refreshEvery {
+		res.Edges += a.Edges
+		if sc.sinceRefresh += a.New + a.Edges; sc.sinceRefresh >= sc.refreshEvery {
 			sc.sinceRefresh = 0
 			if _, err := sc.st.pairReplies(ctx, account); err != nil {
 				return err
