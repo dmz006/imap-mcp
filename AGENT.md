@@ -318,6 +318,13 @@ they can be replaced or extended without touching call sites.
   and digests) before replacing the original, and removes the plaintext
   original only after that verification. Other plaintext copies (backups) are
   listed for the operator, never deleted by the tool.
+- **2026-10-09 — D15 (datawatch secrets path):** `${secret:name}` resolves
+  only through datawatch's external-service endpoint
+  `GET /api/external/secrets/{name}` (datawatch ≥ v8.75.0), authenticated with
+  the imap-mcp service token. The operator mints that token in a real terminal
+  (`datawatch secrets mint-service-token imap-mcp`), never through an agent; it
+  reaches imap-mcp through an `${ENV}` reference only. Secrets are scoped
+  `service:imap-mcp`. There is no fallback to the agent endpoint.
 
 ---
 
