@@ -4,7 +4,7 @@
 |-------|-------|
 | Date | 2026-10-08 |
 | Target version | 0.6.0 → 0.10.0, one minor per phase (D12) |
-| Status | **In progress:** P0–P5 (0.5.3–0.10.0) built and side-instance validated; production deploy of 0.10.0 next. Then P6 (docs/skills per release) and P7 (full docs pass) |
+| Status | **In progress:** P0–P5 (0.5.3–0.10.0) built, validated, and **deployed to production 2026-10-09** (pre-deploy backup verified; migration 272/272 rules; auth enforced with datawatch-held scoped tokens; datawatch email channel enabled with its read+send token). Next: P6 (docs/skills per release) and P7 (full docs pass) |
 | Supersedes | "Iteration 2 (message CRUD)" bullets in `IMAP-MCP-CONTEXT.md` / `README.md` roadmap |
 
 ## Current status (2026-10-08)
