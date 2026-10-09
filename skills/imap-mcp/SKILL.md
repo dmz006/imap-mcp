@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.7.0"
+version: "0.8.0"
 tags:
   - email
   - imap
@@ -180,6 +180,108 @@ Only accounts with an `smtp:` block can send. Requires the `send` scope.
 
 `export_message` is a stub. Use `get_message` and save the parts you need with
 `write_file`.
+
+## Multi-step workflows
+
+These chain the tools above. The safety rules still apply at every step: count
+or dry-run first, get a yes, then change anything. Save reports with
+`write_file`. Worked versions with example output are in the repo's
+`docs/examples.md` § 10.
+
+### Morning briefing (read-only)
+
+```
+search_messages { folder: "INBOX", since: "<yesterday>", flags: "Unseen" }
+top_senders { folder: "INBOX", group_by: "domain" }     → split bulk senders from people
+get_sender_history { address }                          → empty = nothing from them in the cache window
+get_message { folder, uid }                             → only for mail that looks like it needs a person
+write_file { filename: "briefings/<date>.md", content } → sections: Needs you / First-time senders / Noise
+```
+
+### Subscription audit → keep/kill table
+
+```
+detect_subscriptions { folder: "INBOX" }        → senders + unsubscribe links
+get_sender_history { address }                  → volume per sender (cache window)
+write_file { filename: "subscriptions.md" }     → | sender | count | opened | suggest | unsubscribe |
+```
+
+The user edits the "suggest" column. Then `read_file` it back. For each row
+marked for removal: `search_messages` count → approval → `purge_sender` or
+`move_bulk` → `create_rule` so the sender doesn't come back. Never open
+unsubscribe links yourself.
+
+### Teach by example
+
+```
+semantic_search { folder: "INBOX", reference_uid: <uid>, threshold: 0.8 }   → mail that means the same thing
+```
+
+Group the hits by sender and show counts. The user removes false positives.
+Then `label_bulk` or `move_bulk` per sender. Rules match text, not meaning, so
+turn each confirmed sender into `create_rule { action: "move", dest }` and
+show `run_rules { dry_run: true }`. Check `enrichment_status` first: an
+unenriched folder gives thin results.
+
+### Rule review
+
+```
+list_rules                                     → matchers, actions, run counts
+run_rules { dry_run: true }                    → current match counts
+search_messages { from: <rule.from>, flags: "Flagged" }   → would a trash rule hit flagged mail?
+```
+
+Report:
+- dead rules (0 matches);
+- overlaps (one sender, two rules);
+- risky rules (flagged mail in the dry run);
+- a proposed `delete_rule` list. Delete only on approval.
+
+### Phishing check on one message
+
+```
+get_headers { folder, uid }                           → Authentication-Results, Return-Path, Reply-To, Received
+get_sender_history { address }                        → has this address written before?
+semantic_search { folder, reference_uid: <uid> }      → compare with genuine mail from the brand
+```
+
+Give a verdict with reasons: SPF/DKIM/DMARC results, a Reply-To domain that
+doesn't match, a new sender, a link host that doesn't match the brand. Never
+follow links. On a confirmed "bad", `move_message` it to Junk (with approval).
+
+### Draft replies without sending
+
+Build a raw RFC 2822 reply (`From`, `To`, `Subject: Re: …`, `In-Reply-To`,
+`References`, body), then:
+
+```
+append_message { folder: "Drafts", message, flags: "Draft" }   → Gmail: "[Gmail]/Drafts"
+```
+
+The user edits and sends from their own client. This needs `write`, not
+`send`. Prefer it over `send_message` unless the user asks you to send.
+
+### Dossier / timeline
+
+```
+semantic_search { query: "flight confirmation" }   → omit account to search all accounts
+semantic_search { query: "hotel reservation" }
+get_message { folder, uid }                        → pull dates, amounts, confirmation numbers
+write_file { filename: "trips/<name>.md" }         → one dated table, each row citing folder + uid
+```
+
+The same pattern works for invoices with totals, a project's mail as a
+timeline, or "what did we agree and when".
+
+### Scheduled (unattended) sessions
+
+When you run on a schedule with nobody watching:
+- Read, analyse and write reports or proposals to files: `proposals/rules.md`,
+  `briefings/<date>.md`.
+- Do **not** mutate the mailbox, create rules or send mail. Leave that for an
+  interactive session where the user can approve.
+- Deterministic cleanup belongs to the operator's `imap-mcp run-rules` job,
+  not to you.
 
 ## Tool quick reference
 

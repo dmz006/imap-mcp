@@ -408,8 +408,8 @@ look at everything and change nothing.
    their unsubscribe links.
 2. For each candidate, the agent counts its messages and how many you opened
    with two `/api/query` calls (`group_by: ["from_addr"]`, one with `seen`
-   `eq true`). `get_sender_history` lists the subjects if it needs a closer
-   look.
+   `eq true`; this needs an `admin` token). Without one, it falls back to
+   `get_sender_history`, which lists each sender's cached mail.
 3. `write_file` saves `subscriptions.md`:
 
 ```markdown
@@ -468,12 +468,13 @@ hourly job lean ([rules.md](rules.md)).
 
 > "Find mail from real people in the last two weeks that I never answered."
 
-The agent queries the cache through the REST API. Classification adds a `hall`
-tag to each message, and `answered` tracks the `\Answered` flag:
+The agent queries the cache through the REST API (`/api/query` needs the
+`admin` scope). Classification adds a `hall` tag to each message, and
+`answered` tracks the `\Answered` flag:
 
 ```bash
 curl -sS -X POST "$IMAP_MCP/api/query" \
-  -H "Authorization: Bearer $READ_TOKEN" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   -d '{"view":"messages",
        "where":[{"field":"date","op":"gte","value":"-14d"},
                 {"field":"hall","op":"in","value":["personal","conversation"]},

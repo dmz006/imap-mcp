@@ -6,7 +6,13 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-09
+
 ### Added
+- **Companion skill 0.8.0.** A "Multi-step workflows" section: morning briefing,
+  subscription audit, teach by example, rule review, phishing check, drafts
+  without sending, dossiers, and rules for unattended scheduled sessions
+  (report and propose, never change the mailbox).
 - **Agent workflows in `docs/examples.md` (section 10).** Eleven multi-step
   workflows an agent runs with the tools and the companion skill: morning
   briefing, subscription audit, teach-by-example filing, rule review, unanswered
