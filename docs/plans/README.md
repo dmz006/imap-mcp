@@ -47,3 +47,4 @@
 | `vacuum_interval_hours` comment | `config.go` says VACUUM runs after a cycle that removed messages; code runs it whenever the interval elapsed. |
 | Stdio + webhooks | stdio mode never starts the webhook enqueuer/dispatcher, so `rule.fired` from `run_rules` there is never delivered. |
 
+| `run-rules --json` summary | Machine-readable run summary (rules evaluated, per-rule matched/action/error, duration; no message content) so the scheduled wrapper can post it to datawatch once dmz006/datawatch#204 (result panel) exists. |
