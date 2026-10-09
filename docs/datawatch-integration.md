@@ -67,8 +67,9 @@ plain value.
          password: ${secret:gmail_app_password}
 
    datawatch:
-     api_url: ${DATAWATCH_API_URL}        # e.g. http://localhost:7777
+     api_url: ${DATAWATCH_API_URL}        # e.g. https://127.0.0.1:8443
      token: ${IMAP_MCP_DATAWATCH_TOKEN}   # imap-mcp service token (least privilege)
+     ca_file: ~/.datawatch/tls/server/cert.pem  # pin datawatch's self-signed cert
    ```
 3. Mint imap-mcp's service token **yourself, in a real terminal** (never via an
    agent or a chat passthrough; the token is shown once):
@@ -78,7 +79,7 @@ plain value.
 4. Export the two refs (for a systemd service, put them in an `EnvironmentFile`
    with mode 0600, outside any repo) and start imap-mcp:
    ```
-   export DATAWATCH_API_URL=http://localhost:7777
+   export DATAWATCH_API_URL=https://127.0.0.1:8443
    export IMAP_MCP_DATAWATCH_TOKEN=<the service token>
    ./imap-mcp serve --config config.yaml
    ```
@@ -93,6 +94,9 @@ the service token, once per secret per process (cached). `serve` and
   placeholder).
 - datawatch unreachable / secret missing → startup error naming the secret.
 - 401 → the service token is wrong or revoked: mint a new one.
+- `x509: certificate signed by unknown authority` → set `ca_file` to datawatch's
+  certificate (`~/.datawatch/tls/server/cert.pem`). Verification is never
+  skipped (AGENT.md D15a); an unreadable `ca_file` fails startup.
 - 403/404 → the secret does not exist or is not scoped `service:imap-mcp`.
 
 **Security:** `api_url`/`token` must be `${ENV_VAR}` references — never write a

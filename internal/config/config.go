@@ -485,6 +485,9 @@ func expandPaths(cfg *Config) {
 		cfg.DB.Cache.Path = filepath.Join(filepath.Dir(cfg.DB.Path), "cache.db")
 	}
 	cfg.WorkingDir = expand(cfg.WorkingDir)
+	if cfg.Datawatch != nil {
+		cfg.Datawatch.CAFile = expand(cfg.Datawatch.CAFile)
+	}
 	for i := range cfg.Accounts {
 		cfg.Accounts[i].Auth.TokenFile = expand(cfg.Accounts[i].Auth.TokenFile)
 		cfg.Accounts[i].Auth.ServiceAccountFile = expand(cfg.Accounts[i].Auth.ServiceAccountFile)
@@ -492,6 +495,11 @@ func expandPaths(cfg *Config) {
 }
 
 func validate(cfg *Config) error {
+	if cfg.Datawatch != nil {
+		if _, err := cfg.Datawatch.Transport(); err != nil {
+			return err
+		}
+	}
 	if err := validateEnrichment(cfg); err != nil {
 		return err
 	}

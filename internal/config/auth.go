@@ -42,7 +42,10 @@ func (c *Config) ServeAuth() (tokens []httpauth.Token, disabled bool, err error)
 				if c.Datawatch == nil || strings.TrimSpace(c.Datawatch.APIURL) == "" || strings.TrimSpace(c.Datawatch.Token) == "" {
 					return nil, false, fmt.Errorf("server.auth.tokens[%s]: ${secret:...} needs a datawatch block with api_url and token", label)
 				}
-				resolver = newSecretResolver(c.Datawatch.APIURL, c.Datawatch.Token)
+				var rerr error
+				if resolver, rerr = c.Datawatch.newResolver(); rerr != nil {
+					return nil, false, rerr
+				}
 			}
 			if val, err = resolver.expand(val); err != nil {
 				return nil, false, fmt.Errorf("server.auth.tokens[%s]: %w", label, err)

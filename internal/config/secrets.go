@@ -39,6 +39,11 @@ type DatawatchConfig struct {
 	// read only secrets scoped service:imap-mcp (AGENT.md D15). Always an
 	// ${ENV} reference, never a literal.
 	Token string `yaml:"token"`
+	// CAFile is an optional PEM certificate to trust for api_url, e.g.
+	// datawatch's self-signed ~/.datawatch/tls/server/cert.pem (D15a).
+	CAFile string `yaml:"ca_file"`
+
+	transport http.RoundTripper // built once by Transport
 }
 
 // secretRefRe matches ${secret:NAME} references. NAME may contain letters,
@@ -86,7 +91,10 @@ func resolveSecrets(cfg *Config) error {
 		return fmt.Errorf("datawatch.token is required to resolve ${secret:...} references")
 	}
 
-	r := newSecretResolver(cfg.Datawatch.APIURL, cfg.Datawatch.Token)
+	r, err := cfg.Datawatch.newResolver()
+	if err != nil {
+		return err
+	}
 	for i := range cfg.Accounts {
 		a := &cfg.Accounts[i].Auth
 		acct := cfg.Accounts[i].Name
@@ -116,13 +124,17 @@ type secretResolver struct {
 	cache  map[string]string
 }
 
-func newSecretResolver(apiURL, token string) *secretResolver {
-	return &secretResolver{
-		apiURL: strings.TrimRight(apiURL, "/"),
-		token:  token,
-		client: &http.Client{Timeout: 10 * time.Second},
-		cache:  map[string]string{},
+func (d *DatawatchConfig) newResolver() (*secretResolver, error) {
+	t, err := d.Transport()
+	if err != nil {
+		return nil, err
 	}
+	return &secretResolver{
+		apiURL: strings.TrimRight(d.APIURL, "/"),
+		token:  d.Token,
+		client: &http.Client{Timeout: 10 * time.Second, Transport: t},
+		cache:  map[string]string{},
+	}, nil
 }
 
 // expand replaces every ${secret:name} in s with its fetched value.

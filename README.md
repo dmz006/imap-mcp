@@ -352,6 +352,7 @@ accounts:
 datawatch:
   api_url: ${DATAWATCH_API_URL}          # e.g. http://localhost:7777
   token: ${IMAP_MCP_DATAWATCH_TOKEN}     # imap-mcp service token (least privilege)
+  ca_file: ~/.datawatch/tls/server/cert.pem  # optional: pin a self-signed datawatch cert
 ```
 
 imap-mcp fetches each secret over `GET {api_url}/api/external/secrets/{name}` (datawatch v8.75.0+) with its service token, minted by you in a terminal with `datawatch secrets mint-service-token imap-mcp`; secrets must be set with `--scope service:imap-mcp`. The token and API URL are themselves `${ENV_VAR}` references — **never put a literal token in a config file or commit one to a repo.** Both modes are fully supported; the datawatch block is optional and additive — remove it and imap-mcp runs entirely on its own.

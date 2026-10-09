@@ -307,7 +307,7 @@ log:
 # SECURITY: never put a literal token here. Always use an ${ENV_VAR} reference so
 # no secret is ever written into a config file or committed to a repo.
 #
-#   export DATAWATCH_API_URL=http://localhost:7777
+#   export DATAWATCH_API_URL=https://127.0.0.1:8443
 #   export IMAP_MCP_DATAWATCH_TOKEN=<imap-mcp service token>
 #
 # Mint the service token yourself in a terminal (datawatch v8.75.0+):
@@ -318,3 +318,6 @@ log:
 # datawatch:
 #   api_url: ${DATAWATCH_API_URL}
 #   token: ${IMAP_MCP_DATAWATCH_TOKEN}
+#   # datawatch serves HTTPS with a self-signed certificate by default. Pin it;
+#   # TLS verification is never disabled. A missing/invalid file fails startup.
+#   ca_file: ~/.datawatch/tls/server/cert.pem

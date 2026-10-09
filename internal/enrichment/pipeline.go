@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"strings"
 	gosync "sync"
 	"time"
@@ -77,14 +78,17 @@ type AnomalyHint struct {
 type Option func(*Pipeline)
 
 // WithDatawatch enables the datawatch classify provider (when configured) and
-// the datawatch capacity gate, using the datawatch API URL and token.
-func WithDatawatch(apiURL, token string) Option {
+// the datawatch capacity gate, using the datawatch API URL and token over
+// transport (config DatawatchConfig.Transport; nil = default).
+func WithDatawatch(apiURL, token string, transport http.RoundTripper) Option {
 	return func(p *Pipeline) {
 		if apiURL == "" {
 			return
 		}
 		if p.cfg.ClassifyProvider() == "datawatch" {
-			p.classify = NewDatawatchClassifier(apiURL, p.cfg.Classify.DatawatchLLM, token)
+			c := NewDatawatchClassifier(apiURL, p.cfg.Classify.DatawatchLLM, token)
+			c.(*datawatchClassifier).http.Transport = transport
+			p.classify = c
 		}
 		if p.cfg.Yield.Enabled {
 			pools := append([]string(nil), p.cfg.Yield.DatawatchPools...)
@@ -92,7 +96,9 @@ func WithDatawatch(apiURL, token string) Option {
 				pools = append(pools, "llm:"+p.cfg.Classify.DatawatchLLM)
 			}
 			if len(pools) > 0 {
-				p.gates = append(p.gates, cached(NewDatawatchGate(apiURL, token, pools), 30*time.Second))
+				g := NewDatawatchGate(apiURL, token, pools)
+				g.(*datawatchGate).http.Transport = transport
+				p.gates = append(p.gates, cached(g, 30*time.Second))
 			}
 		}
 	}

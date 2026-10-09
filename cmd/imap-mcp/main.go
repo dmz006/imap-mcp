@@ -354,7 +354,13 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	syncer := sync.New(cfg, pool, database, b, log)
 	var popts []enrichment.Option
 	if cfg.Datawatch != nil {
-		popts = append(popts, enrichment.WithDatawatch(cfg.Datawatch.APIURL, cfg.Datawatch.Token))
+		dwTransport, err := cfg.Datawatch.Transport() // validated at config load
+		if err != nil {
+			pool.Close()
+			database.Close()
+			return nil, nil, err
+		}
+		popts = append(popts, enrichment.WithDatawatch(cfg.Datawatch.APIURL, cfg.Datawatch.Token, dwTransport))
 	}
 	pipeline := enrichment.NewPipeline(cfg.Enrichment, database, b, log, popts...)
 

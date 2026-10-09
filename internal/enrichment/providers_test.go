@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/dmz006/imap-mcp/internal/config"
 )
 
 func TestOllamaProvidersAndErrorClasses(t *testing.T) {
@@ -176,5 +178,22 @@ func TestRateLimiter(t *testing.T) {
 	}
 	if n := newRateLimiter(0).take(t0, 7); n != 7 {
 		t.Fatal("0 = unlimited")
+	}
+}
+
+func TestDatawatchOverPinnedTLS(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"pools":[]}`))
+	}))
+	defer srv.Close()
+	p := &Pipeline{cfg: config.EnrichmentConfig{Yield: config.YieldConfig{Enabled: true, DatawatchPools: []string{"node:gpu1"}}}}
+	WithDatawatch(srv.URL, "t", srv.Client().Transport)(p)
+	if len(p.gates) != 1 {
+		t.Fatalf("gates = %d", len(p.gates))
+	}
+	// The gate fails open with a reason when it cannot read capacity; an empty
+	// reason proves the TLS call succeeded.
+	if ok, why := p.gates[0].Allow(context.Background(), time.Now()); !ok || why != "" {
+		t.Errorf("gate over pinned TLS: ok=%v reason=%q", ok, why)
 	}
 }

@@ -28,7 +28,10 @@ func (c *Config) ResolveDBKeys(state, cache bool) (DBKeys, error) {
 				if c.Datawatch == nil || strings.TrimSpace(c.Datawatch.APIURL) == "" || strings.TrimSpace(c.Datawatch.Token) == "" {
 					return "", fmt.Errorf("%s: ${secret:...} needs a datawatch block with api_url and token", field)
 				}
-				resolver = newSecretResolver(c.Datawatch.APIURL, c.Datawatch.Token)
+				var rerr error
+				if resolver, rerr = c.Datawatch.newResolver(); rerr != nil {
+					return "", rerr
+				}
 			}
 			var err error
 			if v, err = resolver.expand(v); err != nil {

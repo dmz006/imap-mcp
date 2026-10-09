@@ -7,6 +7,11 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`datawatch.ca_file` (D15a).** Pins datawatch's self-signed TLS certificate
+  (e.g. `~/.datawatch/tls/server/cert.pem`) for every call imap-mcp makes to
+  datawatch: secrets, the capacity gate and the LLM proxy. It is trusted in
+  addition to the system roots. Verification is never disabled, and a missing
+  or invalid file fails startup.
 - **`imap-mcp db encrypt` (D14).** Encrypts an existing plaintext `imap.db`
   and/or `cache.db` in place with the configured keys (`--only state|cache`).
   - It refuses while another process has the file open, so stop the service
