@@ -309,3 +309,13 @@ func TestPrune(t *testing.T) {
 		t.Error("pending delivery pruned")
 	}
 }
+
+// TestMetadataAnomaly: anomaly.detected keeps id, type and severity and
+// nothing else, even if a payload ever carried the sender.
+func TestMetadataAnomaly(t *testing.T) {
+	m := Metadata(bus.Event{Type: bus.EventAnomalyDetected, Account: "work",
+		Payload: map[string]any{"id": 7, "type": "auth_failure", "severity": "high", "sender": "eve@example.com", "description": "x"}})
+	if len(m) != 3 || m["id"] != 7 || m["type"] != "auth_failure" || m["severity"] != "high" {
+		t.Fatalf("metadata = %v", m)
+	}
+}
