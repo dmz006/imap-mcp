@@ -92,6 +92,10 @@ func OpenState(state Options) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("state db: %w", err)
 	}
+	if err := migrateState(s); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("state db: %w", err)
+	}
 	return &DB{
 		state:     s,
 		Webhooks:  &WebhookRepo{db: s},
@@ -281,3 +285,71 @@ type SyncRepo struct{ db *sql.DB }
 type WebhookRepo struct{ db *sql.DB }
 type RuleRepo struct{ db *sql.DB }
 type EnrichRepo struct{ db *sql.DB }
+
+// stateColumns are columns added to existing state tables after their first
+// release. CREATE TABLE IF NOT EXISTS does not add columns to a table that
+// already exists, so migrateState adds any that are missing.
+var stateColumns = []struct{ table, column, decl string }{
+	{"intel_messages", "kg_done", "INTEGER NOT NULL DEFAULT 0"},
+	{"intel_messages", "kg_tags_done", "INTEGER NOT NULL DEFAULT 0"},
+	{"intel_messages", "kg_llm_done", "INTEGER NOT NULL DEFAULT 0"},
+	{"kg_relationships", "weight", "INTEGER NOT NULL DEFAULT 1"},
+	{"kg_relationships", "last_seen", "INTEGER"},
+}
+
+// migrateState brings an existing imap.db up to the current schema: missing
+// columns are added and the knowledge-graph indexes are created. When the
+// knowledge-graph flags are added to an index that already has rows (an
+// upgrade from 0.12), the header scan restarts from the beginning, so every
+// message's graph edges are built once; the D28 index keeps profile counts
+// from changing.
+func migrateState(conn *sql.DB) error {
+	addedKG := false
+	for _, c := range stateColumns {
+		has, err := hasColumn(conn, c.table, c.column)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		if _, err := conn.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.decl); err != nil {
+			return fmt.Errorf("add %s.%s: %w", c.table, c.column, err)
+		}
+		if c.column == "kg_done" {
+			addedKG = true
+		}
+	}
+	if addedKG {
+		if _, err := conn.Exec(`UPDATE intel_scan SET last_uid = 0, completed_at = NULL`); err != nil {
+			return fmt.Errorf("restart header scan for the knowledge graph: %w", err)
+		}
+	}
+	for _, q := range []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_rel_unique ON kg_relationships(subject_id, predicate, object_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_intel_messages_kg ON intel_messages(account, kg_done) WHERE kg_done = 0`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func hasColumn(conn *sql.DB, table, column string) (bool, error) {
+	rows, err := conn.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}

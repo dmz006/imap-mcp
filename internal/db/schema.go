@@ -255,6 +255,9 @@ CREATE TABLE IF NOT EXISTS intel_messages (
     outgoing   INTEGER NOT NULL DEFAULT 0,
     reply_hash INTEGER,           -- In-Reply-To hash (outgoing only)
     paired     INTEGER NOT NULL DEFAULT 0,
+    kg_done      INTEGER NOT NULL DEFAULT 0, -- header edges added to the knowledge graph (P3)
+    kg_tags_done INTEGER NOT NULL DEFAULT 0, -- wing/room edges added from the cache
+    kg_llm_done  INTEGER NOT NULL DEFAULT 0, -- body read by the extraction model
     PRIMARY KEY (account, msg_hash)
 ) WITHOUT ROWID;
 
@@ -290,6 +293,8 @@ CREATE TABLE IF NOT EXISTS kg_relationships (
     valid_to    INTEGER,            -- null = still valid
     confidence  REAL DEFAULT 1.0,
     properties  TEXT,               -- JSON
+    weight      INTEGER NOT NULL DEFAULT 1, -- messages supporting the edge
+    last_seen   INTEGER,            -- latest evidence; valid_to is set from it when stale
     created_at  INTEGER DEFAULT (unixepoch())
 );
 

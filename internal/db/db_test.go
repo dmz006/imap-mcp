@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -125,5 +126,63 @@ func TestIntelTablesMoveToState(t *testing.T) {
 	d.StateSQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships','intel_messages','intel_scan')`).Scan(&n) //nolint:errcheck
 	if n != 6 {
 		t.Errorf("state DB has %d of 6 intelligence tables", n)
+	}
+}
+
+// TestStateMigrationAddsKGColumns: a 0.12 imap.db (index without the graph
+// flags, scan complete) gains the columns and indexes, keeps its rows, and has
+// its header-scan progress reset so the graph is built once for every message.
+func TestStateMigrationAddsKGColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "imap.db")
+	old, err := OpenState(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the 0.12 shapes of the two changed tables.
+	for _, q := range []string{
+		`DROP TABLE intel_messages`, `DROP TABLE kg_relationships`,
+		`CREATE TABLE intel_messages (account TEXT NOT NULL, msg_hash INTEGER NOT NULL, date INTEGER NOT NULL, sender_id INTEGER,
+			outgoing INTEGER NOT NULL DEFAULT 0, reply_hash INTEGER, paired INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (account, msg_hash)) WITHOUT ROWID`,
+		`CREATE TABLE kg_relationships (id INTEGER PRIMARY KEY AUTOINCREMENT, subject_id INTEGER NOT NULL, predicate TEXT NOT NULL,
+			object_id INTEGER NOT NULL, valid_from INTEGER, valid_to INTEGER, confidence REAL DEFAULT 1.0, properties TEXT, created_at INTEGER)`,
+		`INSERT INTO intel_messages(account, msg_hash, date) VALUES('a', 1, 0), ('a', 2, 0)`,
+		`INSERT INTO intel_scan(account, folder, uidvalidity, last_uid, scanned, completed_at) VALUES('a','INBOX',7,500,500,unixepoch())`,
+	} {
+		if _, err := old.StateSQL().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+
+	d, err := OpenState(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var rows, flagged int
+	d.StateSQL().QueryRow(`SELECT count(*), sum(kg_done + kg_tags_done + kg_llm_done) FROM intel_messages`).Scan(&rows, &flagged) //nolint:errcheck
+	if rows != 2 || flagged != 0 {
+		t.Errorf("index rows=%d flags=%d", rows, flagged)
+	}
+	var last int
+	var completed sql.NullInt64
+	d.StateSQL().QueryRow(`SELECT last_uid, completed_at FROM intel_scan`).Scan(&last, &completed) //nolint:errcheck
+	if last != 0 || completed.Valid {
+		t.Errorf("scan not reset: last_uid=%d completed=%v", last, completed)
+	}
+	if _, err := d.StateSQL().Exec(`INSERT INTO kg_relationships(subject_id, predicate, object_id, weight, last_seen) VALUES(1,'p',2,1,0)`); err != nil {
+		t.Fatalf("new columns missing: %v", err)
+	}
+	if _, err := d.StateSQL().Exec(`INSERT INTO kg_relationships(subject_id, predicate, object_id) VALUES(1,'p',2)`); err == nil {
+		t.Error("unique (subject, predicate, object) index missing")
+	}
+	// A second open is a no-op: the scan is not reset again.
+	d.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 9`) //nolint:errcheck
+	d.Close()
+	d, _ = OpenState(Options{Path: path})
+	defer d.Close()
+	d.StateSQL().QueryRow(`SELECT last_uid FROM intel_scan`).Scan(&last) //nolint:errcheck
+	if last != 9 {
+		t.Errorf("second open reset the scan: last_uid=%d", last)
 	}
 }
