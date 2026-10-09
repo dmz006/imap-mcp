@@ -279,6 +279,10 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D11a (LLM routing):** enrichment uses a provider interface per call
   type. Embeddings go direct to Ollama; classification goes to direct Ollama (the
   default) or through the datawatch `/api/proxy/llm/<name>` proxy.
+- **2026-10-08 — D11b (load):** enrichment has two priority lanes (new mail before
+  backfill), concurrency and rate caps with backoff, backfill that yields to
+  datawatch capacity and Ollama load, and optional quiet hours for backfill.
+  New-mail enrichment is never paused.
 
 ---
 
