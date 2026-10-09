@@ -31,7 +31,7 @@ with a local LLM (qwen3:1.7b) enriching email data in the background.
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.1.0 |
+| Current version | 0.6.0 |
 | Location | `/home/dmz/workspace/imap-mcp` |
 | Status | 42 MCP tools registered; datawatch secrets + bidirectional comm; cleanup tooling (purge_sender, top_senders, rules engine, label_message, empty_trash); IMAP keepalive/auto-reconnect; true search counts. Some intelligence tools still stubbed |
 
@@ -78,7 +78,7 @@ PGP inbound gate is **backlogged** — declared but fails closed until implement
 | Multi-account | All accounts connected simultaneously | Enables cross-account tools |
 | Auth | Plain + XOAUTH2 + pluggable interface | Gmail/Outlook compatibility |
 | `--auth-setup` | Browser OAuth2 flow built in | Never manually copy tokens |
-| Cache | SQLite + FTS5 + vectors | Fast offline analytics |
+| Cache | SQLite + FTS5 + vectors (ncruces pure-Go driver; cache.db / imap.db split; optional adiantum encryption) | Fast offline analytics |
 | Embedding | nomic-embed-text via Ollama | Local, free, 768-dim, already installed |
 | Enrichment LLM | qwen3:1.7b via Ollama | Local background classification |
 | REST API scope | Full platform (MCP mirror + analytics + webhooks + rules + query DSL) | Algorithmic layer |
@@ -198,8 +198,9 @@ Start server: `./imap-mcp serve --config ~/.config/imap-mcp/config.yaml`
 | `internal/bus/bus.go` | Event bus; all event type constants |
 | `internal/imap/pool.go` | Multi-account connection pool; reconnect logic |
 | `internal/imap/auth/` | Authenticator interface, Plain, XOAuth2, auth-setup flow |
-| `internal/db/schema.go` | Full SQLite schema (messages, vectors, senders, KG, anomalies, rules, webhooks) |
-| `internal/db/db.go` | SQLite open; all repository types |
+| `internal/db/schema.go` | SQLite schemas: `cacheSchema` (cache.db) and `stateSchema` (imap.db) |
+| `internal/db/migrate.go` | One-time verified split of a pre-0.6.0 single-file imap.db |
+| `internal/db/db.go` | Opens state + cache DBs (ncruces driver, optional adiantum encryption); repository types |
 | `internal/enrichment/pipeline.go` | Background enrichment worker; cosine similarity |
 | `internal/enrichment/ollama.go` | Ollama embed + generate API client |
 | `internal/sync/syncer.go` | IMAP sync engine |
@@ -255,6 +256,10 @@ Remaining 15 tools return "not yet implemented" error with descriptive message.
 ---
 
 ## Database Schema Summary
+
+Two files since 0.6.0 (AGENT.md D1b), each optionally encrypted:
+`imap.db` (state: rules, webhooks, inbound_nonces) and `cache.db` (everything
+below except those three; disposable, rebuilt from IMAP).
 
 ```sql
 messages          -- cached messages with hall/wing/room enrichment tags

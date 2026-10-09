@@ -6,6 +6,39 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **Storage (v0.6.0).** The SQLite driver is now `github.com/ncruces/go-sqlite3`
+  (pure Go, no cgo), replacing `modernc.org/sqlite`. Data now lives in two files:
+  - `db.path` (`imap.db`) is the state DB: rules, webhooks and inbound nonces.
+    It can't be rebuilt from IMAP, so back it up.
+  - `db.cache.path` (default `cache.db`, next to `db.path`) is the mail cache:
+    messages, full-text index, vectors, senders, knowledge graph and sync
+    state. It's disposable and rebuilt from IMAP.
+
+  **Upgrade:** on first open, a single-file `imap.db` from before 0.6.0 is split
+  automatically:
+  - It's first backed up with `VACUUM INTO` to
+    `imap.db.bak-<timestamp>-pre-0.6.0`, and the backup is verified.
+  - Every rule, webhook and nonce is fingerprinted (SHA-256) before and after.
+    The cache tables are dropped in one transaction, which rolls back on any
+    difference.
+  - The split is logged with row counts.
+  - It's idempotent and safe if `serve` and `run-rules` start at the same time.
+
+### Added
+- **Optional at-rest encryption per DB file (v0.6.0).** Set
+  `db.encryption_key` and/or `db.cache.encryption_key`. This is whole-file
+  encryption with the adiantum VFS: the full-text index, vectors and WAL are
+  all encrypted.
+  - Keys are `${secret:name}` or `${ENV}` passphrase references, run through
+    Argon2id. A key is never generated.
+  - A missing, unresolvable or wrong key refuses to open the file. A key set on
+    an existing plaintext file also refuses to open.
+  - `run-rules` opens only the state DB and resolves only its key.
+  - Encryption state is reported in `/api/health` under `storage`.
+  - New env overrides: `IMAP_MCP_DB_CACHE_PATH`, `IMAP_MCP_DB_ENCRYPTION_KEY`
+    and `IMAP_MCP_DB_CACHE_ENCRYPTION_KEY`.
+
 ### Security
 - `/api` and `/mcp` now require named, scoped bearer tokens (v0.5.3).
   `browserGuard` (v0.5.2) only stopped browsers: any local process could still
@@ -40,6 +73,10 @@ All notable changes to imap-mcp are documented here. The format is based on
   Non-browser clients (curl, datawatch, Claude Code) are unaffected.
 
 ### Fixed
+- Database files and their WAL/SHM sidecars are created and kept at mode 0600
+  (v0.6.0). Before, the WAL/SHM files followed the umask.
+- `Rules.List` no longer fails on rules with NULL description, priority or
+  run count (v0.6.0).
 - `GET /api/events` (SSE) now sends its 200 headers immediately, instead of at
   the first event or 15 s heartbeat, and is exempt from the 30 s route timeout
   and the 60 s server `WriteTimeout`, which had cut the stream every 30–60 s
