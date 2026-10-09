@@ -247,3 +247,49 @@ they can be replaced or extended without touching call sites.
 ---
 
 *Prime rule: the user makes all decisions. When in doubt, run DIP before writing code.*
+
+
+# Memory & Knowledge (datawatch)
+
+Use the datawatch memory system proactively during this session.
+
+## Before starting work
+- Use `memory_recall` to check if similar work has been done
+- Use `kg_query` to understand entity relationships
+- Use `research_sessions` for deep cross-session search
+
+## During work
+- Use `memory_remember` to save key decisions and patterns
+- Use `kg_add` to record relationships
+
+## When asked about project history
+Always check memory first with `memory_recall` before answering from training data.
+
+## Available tools
+| Tool | Purpose |
+|------|---------|
+| `memory_recall` | Semantic search across project memories |
+| `memory_remember` | Save decisions, patterns, context |
+| `kg_query` | Entity relationship queries |
+| `kg_add` | Record new relationships |
+| `research_sessions` | Cross-session research |
+| `copy_response` | Last LLM response from any session |
+| `get_prompt` | Last user prompt from any session |
+
+<!-- rtk-instructions -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it.
+If not, it passes through unchanged. This means RTK is always safe to use.
+
+```bash
+# Always use rtk prefix, even in chains:
+rtk go build && rtk go test ./...
+rtk cargo build
+rtk git status && rtk git diff
+rtk git log
+```
+
+**Key savings:** Build 80-90%, Test 90-99%, Git 59-80%, Files 60-75%.
+Run `rtk gain` to view token savings statistics.
+<!-- /rtk-instructions -->
