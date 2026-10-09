@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-09
 - **Starting version:** 0.10.5
-- **Status:** P1 done (0.11.0); P2 next. Decisions D19–D27 decided 2026-10-09 (DIP, one at a
+- **Status:** P1 done (0.11.0), P2 done (0.12.0); P3 next. Decisions D19–D28 decided 2026-10-09 (DIP, one at a
   time); see the table below and AGENT.md § Recorded Decisions.
 
 ## Scope
@@ -62,6 +62,7 @@ All decided 2026-10-09, one question at a time.
 
 | # | Decision | Blocks | Status |
 |---|----------|--------|--------|
+| D28 | Per-message index | P2–P4 | **Decided** 2026-10-09: hashed index in `imap.db`: one row per message (Message-ID hash, date, sender id, direction, In-Reply-To hash), no subjects/bodies/addresses; exact de-dup across folders/labels and full-history reply pairing |
 | D27 | REST shape for P1 | P1 | **Decided** 2026-10-09: read routes `GET /api/threads/{thread_id}`, `GET …/messages/{uid}/attachments`, `GET /api/search/cross`; content downloads `GET …/attachments/{part}`, `GET …/messages/{uid}/export.eml`, `POST /api/export` (.mbox) stream bytes as `application/octet-stream` with a safe filename, write nothing server-side, and need the `write` scope like MCP |
 | D19 | Intelligence store and history | P2–P4 | **Decided** 2026-10-09: tables move to `imap.db` (state migration, backup first); seeded by a one-off resumable, rate-limited, header-only backfill of all folders (never bodies, PEEK), then updated incrementally as mail syncs. The cache also feeds the builders with enriched signals for recent mail (classification tags, embeddings, bodies, attachment metadata); derived results are persisted in `imap.db` so they outlive the window. `/api/query` views `senders`/`kg`/`anomalies` read from `imap.db` |
 | D20 | Sender roles | P2 | **Decided** 2026-10-09: counts from headers (first/last seen, received, sent-to, avg reply time from Sent). Role from signals first (List-Id/List-Unsubscribe/Precedence → newsletter; noreply/Auto-Submitted → bot; sent-to → personal, or colleague on the account's domain; else majority cached classification tag). Only remaining `unknown` senders go to the classify LLM through the enrichment gates. Backfill fetches those header fields (`HEADER.FIELDS`, PEEK) |
@@ -81,7 +82,7 @@ anomaly baselines need profiles, and the graph uses profile roles.
 | Phase | Version | Content | Needs | Status |
 |-------|---------|---------|-------|--------|
 | P1 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search`, plus REST routes (D27); `list_messages` `thread_id` made consistent with the cache | D23–D27 | **Done (0.11.0)**: Tested=Yes (service tests against the in-memory IMAP server incl. live fallback, PEEK checks, mboxrd quoting, caps, FTS-literal input, per-account errors; MCP scope and sandbox tests; REST route and 403 tests). Validated=Yes on a side instance against two live accounts: threads from cache and with live fallback, attachment list/download (octet-stream, nosniff, read token 403), `.eml` byte-exact, thread `.mbox` counts match, cross-account search live and cache, server UNSEEN counts unchanged, MCP tool lists per scope |
-| P2 | 0.12.0 | State migration moving the intelligence tables to `imap.db`; header backfill (resumable, rate-limited). Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | Planned |
+| P2 | 0.12.0 | State migration moving the intelligence tables to `imap.db`; header backfill (resumable, rate-limited). Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | **Done (0.12.0)**: Tested=Yes (header parsing, hashing, roles, scope, end-to-end scan against the in-memory server incl. duplicates across folders, reply pairing, hall and model roles, gated model, PEEK/`\Seen` checks, UIDVALIDITY rescan, mid-scan role refresh, progress registration, table move without cache rebuild; mutation-checked). Validated=Yes on a side instance against two live accounts (one with an All Mail folder, one with several hundred folders): full first scan with two mid-scan restarts and no double counting (incoming index rows = sum of received counts), replies paired, roles from signals, DKIM/DMARC results captured, REST/query views and scopes, cache tables dropped without rebuild. Found and fixed during validation: roles only at tick end, progress before a folder's first batch, read-to-write transaction upgrade |
 | P3 | 0.13.0 | Knowledge-graph builder: deterministic entities and relationships with `valid_from`/`valid_to`, initial build over backfilled data; then the gated LLM body-extraction lane for recent conversation/personal mail | D19, D21 | Planned |
 | P4 | 0.14.0 | Anomaly detector: compares new mail with profile baselines, writes `anomalies`, publishes `anomaly.detected` (and so webhooks and SSE). Resolution through MCP and REST | D19, D22 | Planned |
 | P5 | after P4 | Docs and skill: examples.md "Not there yet" list removed or reduced, new agent workflows that use profiles, graph and anomalies, companion skill update and community PR, known-limitations and context file updated | P1–P4 | Planned |
@@ -93,6 +94,56 @@ Every phase follows the usual rules:
 - CHANGELOG, `config.example.yaml` for any new setting, and the context file;
 - a version bump before push;
 - a database backup before any migration.
+
+## P2 design (sender profiles)
+
+- **Storage.** `senders`, `kg_entities`, `kg_relationships` and `anomalies`
+  are created in `imap.db`; the empty copies in `cache.db` are dropped at
+  open. The cache schema version is not bumped, so the cache is kept, not
+  rebuilt. New state tables:
+  - `intel_messages`: the D28 index;
+  - `intel_scan`: per account and folder, the UIDVALIDITY, the last UID
+    scanned, and the time the folder was first completed.
+
+  `get_sender_profile`, `kg_query`, `get_anomalies`, their REST routes and
+  the `/api/query` views `senders`/`kg`/`anomalies` read `imap.db`.
+- **Header scanner** (`internal/intel`, behind an interface; runs where the
+  syncer runs).
+  - **Each tick:** for every account and folder, it fetches UIDs above the
+    last one scanned, in batches. Each fetch takes the envelope, INTERNALDATE
+    and `BODY.PEEK[HEADER.FIELDS (List-Id List-Unsubscribe Precedence
+    Auto-Submitted Authentication-Results)]`, so it never fetches bodies or
+    sets `\Seen`.
+  - **Folder scope:** the `\All` mailbox when the server has one (Gmail);
+    otherwise every selectable folder except `\Junk`, `\Drafts` and any
+    `intelligence.exclude_folders`.
+  - **Rate:** limited to `intelligence.backfill_per_minute`.
+  - **Resumable:** progress and aggregates commit in one transaction per
+    batch, so a crash never double-counts. A UIDVALIDITY change rescans the
+    folder, and the D28 index makes that safe.
+- **Profiles.** Incoming mail updates the sender's name, domain, first and
+  last seen, message count, and the list, bulk, auto-submitted and
+  DKIM/DMARC pass/fail counts; the auth counts serve as P4 baselines.
+  Outgoing mail updates each recipient's `sent_count`. After each batch,
+  outgoing replies are paired through the In-Reply-To hash with the incoming
+  message they answer, which updates that sender's reply count and average
+  reply time.
+- **Roles (D20).** Signals first; then the majority of the cache's
+  classification tags; then, for senders still `unknown` that have cached
+  mail, the classify model with a few recent subjects. The model is called a
+  few senders per tick, only when the enrichment backfill gates allow it.
+  The source of each role is recorded.
+- **Config.** An `intelligence:` block with `IMAP_MCP_INTELLIGENCE_*`
+  overrides:
+  - `enabled`;
+  - `scan_interval_minutes`;
+  - `backfill_per_minute`;
+  - `batch_size`;
+  - `exclude_folders`;
+  - `llm_roles`;
+  - `llm_roles_per_tick`.
+
+  `/api/health` shows the scan progress.
 
 ## Constraints carried from earlier decisions
 
