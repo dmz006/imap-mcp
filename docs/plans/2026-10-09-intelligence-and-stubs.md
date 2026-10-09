@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-09
 - **Starting version:** 0.10.5
-- **Status:** P1 done (0.11.0), P2 done (0.12.0); P3 next. Decisions D19–D28 decided 2026-10-09 (DIP, one at a
+- **Status:** P1 (0.11.0), P2 (0.12.0) and P3 (0.13.0) done; P4 next. Decisions D19–D28 decided 2026-10-09 (DIP, one at a
   time); see the table below and AGENT.md § Recorded Decisions.
 
 ## Scope
@@ -83,7 +83,7 @@ anomaly baselines need profiles, and the graph uses profile roles.
 |-------|---------|---------|-------|--------|
 | P1 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search`, plus REST routes (D27); `list_messages` `thread_id` made consistent with the cache | D23–D27 | **Done (0.11.0)**: Tested=Yes (service tests against the in-memory IMAP server incl. live fallback, PEEK checks, mboxrd quoting, caps, FTS-literal input, per-account errors; MCP scope and sandbox tests; REST route and 403 tests). Validated=Yes on a side instance against two live accounts: threads from cache and with live fallback, attachment list/download (octet-stream, nosniff, read token 403), `.eml` byte-exact, thread `.mbox` counts match, cross-account search live and cache, server UNSEEN counts unchanged, MCP tool lists per scope |
 | P2 | 0.12.0 | State migration moving the intelligence tables to `imap.db`; header backfill (resumable, rate-limited). Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | **Done (0.12.0)**: Tested=Yes (header parsing, hashing, roles, scope, end-to-end scan against the in-memory server incl. duplicates across folders, reply pairing, hall and model roles, gated model, PEEK/`\Seen` checks, UIDVALIDITY rescan, mid-scan role refresh, progress registration, table move without cache rebuild; mutation-checked). Validated=Yes on a side instance against two live accounts (one with an All Mail folder, one with several hundred folders): full first scan with two mid-scan restarts and no double counting (incoming index rows = sum of received counts), replies paired, roles from signals, DKIM/DMARC results captured, REST/query views and scopes, cache tables dropped without rebuild. Found and fixed during validation: roles only at tick end, progress before a folder's first batch, read-to-write transaction upgrade |
-| P3 | 0.13.0 | Knowledge-graph builder: deterministic entities and relationships with `valid_from`/`valid_to`, initial build over backfilled data; then the gated LLM body-extraction lane for recent conversation/personal mail | D19, D21 | Planned |
+| P3 | 0.13.0 | Knowledge-graph builder: deterministic entities and relationships with `valid_from`/`valid_to`, initial build over backfilled data; then the gated LLM body-extraction lane for recent conversation/personal mail | D19, D21 | **Done (0.13.0)**: Tested=Yes (edge rules incl. webmail, cc cap, subscriptions, threads; exactly-once via kg_done across copies, ticks and the upgrade rescan; tag and model edges once per message; untrusted model output filtered; staleness; in-place state migration; mutation-checked). Validated=Yes on a side instance over copies of the production databases (encrypted): in-place migration and rescan of all history built header edges for every indexed message exactly once with profile counts unchanged; tag and model edges from real cached mail; model roles. The real classify model was probed with a synthetic example.com email. Found and fixed: model-role candidates without cached mail starved the pass; deadline date in the wrong field; placeholder names |
 | P4 | 0.14.0 | Anomaly detector: compares new mail with profile baselines, writes `anomalies`, publishes `anomaly.detected` (and so webhooks and SSE). Resolution through MCP and REST | D19, D22 | Planned |
 | P5 | after P4 | Docs and skill: examples.md "Not there yet" list removed or reduced, new agent workflows that use profiles, graph and anomalies, companion skill update and community PR, known-limitations and context file updated | P1–P4 | Planned |
 
@@ -144,6 +144,64 @@ Every phase follows the usual rules:
   - `llm_roles_per_tick`.
 
   `/api/health` shows the scan progress.
+
+## P3 design (knowledge graph)
+
+- **Entities.**
+  - `person`: every address, including each account's own address, which
+    stands for the mailbox owner.
+  - `organization`: a sender's domain, except shared webmail domains.
+  - `thread`: a References root, for conversation mail only, meaning mail
+    with no list, bulk or auto-submitted header.
+  - `project` and `topic`: from the cache's `wing` and `room` tags.
+- **Deterministic edges** (confidence 1.0). Each edge keeps a `weight`
+  (number of messages), `valid_from` (first evidence) and `valid_to`. A
+  relationship with no evidence for `intelligence.kg_stale_days` (default
+  365) gets `valid_to` set to its last evidence; new evidence clears it
+  again. The edges:
+  - `belongs_to`: person → organization.
+  - `corresponds_with`: other person → mailbox owner (either direction of
+    mail).
+  - `cc_with`: two people in the same message, owner excluded. Stored once
+    per pair, only for messages with at most 8 participants, so mailing lists
+    don't produce a clique.
+  - `is_subscription`: list or bulk sender → mailbox owner.
+  - `participates_in`: person → thread (conversation mail only).
+  - `works_on`: sender → project, from the cache's `wing` tag.
+  - `discusses`: sender → topic, from the cache's `room` tag.
+- **Built from the header scan, exactly once per message.** The scan now
+  also fetches `References`. Per-message participants are never stored
+  (D28). Instead, the D28 index row gains a `kg_done` flag. The first P3
+  start resets the scan progress, so every folder is read once more. Profile
+  counts skip messages already indexed, as before, while graph edges are
+  built for every row with `kg_done = 0`, which is then set. Later ticks do
+  both in one pass.
+- **From the cache.** `works_on` and `discusses` come from cached, enriched
+  mail, recorded once per message through a `kg_tags_done` flag on the same
+  index row.
+- **Model extraction (D21).** For cached conversation and personal mail, the
+  classify model reads the sender, date, subject and up to 1,500 characters
+  of body. Quoted replies are stripped first. It returns relations from a
+  fixed set:
+  - `manages`, `reports_to` (person → person);
+  - `works_at` (person → organization);
+  - `works_on` (person → project);
+  - `deadline` (thread → topic, with the due date in `properties`).
+
+  Anything else in the answer is ignored, and names are trimmed and
+  length-capped. The body is untrusted input; the output can only add
+  edges, never cause an action. These edges have confidence 0.6. The model
+  runs through `ClassifyWhenIdle` (the enrichment gates), handles
+  `intelligence.kg_llm_per_tick` messages per tick, and processes each
+  message once (`kg_llm_done` flag). It can be turned off with
+  `intelligence.kg_llm`.
+- **Schema.** `kg_relationships` gains `weight`, and a unique index on
+  (subject, predicate, object) for upserts. `intel_messages` gains the
+  three flags. Columns are added to an existing `imap.db` in place (backup
+  first).
+- **Reads.** `kg_query`, `GET /api/kg`, the `kg` query view and a profile's
+  `relationships` return data. `/api/health` adds entity and relationship
+  counts.
 
 ## Constraints carried from earlier decisions
 

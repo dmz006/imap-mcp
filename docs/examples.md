@@ -36,13 +36,14 @@ ask. These map to the MCP tools listed in the [README](../README.md#mcp-tools-44
 | "Is enrichment caught up?" | `enrichment_status` |
 | "Forget the cached copies of Archive older than 90 days." | `cache_sweep` (dry run first) |
 | "Who is billing@example.com to me? Do I ever answer them?" | `get_sender_profile` (role, counts each way, average reply time) |
+| "Who works with Ann, and who does she report to?" | `kg_query` with `entity: "ann@example.com"` |
 | "Show me the whole conversation this came from." | `get_thread` with the message's `thread_id` |
 | "Search all my accounts for anything from example.net about the renewal." | `cross_account_search` (`live: true` for older mail) |
 | "Save the PDF from that invoice." | `get_attachments` to list, then with `part` to save |
 | "Export that thread so I can forward it to legal." | `export_message` with `thread_id` → `.mbox` |
 
 The [inbox-cleanup cookbook](cookbook-inbox-cleanup.md) walks through a full
-cleanup session end to end, and [section 10](#10-agent-workflows) has twelve
+cleanup session end to end, and [section 10](#10-agent-workflows) has fourteen
 more multi-step workflows.
 
 ---
@@ -633,12 +634,39 @@ curl -sS -X POST "$IMAP_MCP/api/export" -H "Authorization: Bearer $WRITE_TOKEN" 
 Exports are capped (`tools.export_max_messages`, `tools.export_max_mb`). A
 selection over a cap is refused with a clear message, never cut short.
 
+### 10.13 Who's who on a project
+
+> "Who's involved in the Apollo work, who runs it, and is anything due?"
+
+1. `kg_query` with `entity: "apollo"` and `predicate: "works_on"` lists the
+   people whose mail is tagged with the project, strongest first.
+2. For the top few, `kg_query` with each address (no predicate) shows their
+   organization (`belongs_to`), who they're usually copied with (`cc_with`),
+   and any `manages` / `reports_to` the model read in recent mail.
+3. `kg_query` with `predicate: "deadline"` finds threads with stated due
+   dates. `properties.due` holds the date, and the subject is the thread ID,
+   so `get_thread` opens the conversation.
+4. The agent writes `projects/apollo.md`: people and roles, who reports to
+   whom, open deadlines with links back to their threads.
+
+Edges the model extracted have `confidence: 0.6`. The agent says which facts
+came from headers and tags (certain) and which from reading mail (inferred).
+`current: false` marks relationships with no evidence in the last year.
+
+### 10.14 Who did I lose touch with?
+
+> "Who did I used to write to a lot but haven't heard from in a while?"
+
+`kg_query` with `predicate: "corresponds_with"`. The agent keeps the heavy
+relationships (`weight` high) whose `last_seen` is old, or that are no longer
+`current`. Then `get_sender_profile` on each gives the reply history. The
+answer is a short list with "last contact" dates, not a mailbox dump.
+
 ### Not there yet
 
-`kg_query` and `get_anomalies` work, but nothing builds the knowledge graph or
-anomalies yet, so they return empty results. That is planned
-([plans](plans/2026-10-09-intelligence-and-stubs.md), P3–P4). Sender profiles
-are built ([intelligence.md](intelligence.md)), and the workflows above use
-them where they help. For example, 10.6 reads a sender's DMARC history from
+`get_anomalies` works, but nothing detects anomalies yet, so it returns empty
+results. That is planned ([plans](plans/2026-10-09-intelligence-and-stubs.md),
+P4). Sender profiles and the knowledge graph are built
+([intelligence.md](intelligence.md)), and the workflows above use them. For example, 10.6 reads a sender's DMARC history from
 its profile instead of waiting for `get_anomalies`. See
 [known-limitations.md](known-limitations.md).

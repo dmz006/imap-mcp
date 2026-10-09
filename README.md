@@ -55,8 +55,12 @@ Notes:
 - `get_sender_profile` returns a profile built from a header-only scan of all
   your history: contact dates, counts each way, reply times, DKIM/DMARC results
   and a role. See [docs/intelligence.md](docs/intelligence.md).
-- `kg_query` and `get_anomalies` work but return empty results: nothing builds
-  the knowledge graph or detects anomalies yet.
+- `kg_query` answers from a knowledge graph built from the same scan, the
+  cache's project/topic tags and (optionally) the classify model reading recent
+  conversations: who you correspond with, who appears together, organizations,
+  threads, projects, topics, reporting lines and deadlines. Strongest
+  relationships first, with weights and dates.
+- `get_anomalies` works but returns empty results: nothing detects anomalies yet.
 
 See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 
@@ -70,7 +74,7 @@ See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 | Query DSL | `POST /api/query`: read-only JSON queries over the cache. Allowlisted views, fields and operators; never SQL. | [docs/query.md](docs/query.md) |
 | Sync cache | Read-only background sync into `cache.db` over a rolling window. SPECIAL-USE folder tokens, per-account overrides, CONDSTORE flag refresh, UIDVALIDITY rebuild, automatic cleaning and VACUUM. | [docs/sync-cache.md](docs/sync-cache.md) |
 | Enrichment | Embeddings (Ollama) and classification (Ollama or datawatch). New mail before backfill; backfill rate limits, quiet hours and GPU-yield gates. | [docs/enrichment.md](docs/enrichment.md) |
-| Sender intelligence | A resumable, header-only scan of all history builds a profile per sender in `imap.db`: contact dates, counts each way, reply times, DKIM/DMARC results and a role (signals, cached tags, then the classify model). | [docs/intelligence.md](docs/intelligence.md) |
+| Sender intelligence | A resumable, header-only scan of all history builds a profile per sender in `imap.db` (contact dates, counts each way, reply times, DKIM/DMARC results, a role) and a knowledge graph (correspondents, co-recipients, organizations, threads, projects, topics, plus reporting lines and deadlines the classify model reads from recent conversations). | [docs/intelligence.md](docs/intelligence.md) |
 | Rules | Match on sender, subject, body text or age; actions `trash`, `move`, `flag`, `seen`. Run via MCP, REST or `imap-mcp run-rules`. | [docs/rules.md](docs/rules.md) |
 | Encryption | Separate state (`imap.db`) and cache (`cache.db`) files, each optionally encrypted at rest (adiantum + Argon2id). Fails closed on a missing or wrong key. | [docs/encryption.md](docs/encryption.md) |
 | Outbound mail | Per-account SMTP block; mail leaves through that domain's server. Password (PLAIN) auth only. | [config.example.yaml](config.example.yaml) |
@@ -302,7 +306,7 @@ See [AGENT.md](AGENT.md) for project conventions.
 
 Open items only:
 
-- Intelligence: the knowledge graph and anomaly detection on top of sender profiles, so `kg_query`, `get_anomalies` and the matching `/api/query` views return data and `anomaly.detected` is published ([plan](docs/plans/2026-10-09-intelligence-and-stubs.md), P3–P4).
+- Intelligence: anomaly detection on top of sender profiles and the knowledge graph, so `get_anomalies` and the `anomalies` view return data and `anomaly.detected` is published ([plan](docs/plans/2026-10-09-intelligence-and-stubs.md), P4).
 - IMAP IDLE for push delivery of new mail (sync is currently interval-based).
 - PGP gate for inbound commands (`require_pgp` currently fails closed).
 

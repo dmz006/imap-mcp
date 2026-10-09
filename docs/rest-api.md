@@ -473,16 +473,15 @@ truncated. Messages are fetched with `BODY.PEEK[]`.
 
 ## Intelligence
 
-These routes read `imap.db`. Sender profiles come from the header scanner and
-cover all history ([intelligence.md](intelligence.md)). Nothing builds the
-knowledge graph or anomalies yet, so `GET /api/kg` and `GET /api/anomalies`
-return empty lists.
+These routes read `imap.db`. Sender profiles and the knowledge graph come from
+the header scanner and cover all history ([intelligence.md](intelligence.md)).
+Nothing detects anomalies yet, so `GET /api/anomalies` returns an empty list.
 
 | Route | Scope | Query | Response |
 |-------|-------|-------|----------|
 | `GET /api/senders` | `read` | `role`, `domain`, `limit` (default 50, max 500) | `{count, senders: [...]}`, most messages first |
 | `GET /api/senders/{address}` | `read` | | Profile fields ([intelligence.md](intelligence.md#what-a-profile-holds)) plus `cached_messages`, `scan_complete`, `relationships`, `anomalies`. 404 when there is neither a profile nor cached mail. |
-| `GET /api/kg` | `read` | `entity`, `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence}]}` |
+| `GET /api/kg` | `read` | `entity` (exact name, either end), `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence, weight, last_seen, current, properties}]}`, strongest (`weight`) first. See [intelligence.md](intelligence.md#knowledge-graph) |
 | `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [...]}` |
 
 ## Enrichment

@@ -6,6 +6,41 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-09
+
+### Added
+- **Knowledge graph** (plan P3, D21). `kg_query`, `GET /api/kg`, the
+  `/api/query` `kg` view and each profile's `relationships` now return data.
+  Entities: people (each account's address stands for you), organizations
+  (domains, never webmail), threads, projects and topics. See
+  [docs/intelligence.md](docs/intelligence.md#knowledge-graph).
+  - **From the header scan**, once per message: `belongs_to`,
+    `corresponds_with` (person-to-person mail), `cc_with` (at most 8 people
+    per message), `is_subscription` (list, bulk or automated mail) and
+    `participates_in` (thread roots; the scan now also reads `References`).
+  - **From cached enrichment tags:** `works_on` (wing → project) and
+    `discusses` (room → topic).
+  - **From the classify model** reading recent cached conversation and
+    personal mail (quoted text removed, 1,500 characters, enrichment gates,
+    each message once): `manages`, `reports_to`, `works_at`, `works_on` and
+    `deadline` with a due date. The model's answer is untrusted: only these
+    predicates are kept, names are cleaned and capped, and confidence is 0.6.
+    Turn it off with `intelligence.kg_llm: false`.
+  - **Edges carry** `weight`, `valid_from`, `last_seen` and `confidence`.
+    After `intelligence.kg_stale_days` (365) without evidence, `valid_to`
+    is set and `current` is false. `kg_query` lists the strongest first.
+- Config: `intelligence.kg`, `kg_stale_days`, `kg_llm`, `kg_llm_per_tick`,
+  each with an `IMAP_MCP_INTELLIGENCE_*` override. `/api/health` adds
+  `kg_entities`, `kg_relationships` and `kg_model_messages`. The `kg` query
+  view gains `weight` and `last_seen`.
+- Companion skill 0.11.0 (knowledge-graph usage). Examples 10.13 "Who's who
+  on a project" and 10.14 "Who did I lose touch with?".
+
+### Changed
+- **Upgrade:** `imap.db` gains columns in place (back it up first). On the
+  first start the header scan runs again over all history to build the
+  graph, once per message. Profile counts don't change.
+
 ## [0.12.0] - 2026-10-09
 
 ### Added

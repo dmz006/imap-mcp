@@ -59,7 +59,7 @@ wins. Current gaps are listed in [known limitations](../known-limitations.md).
 | Sync engine | `internal/sync` | Per account and configured folder: resolve SPECIAL-USE (`\Sent`), EXAMINE (read-only), `UID SEARCH SINCE` the window, fetch new mail, drop gone mail from the cache, update flags with CONDSTORE where available, rebuild a folder on UIDVALIDITY change. Never changes the mailbox |
 | Cache | `internal/db` | `cache.db`: messages, FTS5, vectors, sync state, enrichment queue. Disposable |
 | Enrichment pipeline | `internal/enrichment` | Embeds and classifies cached mail. See below |
-| Sender intelligence | `internal/intel` | Resumable, PEEK-only header scan of all folders; sender profiles, hashed per-message index, reply pairing and roles in `imap.db`. See [intelligence.md](../intelligence.md) |
+| Sender intelligence | `internal/intel` | Resumable, PEEK-only header scan of all folders; sender profiles, hashed per-message index, reply pairing, roles and the knowledge graph in `imap.db`. See [intelligence.md](../intelligence.md) |
 | Service layer | `internal/service` | One implementation of each operation, called by MCP tools and REST handlers. Typed errors map to REST status codes and MCP tool errors. Some MCP cleanup tools (`move_bulk`, `flag_bulk`, `purge_sender`, `label_*`, `empty_trash`, `top_senders`, `summarize_folder`, `detect_subscriptions`) still call the IMAP pool directly |
 | MCP server | `internal/mcp` | Registers 44 tools; scope middleware and `tools/list` filter when HTTP auth is on |
 | REST API | `internal/api` | chi router, one scope per route, SSE at `/api/events` |
@@ -146,7 +146,7 @@ Operator data that cannot be rebuilt from IMAP. Default path
 | `senders` | Sender profiles: contact dates, counts each way, reply stats, list/bulk/auto counts, DKIM/DMARC results, role and its source. Built by the header scanner |
 | `intel_messages` | D28 index: one row per message (Message-ID hash, date, sender id, direction, In-Reply-To hash); no addresses or content |
 | `intel_scan` | Header-scan progress per account and folder |
-| `kg_entities`, `kg_relationships` | Temporal knowledge graph (not populated yet: plan P3) |
+| `kg_entities`, `kg_relationships` | Temporal knowledge graph: people, organizations, threads, projects, topics; edges with weight, valid_from, last_seen, valid_to and confidence. Built by the header scanner, cached tags and the classify model |
 | `anomalies` | Anomaly log (not populated yet: plan P4) |
 
 ### `cache.db`: cache
@@ -164,8 +164,8 @@ version changes the file is dropped and recreated.
 | `enrichment_queue` | Status, lane (0 new, 1 backfill), attempts, last error | By sync and enrichment |
 
 The `/api/query` DSL reads the view `messages` from `cache.db` and the views
-`senders`, `anomalies` and `kg` from `imap.db`; `anomalies` and `kg` return
-nothing until plan P3/P4 fill them.
+`senders`, `anomalies` and `kg` from `imap.db`; `anomalies` returns nothing
+until plan P4 fills it.
 
 ---
 

@@ -1,13 +1,18 @@
 # Sender intelligence
 
-imap-mcp builds a profile of every sender you correspond with. It reads your
-mail's history once, keeps the profiles up to date as new mail arrives, and
-gives each sender a role. `get_sender_profile`, `GET /api/senders` and the
-`/api/query` `senders` view read the result.
+imap-mcp builds a profile of every sender you correspond with, and a
+knowledge graph of who you correspond with, who appears together, which
+organizations, threads, projects and topics they connect to, and what your
+recent mail says about reporting lines and deadlines. It reads your mail's
+history once and keeps both up to date as new mail arrives.
 
-The knowledge graph and anomaly detection build on these profiles. They are
-planned work and still return empty results
-([known-limitations.md](known-limitations.md)).
+- Profiles: `get_sender_profile`, `GET /api/senders`, the `/api/query`
+  `senders` view.
+- Graph: `kg_query`, `GET /api/kg`, the `/api/query` `kg` view, and the
+  `relationships` list in each profile.
+
+Anomaly detection builds on both. It is planned work and still returns empty
+results ([known-limitations.md](known-limitations.md)).
 
 ## What a profile holds
 
@@ -96,6 +101,96 @@ A sender's role comes from three sources, in order (AGENT.md D20):
 New mail from a sender re-runs steps 1 and 2. A role from the model is kept
 until a signal or tag decides otherwise.
 
+## Knowledge graph
+
+### Entities
+
+| Type | What it is | Name |
+|------|------------|------|
+| `person` | A correspondent, or you: each account's own address stands for the mailbox owner | The address. Names from model extraction (below) are kept as written |
+| `organization` | A correspondent's domain (never a shared webmail domain such as gmail.com) | The domain, or a name from model extraction |
+| `thread` | A conversation | Its root Message-ID: pass it to `get_thread` |
+| `project`, `topic` | The `wing` and `room` tags enrichment gives cached mail | Lower-cased tag |
+
+### Relationships
+
+| Predicate | From → to | Built from |
+|-----------|-----------|------------|
+| `belongs_to` | person → organization | Header scan: the address's domain |
+| `corresponds_with` | person → you | Header scan: person-to-person mail in either direction |
+| `cc_with` | person → person | Header scan: people on the same message, you excluded, stored once per pair; only messages with at most 8 people, so mailing lists don't link everyone to everyone |
+| `is_subscription` | sender → you | Header scan: list, bulk or automated mail |
+| `participates_in` | person → thread | Header scan: person-to-person mail (thread root from References) |
+| `works_on` | person → project | Cache: the `wing` tag of their mail. Model extraction can add more |
+| `discusses` | person → topic | Cache: the `room` tag of their mail |
+| `manages`, `reports_to` | person → person | Model extraction |
+| `works_at` | person → organization | Model extraction |
+| `deadline` | thread → topic | Model extraction; `properties` holds `{"due": "YYYY-MM-DD"}` when a date was stated |
+
+Each relationship carries:
+- `weight`: the number of messages behind it;
+- `valid_from`: the first evidence;
+- `last_seen`: the latest evidence;
+- `confidence`: 1.0 for header and tag evidence, 0.6 when only the model saw it.
+
+A relationship with no new evidence for `intelligence.kg_stale_days`
+(default 365) gets `valid_to` set and `current: false`. It is history, not
+deleted. New evidence makes it current again. `kg_query` lists the strongest
+relationships first.
+
+```json
+{"subject": "ann@example.com", "subject_type": "person", "predicate": "corresponds_with",
+ "object": "you@example.com", "object_type": "person", "valid_from": 1640995200,
+ "confidence": 1, "weight": 214, "last_seen": 1791500000, "current": true}
+```
+
+### Built once per message
+
+Header edges are added during the header scan, in the same transaction as
+the profile counts. The per-message index row records that a message's edges
+exist (`kg_done`), so copies in other folders or labels, and rescans, never
+add them twice. Tag edges and model edges are also recorded once per message,
+the same way.
+
+**Upgrading from 0.12** adds these flags to an index that already has rows.
+On the first start the header scan begins again from the start of every
+folder, so the graph gets built for all of history. Profile counts don't
+change during this rescan: the index already knows every message. It takes
+as long as the first scan did.
+
+### Model extraction
+
+For cached mail classified as conversation or personal, the classify model
+reads:
+- the sender;
+- the date;
+- the subject;
+- up to 1,500 characters of the body, with quoted replies and signatures
+  removed.
+
+It is asked for `manages`, `reports_to`, `works_at`, `works_on` and
+`deadline` relations as JSON. The answer is treated as untrusted data:
+- any other predicate is dropped;
+- names are cleaned and capped at 80 characters;
+- at most 10 relations are kept per message;
+- dates must be `YYYY-MM-DD`.
+
+The model can only add edges; it can't cause any other action.
+
+Expect sparse, imperfect results from a small local model. Most mail states
+no reporting line or deadline, so most messages add nothing. The model
+sometimes confuses predicates (for example "manages" with a project as the
+object), which is why these edges carry confidence 0.6 and agents are told
+to present them as inferred. When a model puts a deadline's date in `object`,
+imap-mcp moves it to `due`. Names with no letters or digits (placeholders
+copied from the prompt) are dropped.
+
+This is the one place message text is sent anywhere. It goes only to the
+configured classify model, under the same gates as backfill enrichment
+(quiet hours, GPU yield, datawatch capacity). Each message is read once,
+`intelligence.kg_llm_per_tick` messages per tick. Turn it off with
+`intelligence.kg_llm: false`. The header and tag graph is then still built.
+
 ## Configuration
 
 ```yaml
@@ -107,6 +202,10 @@ intelligence:
   exclude_folders: []
   llm_roles: true
   llm_roles_per_tick: 20
+  kg: true
+  kg_stale_days: 365
+  kg_llm: true
+  kg_llm_per_tick: 10
 ```
 
 | Setting | Default | Environment variable |
@@ -118,6 +217,10 @@ intelligence:
 | `exclude_folders` | none | |
 | `llm_roles` | true | `IMAP_MCP_INTELLIGENCE_LLM_ROLES` |
 | `llm_roles_per_tick` | 20 | `IMAP_MCP_INTELLIGENCE_LLM_ROLES_PER_TICK` |
+| `kg` | true | `IMAP_MCP_INTELLIGENCE_KG` |
+| `kg_stale_days` | 365 | `IMAP_MCP_INTELLIGENCE_KG_STALE_DAYS` |
+| `kg_llm` | true | `IMAP_MCP_INTELLIGENCE_KG_LLM` |
+| `kg_llm_per_tick` | 10 | `IMAP_MCP_INTELLIGENCE_KG_LLM_PER_TICK` |
 
 At 600 messages a minute, a mailbox of 100,000 messages takes about three
 hours for its first scan. The scan shares each account's IMAP connection
@@ -131,6 +234,7 @@ for long.
 ```json
 "intelligence": {"enabled": true, "folders": 14, "folders_complete": 14, "backfill_complete": true,
                  "messages_indexed": 48210, "senders": 3120, "replies_paired": 912,
+                 "kg_entities": 9400, "kg_relationships": 31200, "kg_model_messages": 420,
                  "roles": {"newsletter": 1210, "bot": 640, "vendor": 410, "personal": 380, "colleague": 95, "unknown": 385},
                  "last_scan": "2026-10-09T22:49:45Z"}
 ```
@@ -148,5 +252,8 @@ cache. Back up `imap.db` before upgrading, as for any release that changes
 it.
 
 What is stored per sender: their address, display name, domain, and the
-counts and dates above. Message content is never stored, and subjects are
-never stored here; they appear only in the transient model prompt in step 3.
+counts and dates above. The graph stores entity names (addresses, domains,
+thread root Message-IDs, tags, and names the model read in a body) and the
+relationships between them, with counts and dates. Message content and
+subjects are never stored here. Subjects appear only in transient role
+prompts, and bodies only in transient extraction prompts.

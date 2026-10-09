@@ -37,9 +37,9 @@ The response looks like this:
   relationships, with subject and object names).
   `messages` reads the cache (the sync window). `senders`, `anomalies` and
   `kg` read `imap.db`, which covers all history ([intelligence.md](intelligence.md)).
-  > **Currently empty:** nothing builds the `anomalies` or `kg` tables yet,
-  > so queries on those views return no rows. `senders` is filled by the
-  > header scanner. See [known-limitations.md](known-limitations.md).
+  > **Currently empty:** nothing detects anomalies yet, so the `anomalies`
+  > view returns no rows. `senders` and `kg` are filled by the header
+  > scanner. See [known-limitations.md](known-limitations.md).
 - **`fields`:** columns to return. If omitted, a default set is returned. For
   `messages`, the default never includes bodies: `body_text` and `body_html`
   are returned only when named.
@@ -85,8 +85,8 @@ Unread, flagged mail per folder:
  "aggregate": [{"fn": "count", "as": "n"}]}
 ```
 
-The next examples use the intelligence views. `senders` returns data; the
-`anomalies` and `kg` examples return no rows until those tables are built.
+The next examples use the intelligence views. `senders` and `kg` return data;
+the `anomalies` example returns no rows until anomaly detection is built.
 
 Senders you have never replied to, ranked by volume:
 
@@ -121,12 +121,22 @@ Open high-severity anomalies:
            {"field": "severity", "op": "eq", "value": "high"}]}
 ```
 
-Current relationships for an organization:
+Current relationships for an organization (`belongs_to` objects are
+lower-case domains):
 
 ```json
 {"view": "kg",
- "where": [{"field": "object", "op": "eq", "value": "Example Corp"},
-           {"field": "current", "op": "eq", "value": true}]}
+ "where": [{"field": "object", "op": "eq", "value": "example.com"},
+           {"field": "current", "op": "eq", "value": true}],
+ "order_by": [{"field": "weight", "desc": true}]}
+```
+
+Your strongest correspondents, and when you last heard from them:
+
+```json
+{"view": "kg", "fields": ["subject", "weight", "last_seen"],
+ "where": [{"field": "predicate", "op": "eq", "value": "corresponds_with"}],
+ "order_by": [{"field": "weight", "desc": true}], "limit": 20}
 ```
 
 ```bash

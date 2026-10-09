@@ -318,6 +318,7 @@ to 0.10.4 or later.
 | 0.10.4 | Microsoft 365 / Outlook `xoauth2` requests the Microsoft IMAP scope, so Microsoft OAuth accounts work. `auth-setup` checks a random OAuth `state` and listens only on loopback (`127.0.0.1` and `::1`, port 8766). Reading mail (`get_message`, `get_headers`, `detect_subscriptions`, the inbound watcher) no longer marks it read. |
 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search` work. New `tools:` config block (defaults are fine). Attachment downloads and exports need the `write` scope. |
 | 0.12.0 | **Back up `imap.db` first.** The intelligence tables move from `cache.db` to `imap.db` (the empty cache copies are dropped; the cache is not rebuilt). A header scanner then reads all of your history once, at `intelligence.backfill_per_minute` (default 600 a minute). Expect a few hours for a large mailbox, with `/api/health` showing progress. Set `intelligence.enabled: false` to skip it. See [intelligence.md](intelligence.md). |
+| 0.13.0 | **Back up `imap.db` first.** Columns are added to `imap.db` in place. On first start the header scan starts again from the beginning to build the knowledge graph for all history. Profile counts don't change. It takes as long as the 0.12 scan. Set `intelligence.kg: false` to skip the graph, or `intelligence.kg_llm: false` to keep message bodies away from the model. |
 
 ### The one-time 0.6.0 split
 

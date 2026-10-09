@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.10.0"
+version: "0.11.0"
 tags:
   - email
   - imap
@@ -311,6 +311,22 @@ get_attachments { folder, uid, part }                               → each att
 write_file { filename: "handover/README.md" }                       → index of messages and files
 ```
 
+### Knowledge graph
+
+```
+kg_query { entity: "ann@example.com" }                       → her organization, correspondents, co-recipients, threads, projects
+kg_query { entity: "apollo", predicate: "works_on" }         → who works on a project (wing tag), strongest first
+kg_query { predicate: "deadline" }                           → threads with stated deadlines; properties.due; subject = thread_id for get_thread
+kg_query { predicate: "corresponds_with" }                   → your correspondents by volume; old last_seen / current:false = lost touch
+```
+
+Predicates: `belongs_to`, `corresponds_with`, `cc_with`, `is_subscription`,
+`participates_in`, `works_on`, `discusses` come from headers and tags
+(confidence 1.0). `manages`, `reports_to`, `works_at`, `deadline` and some
+`works_on` come from the model reading recent mail (confidence 0.6). Say which
+facts are read from mail rather than certain. Names from model extraction
+are written as they appeared, not addresses.
+
 ### Scheduled (unattended) sessions
 
 When you run on a schedule with nobody watching:
@@ -350,6 +366,7 @@ When you run on a schedule with nobody watching:
 | Analytics | `top_senders` | `folder` (INBOX), `top` (30), `scan` (all), `group_by` (`address`/`domain`), `account` | read |
 | | `summarize_folder` | **`folder`**, `account`; returns only `total` and `recent` counts | read |
 | | `detect_subscriptions` | `folder` (INBOX), `limit`, `account` (omit for all accounts) | read |
+| | `kg_query` | `entity` (address, domain, thread id, project or topic; exact), `predicate`, `entity_type`, `limit` (50); strongest first, with `weight`, `last_seen`, `current`, `confidence` | read |
 | | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |
 | | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
 | Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
@@ -371,7 +388,7 @@ When you run on a schedule with nobody watching:
 
 | Tool | Status |
 |------|--------|
-| `kg_query`, `get_anomalies` | Registered and callable, but always empty: nothing builds the knowledge graph or anomalies yet (the `relationships` and `anomalies` lists in a sender profile are empty too) |
+| `get_anomalies` | Registered and callable, but always empty: nothing detects anomalies yet (the `anomalies` list in a sender profile is empty too) |
 
 `search_messages` accepts `hall`, `wing` and `room` but ignores them.
 

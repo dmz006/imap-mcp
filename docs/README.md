@@ -13,7 +13,7 @@ features are for.
 | [deployment.md](deployment.md) | systemd user service, scheduling `run-rules`, logs, clean stop, upgrading and rolling back. |
 | [sync-cache.md](sync-cache.md) | The mail cache: sync window, folders and SPECIAL-USE tokens, overrides, CONDSTORE and UIDVALIDITY, `keep_flagged`, cleaning, VACUUM and `cache_sweep`. |
 | [enrichment.md](enrichment.md) | Background embeddings and classification: providers, queue lanes, rate limits, yield gates, backoff, `enrichment_status` and triggers. |
-| [intelligence.md](intelligence.md) | Sender profiles: the header-only history scan, roles, reply times, DKIM/DMARC counts, configuration, progress and privacy. |
+| [intelligence.md](intelligence.md) | Sender profiles and the knowledge graph: the header-only history scan, roles, reply times, DKIM/DMARC counts, entities and relationships, model extraction, configuration, progress and privacy. |
 | [known-limitations.md](known-limitations.md) | What is not implemented yet, what you will see, and workarounds. |
 
 ## Using the API
