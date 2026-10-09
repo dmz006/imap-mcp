@@ -45,3 +45,7 @@ vendor/
 
 # Claude Code per-machine settings (local hook paths)
 .claude/settings.local.json
+
+# Local agent/session config: may hold tokens; never commit
+.mcp.json
+.datawatch/
