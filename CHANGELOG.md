@@ -256,6 +256,19 @@ All notable changes to imap-mcp are documented here. The format is based on
   Non-browser clients (curl, datawatch, Claude Code) are unaffected.
 
 ### Fixed
+- **Microsoft 365 / Outlook OAuth works (v0.10.4).** `xoauth2` always requested
+  Google's `https://mail.google.com/` scope, so the Microsoft endpoint rejected
+  every authorization. Microsoft now requests
+  `https://outlook.office.com/IMAP.AccessAsUser.All` and `offline_access` (for a
+  refresh token); Google is unchanged.
+- **`auth-setup` callback hardened (v0.10.4).** The OAuth `state` is now random
+  and checked (a callback with a wrong or missing state is rejected and does not
+  end the flow), provider errors (`error=access_denied`) are reported, and the
+  callback listens on loopback only (127.0.0.1 and ::1) instead of all
+  interfaces.
+- **Provider auto-detect no longer panics (v0.10.4)** on short non-Gmail
+  addresses (11–13 characters), and only `@gmail.com` / `@googlemail.com`
+  count as Gmail (not e.g. `@notgmail.com`).
 - **Clean stop with open streams (v0.10.3).** `serve` exited with status 1
   ("context deadline exceeded") on every stop while a client held a long-lived
   stream open (the datawatch `/api/events` SSE consumer, MCP streamable GET).

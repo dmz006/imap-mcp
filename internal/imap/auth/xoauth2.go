@@ -2,12 +2,17 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	imaplib "github.com/emersion/go-imap/v2/imapclient"
@@ -44,28 +49,40 @@ func (x *XOAuth2) oauthConfig() *oauth2.Config {
 	// Endpoint selection: an explicit provider wins (required for enterprise
 	// Gmail on a custom domain, which can't be auto-detected from the address);
 	// otherwise fall back to a domain heuristic.
-	var endpoint oauth2.Endpoint
+	var isGoogle bool
 	switch strings.ToLower(x.provider) {
 	case "google", "gmail", "workspace":
-		endpoint = google.Endpoint
+		isGoogle = true
 	case "microsoft", "outlook", "office365", "azure":
-		endpoint = microsoft.AzureADEndpoint("common")
 	default:
-		if isGmailAddress(x.username) {
-			endpoint = google.Endpoint
-		} else {
-			endpoint = microsoft.AzureADEndpoint("common")
-		}
+		isGoogle = isGmailAddress(x.username)
+	}
+	endpoint, scopes := microsoft.AzureADEndpoint("common"), microsoftScopes
+	if isGoogle {
+		endpoint, scopes = google.Endpoint, googleScopes
 	}
 	x.cfg = &oauth2.Config{
 		ClientID:     x.clientID,
 		ClientSecret: x.clientSecret,
 		Endpoint:     endpoint,
-		Scopes:       []string{"https://mail.google.com/"},
-		RedirectURL:  "http://localhost:8766/oauth/callback",
+		Scopes:       scopes,
+		RedirectURL:  "http://localhost:" + callbackPort + callbackPath,
 	}
 	return x.cfg
 }
+
+// Scopes per provider. Google's full-mailbox scope covers IMAP and SMTP.
+// Microsoft needs the Exchange Online IMAP scope, and offline_access for a
+// refresh token (it ignores Google's access_type=offline).
+var (
+	googleScopes    = []string{"https://mail.google.com/"}
+	microsoftScopes = []string{"https://outlook.office.com/IMAP.AccessAsUser.All", "offline_access"}
+)
+
+const (
+	callbackPort = "8766"
+	callbackPath = "/oauth/callback"
+)
 
 func (x *XOAuth2) Authenticate(ctx context.Context, c *imaplib.Client) error {
 	token, err := x.loadToken()
@@ -117,36 +134,50 @@ func (x *XOAuth2) saveToken(t *oauth2.Token) error {
 }
 
 // RunAuthSetup runs the browser-based OAuth2 flow and saves the token.
-// This is invoked by the --auth-setup subcommand.
+// This is invoked by the auth-setup subcommand.
 func RunAuthSetup(ctx context.Context, username, clientID, clientSecret, tokenFile, provider string) error {
 	a := NewXOAuth2(username, clientID, clientSecret, tokenFile, provider)
 	cfg := a.oauthConfig()
 
-	state := fmt.Sprintf("imap-mcp-%d", time.Now().UnixNano())
+	state, err := randomState()
+	if err != nil {
+		return err
+	}
 	authURL := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
 
-	fmt.Printf("\nOpen this URL in your browser to authorize %s:\n\n  %s\n\n", username, authURL)
-	fmt.Println("Waiting for OAuth callback on http://localhost:8766/oauth/callback ...")
-
-	codeCh := make(chan string, 1)
-	srv := &http.Server{
-		Addr:        ":8766",
-		ReadTimeout: 2 * time.Minute,
+	// Loopback only: the redirect URI is http://localhost, and nothing else
+	// should be able to deliver an authorization code.
+	// "localhost" may resolve to either loopback address, so listen on both.
+	var lns []net.Listener
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		if ln, err := net.Listen("tcp", net.JoinHostPort(host, callbackPort)); err == nil {
+			lns = append(lns, ln)
+		} else if host == "127.0.0.1" {
+			return fmt.Errorf("listen for OAuth callback: %w", err)
+		}
 	}
-	http.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
-		code := r.URL.Query().Get("code")
-		fmt.Fprintf(w, "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>")
-		codeCh <- code
-	})
-	go srv.ListenAndServe() //nolint:errcheck
+	fmt.Printf("\nOpen this URL in your browser to authorize %s:\n\n  %s\n\n", username, authURL)
+	fmt.Println("Waiting for OAuth callback on " + cfg.RedirectURL + " ...")
+
+	results := make(chan callbackResult, 1)
+	mux := http.NewServeMux()
+	mux.Handle(callbackPath, callbackHandler(state, results))
+	srv := &http.Server{Handler: mux, ReadTimeout: 2 * time.Minute}
+	for _, ln := range lns {
+		go srv.Serve(ln) //nolint:errcheck
+	}
+	defer srv.Close()
 
 	var code string
 	select {
-	case code = <-codeCh:
+	case res := <-results:
+		if res.err != nil {
+			return res.err
+		}
+		code = res.code
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	srv.Shutdown(ctx) //nolint:errcheck
 
 	token, err := cfg.Exchange(ctx, code)
 	if err != nil {
@@ -159,8 +190,48 @@ func RunAuthSetup(ctx context.Context, username, clientID, clientSecret, tokenFi
 	return nil
 }
 
+type callbackResult struct {
+	code string
+	err  error
+}
+
+// callbackHandler accepts the first callback carrying the expected state and
+// reports its code (or the provider's error). Requests with a wrong or
+// missing state are rejected and do not end the flow.
+func callbackHandler(state string, results chan<- callbackResult) http.Handler {
+	var once sync.Once
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(state)) != 1 {
+			http.Error(w, "invalid state", http.StatusBadRequest)
+			return
+		}
+		res := callbackResult{code: q.Get("code")}
+		switch {
+		case q.Get("error") != "":
+			res = callbackResult{err: fmt.Errorf("authorization denied: %s %s", q.Get("error"), q.Get("error_description"))}
+			fmt.Fprint(w, "<html><body><h2>Authorization failed. See the terminal.</h2></body></html>")
+		case res.code == "":
+			http.Error(w, "missing code", http.StatusBadRequest)
+			return
+		default:
+			fmt.Fprint(w, "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>")
+		}
+		once.Do(func() { results <- res })
+	})
+}
+
+func randomState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate OAuth state: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func isGmailAddress(addr string) bool {
-	return len(addr) > 10 && (addr[len(addr)-9:] == "gmail.com" || addr[len(addr)-14:] == "googlemail.com")
+	a := strings.ToLower(addr)
+	return strings.HasSuffix(a, "@gmail.com") || strings.HasSuffix(a, "@googlemail.com")
 }
 
 // xOAuth2SASL implements the XOAUTH2 SASL mechanism for go-imap.
