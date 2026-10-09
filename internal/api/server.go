@@ -147,6 +147,9 @@ func (s *Server) Router() http.Handler {
 		r.With(admin).Get("/api/webhooks", s.handleListWebhooks)
 		r.With(admin).Post("/api/webhooks", s.handleCreateWebhook)
 		r.With(admin).Delete("/api/webhooks/{id}", s.handleDeleteWebhook)
+		r.With(admin).Post("/api/webhooks/{id}/enable", s.handleEnableWebhook)
+		r.With(admin).Post("/api/webhooks/{id}/test", s.handleTestWebhook)
+		r.With(admin).Get("/api/webhooks/{id}/deliveries", s.handleWebhookDeliveries)
 
 		// ── Rules ────────────────────────────────────────────────────────────────
 		r.With(read).Get("/api/rules", s.handleListRules)
@@ -272,10 +275,7 @@ func notImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"error": "not yet implemented — coming in iteration 2"})
 }
 
-func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
-func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
-func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
-func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
+func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
 
 // handleEventStream streams bus events as SSE. Each event is one JSON line
 // prefixed with "data: " per the SSE spec. Clients reconnect on disconnect;

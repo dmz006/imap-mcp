@@ -45,6 +45,14 @@ func NewPool(cfg *config.Config, b *bus.Bus, log *slog.Logger) *Pool {
 }
 
 // Connect establishes connections to all configured accounts.
+// Bus returns the event bus the pool publishes to (nil-safe).
+func (p *Pool) Bus() *bus.Bus {
+	if p == nil {
+		return nil
+	}
+	return p.bus
+}
+
 func (p *Pool) Connect(ctx context.Context) error {
 	for _, a := range p.cfg.Accounts {
 		conn, err := p.connect(ctx, a)

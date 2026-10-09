@@ -222,6 +222,27 @@ CREATE TABLE IF NOT EXISTS webhooks (
     fail_count INTEGER DEFAULT 0
 );
 
+-- Durable webhook outbox (AGENT.md D16): one row per (webhook, event),
+-- retried with backoff until delivered or out of attempts. payload is
+-- metadata only (identifiers, counts, flags), never message content.
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    webhook_id   INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    delivery_id  TEXT NOT NULL UNIQUE,
+    event        TEXT NOT NULL,
+    payload      TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending', -- pending|delivered|failed
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    next_attempt INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_status  INTEGER,
+    last_error   TEXT,
+    created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+    done_at      INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due ON webhook_deliveries(status, next_attempt);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_hook ON webhook_deliveries(webhook_id, id);
+
 -- ─── Rules ───────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS rules (

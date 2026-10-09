@@ -27,6 +27,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/server"
 	"github.com/dmz006/imap-mcp/internal/sync"
 	"github.com/dmz006/imap-mcp/internal/trust"
+	"github.com/dmz006/imap-mcp/internal/webhook"
 	mcpgo "github.com/mark3labs/mcp-go/server"
 )
 
@@ -116,7 +117,11 @@ func runRules(args []string) error {
 	defer database.Close()
 	logMigration(log)
 
-	pool := imap.NewPool(cfg, bus.New(), log)
+	// rule.fired goes into the webhook outbox; serve delivers it. Only that
+	// event: connection events from this short-lived process are noise.
+	b := bus.New()
+	b.Subscribe(bus.EventRuleFired, webhook.NewEnqueuer(database.Webhooks, log, nil).Handle)
+	pool := imap.NewPool(cfg, b, log)
 	if err := pool.Connect(ctx); err != nil {
 		return fmt.Errorf("connect accounts: %w", err)
 	}
@@ -240,6 +245,15 @@ func runServe(args []string) error {
 	defer cleanup()
 
 	srv := server.New(cfg, deps.pool, deps.db, deps.bus, deps.syncer, deps.pipeline, deps.out, log, authn)
+
+	// Webhooks (D16): enqueue every event into the durable outbox and deliver
+	// from it, including rows queued by the run-rules CLI.
+	dispatcher := webhook.NewDispatcher(deps.db.Webhooks, deps.bus, log)
+	enqueuer := webhook.NewEnqueuer(deps.db.Webhooks, log, dispatcher.Wake)
+	enqueuer.Attach(deps.bus)
+	srv.SetWebhooks(enqueuer)
+	go dispatcher.Run(ctx)
+
 	return srv.Start(ctx)
 }
 

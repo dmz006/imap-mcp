@@ -7,6 +7,30 @@ All notable changes to imap-mcp are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Webhook delivery (D16).** `POST /api/webhooks {url, events}` registers an
+  endpoint and returns its signing secret. The secret is shown only once.
+  - **Durable outbox.** Deliveries are stored in `imap.db`
+    (`webhook_deliveries`). They are retried with exponential backoff (30 s up
+    to 1 h, 12 attempts) across restarts.
+  - **At least once.** Each delivery carries a unique `delivery_id` that
+    receivers can use to drop duplicates.
+  - **Metadata only.** Payloads carry identifiers, counts and flags, never
+    subject, sender, addresses, body or error text.
+  - **Signed.** Requests are HMAC-SHA256 signed
+    (`X-Imap-Mcp-Signature: t=<unix>,v1=<hex>`).
+  - **URL rules.** URLs must be https, or http to loopback only. Redirects are
+    not followed.
+  - **Auto-disable.** After 100 consecutive failed attempts a webhook is
+    disabled; its pending deliveries are kept and resume when it is
+    re-enabled.
+  - **New routes:** `POST /api/webhooks/{id}/enable`, `POST .../test` (a
+    `webhook.test` ping) and `GET .../deliveries`. All webhook routes need the
+    `admin` scope.
+  - **`rule.fired` is now published** (rule id, action, match count) by
+    `run_rules`, the REST API and the hourly `run-rules` CLI. The CLI queues
+    its events and `serve` delivers them.
+  - The outbox prunes delivered rows after 7 days and failed rows after
+    30 days.
 - **`datawatch.ca_file` (D15a).** Pins datawatch's self-signed TLS certificate
   (e.g. `~/.datawatch/tls/server/cert.pem`) for every call imap-mcp makes to
   datawatch: secrets, the capacity gate and the LLM proxy. It is trusted in

@@ -10,6 +10,7 @@ import (
 	imaplib "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
+	"github.com/dmz006/imap-mcp/internal/bus"
 	"github.com/dmz006/imap-mcp/internal/db"
 )
 
@@ -154,6 +155,11 @@ func (s *Service) RunActiveRules(onlyID int64, dryRun bool) ([]RuleRunResult, er
 			res.Error = aerr.Error()
 		} else if !dryRun && n > 0 {
 			_ = s.db.Rules.IncrementRun(rule.ID, n)
+			// Synchronous so the run-rules CLI enqueues webhooks before exit.
+			if b := s.pool.Bus(); b != nil {
+				b.Publish(bus.Event{Type: bus.EventRuleFired, Account: rule.Conditions.Account,
+					Payload: map[string]any{"rule_id": rule.ID, "action": res.Action, "matched": n}})
+			}
 		}
 		results = append(results, res)
 	}

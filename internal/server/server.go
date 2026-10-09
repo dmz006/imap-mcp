@@ -19,6 +19,7 @@ import (
 	mcpserver "github.com/dmz006/imap-mcp/internal/mcp"
 	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/sync"
+	"github.com/dmz006/imap-mcp/internal/webhook"
 	"github.com/go-chi/chi/v5"
 	mcpgo "github.com/mark3labs/mcp-go/server"
 )
@@ -34,8 +35,12 @@ type Server struct {
 	out      *output.Writer
 	log      *slog.Logger
 	authn    *httpauth.Authenticator // nil = auth disabled
+	webhooks *webhook.Enqueuer       // nil = webhook delivery not running
 	http     *http.Server
 }
+
+// SetWebhooks attaches the webhook enqueuer used by the REST webhook routes.
+func (s *Server) SetWebhooks(q *webhook.Enqueuer) { s.webhooks = q }
 
 func New(
 	cfg *config.Config,
@@ -67,6 +72,7 @@ func (s *Server) handler() http.Handler {
 	mcpSrv := mcpserver.NewServer(s.cfg, s.pool, s.db, s.syncer, s.out, s.pipeline, s.authn != nil)
 	streamable := mcpgo.NewStreamableHTTPServer(mcpSrv)
 	apiSrv := api.NewServer(s.cfg, s.pool, s.db, s.bus, s.syncer, s.pipeline, s.log, s.authn)
+	apiSrv.SetWebhooks(s.webhooks)
 
 	r := chi.NewRouter()
 	r.Mount("/mcp", streamable)

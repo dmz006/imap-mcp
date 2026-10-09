@@ -17,6 +17,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"github.com/dmz006/imap-mcp/internal/testutil/imaptest"
+	"github.com/dmz006/imap-mcp/internal/webhook"
 )
 
 // newRESTServer wires the real handler stack to an in-memory IMAP account.
@@ -41,6 +42,7 @@ func newRESTServer(t *testing.T) *httptest.Server {
 		{Name: "datawatch", Value: e2eDW, Scopes: []httpauth.Scope{httpauth.ScopeRead, httpauth.ScopeSend}},
 	}, []string{"/api/health"}, log)
 	s := New(cfg, pool, d, b, nil, nil, nil, log, authn)
+	s.SetWebhooks(webhook.NewEnqueuer(d.Webhooks, log, nil))
 	ts := httptest.NewServer(s.handler())
 	t.Cleanup(ts.Close)
 	return ts
@@ -183,4 +185,63 @@ func TestRESTEndpointsEndToEnd(t *testing.T) {
 func itoa(n int) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+func TestWebhookRoutesEndToEnd(t *testing.T) {
+	ts := newRESTServer(t)
+
+	// Validation and scopes.
+	for _, c := range []struct {
+		tok, body string
+		want      int
+	}{
+		{e2eDW, `{"url":"https://hooks.example.com/x","events":["rule.fired"]}`, 403},
+		{e2eAll, `{"url":"http://hooks.example.com/x","events":["rule.fired"]}`, 400},
+		{e2eAll, `{"url":"https://hooks.example.com/x","events":["webhook.failed"]}`, 400},
+		{e2eAll, `{"url":"https://hooks.example.com/x"}`, 400},
+	} {
+		if resp, b := do(t, ts, "POST", "/api/webhooks", c.tok, c.body, nil); resp.StatusCode != c.want {
+			t.Errorf("POST %s with %s: %d %s", c.body, c.tok[:8], resp.StatusCode, b)
+		}
+	}
+
+	resp, b := do(t, ts, "POST", "/api/webhooks", e2eAll, `{"url":"https://hooks.example.com/x","events":["rule.fired","message.synced"]}`, nil)
+	if resp.StatusCode != 201 {
+		t.Fatalf("create: %d %s", resp.StatusCode, b)
+	}
+	created := jsonOf(t, b)
+	secret, _ := created["secret"].(string)
+	id := int(created["id"].(float64))
+	if len(secret) != 64 || created["active"] != true {
+		t.Fatalf("created = %v", created)
+	}
+
+	resp, b = do(t, ts, "GET", "/api/webhooks", e2eAll, "", nil)
+	if resp.StatusCode != 200 || strings.Contains(string(b), secret) || !strings.Contains(string(b), "hooks.example.com") {
+		t.Fatalf("list: %d %s", resp.StatusCode, b)
+	}
+
+	path := "/api/webhooks/" + itoa(id)
+	if resp, b = do(t, ts, "POST", path+"/test", e2eAll, "{}", nil); resp.StatusCode != 202 {
+		t.Fatalf("test: %d %s", resp.StatusCode, b)
+	}
+	resp, b = do(t, ts, "GET", path+"/deliveries", e2eAll, "", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(b), `"event":"webhook.test"`) || !strings.Contains(string(b), `"status":"pending"`) {
+		t.Fatalf("deliveries: %d %s", resp.StatusCode, b)
+	}
+	if resp, _ = do(t, ts, "POST", path+"/enable", e2eAll, "{}", nil); resp.StatusCode != 200 {
+		t.Errorf("enable: %d", resp.StatusCode)
+	}
+	if resp, _ = do(t, ts, "DELETE", path, e2eAll, "{}", nil); resp.StatusCode != 200 {
+		t.Errorf("delete: %d", resp.StatusCode)
+	}
+	for _, p := range []string{path, path + "/enable", path + "/test"} {
+		m := "POST"
+		if p == path {
+			m = "DELETE"
+		}
+		if resp, _ = do(t, ts, m, p, e2eAll, "{}", nil); resp.StatusCode != 404 {
+			t.Errorf("%s %s after delete: %d", m, p, resp.StatusCode)
+		}
+	}
 }

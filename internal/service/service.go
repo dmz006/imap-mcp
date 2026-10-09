@@ -13,6 +13,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/imap"
 	"github.com/dmz006/imap-mcp/internal/sync"
+	"github.com/dmz006/imap-mcp/internal/webhook"
 )
 
 // Kind classifies a service error so each transport can map it (REST status
@@ -73,6 +74,7 @@ type Service struct {
 	db       *db.DB
 	syncer   *sync.Syncer
 	pipeline *enrichment.Pipeline
+	webhooks *webhook.Enqueuer
 }
 
 // New builds the service.
@@ -94,3 +96,6 @@ func (s *Service) conn(account string) (*imap.Conn, error) {
 
 // SetPipeline attaches the enrichment pipeline after construction.
 func (s *Service) SetPipeline(p *enrichment.Pipeline) { s.pipeline = p }
+
+// SetWebhooks attaches the webhook enqueuer (test pings, subscriber cache).
+func (s *Service) SetWebhooks(q *webhook.Enqueuer) { s.webhooks = q }

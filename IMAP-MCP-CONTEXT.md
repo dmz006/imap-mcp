@@ -280,7 +280,8 @@ anomalies         -- episodic anomaly log: behavior_change|silence|reply_spike
 folders           -- folder metadata and last-sync state
 sync_state        -- per-account/folder UID watermark
 enrichment_queue  -- pending/processing/done enrichment jobs
-webhooks          -- registered webhook endpoints
+webhooks          -- registered webhook endpoints (signing secret, fail count)
+webhook_deliveries -- durable webhook outbox (metadata-only payloads, retries)
 rules             -- automation rules (conditions + actions JSON)
 ```
 
@@ -346,7 +347,9 @@ POST   /api/enrichment/trigger                             admin
 POST   /api/cache/sweep                                    admin
 GET|POST /api/rules, PUT|DELETE /api/rules/{id}, POST /api/rules/{id}/test   read / write
 GET    /api/events                                         read (SSE)
-GET|POST /api/webhooks, DELETE /api/webhooks/{id}          admin — 501 pending webhook DIP
+GET|POST /api/webhooks, DELETE /api/webhooks/{id}          admin — durable outbox, metadata-only (D16; docs/webhooks.md)
+POST   /api/webhooks/{id}/enable | /test                   admin — re-enable after auto-disable; queue a webhook.test ping
+GET    /api/webhooks/{id}/deliveries?limit=N               admin — recent outbox rows
 POST   /api/query                                          admin — 501 pending query DSL DIP
 ```
 
