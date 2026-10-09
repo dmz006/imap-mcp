@@ -101,7 +101,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 |---|----------|-----------------------------------|--------|
 | D1 | Encryption mechanism | Recommended field-level; **operator chose whole-DB encryption (SQLCipher-style)** 2026-10-08 | **Decided** |
 | D1a | Library for whole-DB encryption | **`github.com/ncruces/go-sqlite3` + `vfs/adiantum`** (pure Go, MIT, Argon2id, FTS5 via `ext/fts5`). Replaces `modernc.org/sqlite`; one-time migration of the existing DB. Accepted trade-offs: not SQLCipher file format; deterministic block encryption | **Decided** 2026-10-08 |
-| D1b | One DB file or split cache/state | See DIP (pending) | Open |
+| D1b | One DB file or split cache/state | **Split:** `cache.db` (messages, vectors, FTS, senders, KG, anomalies, enrichment queue, sync state; disposable, rebuildable from IMAP) and `imap.db` (rules, webhooks, inbound nonces; not rebuildable). **Each file independently supports encryption, operator-selectable, off by default unless enabled.** run-rules needs a key only if `imap.db` is encrypted | **Decided** 2026-10-08 |
 | D2 | Which fields are encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D3 | Search over encrypted content | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D4 | Embeddings when encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |

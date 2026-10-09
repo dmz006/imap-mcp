@@ -254,6 +254,9 @@ they can be replaced or extended without touching call sites.
   See `docs/plans/2026-10-08-sync-cache.md`.
 - **2026-10-08 — D1a (encryption library):** use `github.com/ncruces/go-sqlite3`
   with the `vfs/adiantum` VFS (pure Go, no cgo). Do not add cgo SQLite drivers.
+- **2026-10-08 — D1b (DB split):** mail cache (`cache.db`, disposable) and state
+  (`imap.db`: rules, webhooks, nonces) are separate files. Each one independently
+  supports encryption, selected by the operator. Encryption is never mandatory.
 
 ---
 
