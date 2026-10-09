@@ -311,6 +311,13 @@ they can be replaced or extended without touching call sites.
   which logs a warning at every startup and shows `auth: disabled` in
   `/api/health`. A token reference that cannot be resolved always fails closed.
   Roll out client support (datawatch backend, `~/.mcp.json`) before enforcing.
+- **2026-10-09 — D14 (encrypting an existing DB):** conversion is only ever an
+  explicit operator command (`imap-mcp db encrypt`), never automatic at
+  startup. It refuses while another process has the file open, verifies the
+  encrypted copy (key opens it, integrity check, identical per-table row counts
+  and digests) before replacing the original, and removes the plaintext
+  original only after that verification. Other plaintext copies (backups) are
+  listed for the operator, never deleted by the tool.
 
 ---
 
