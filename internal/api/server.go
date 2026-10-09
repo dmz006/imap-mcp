@@ -91,7 +91,6 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
 
 	// Per-route scope requirements (no-ops when auth is disabled).
 	read := s.authn.RequireScope(httpauth.ScopeRead)
@@ -99,56 +98,61 @@ func (s *Server) Router() http.Handler {
 	send := s.authn.RequireScope(httpauth.ScopeSend)
 	admin := s.authn.RequireScope(httpauth.ScopeAdmin)
 
-	// ── Health ────────────────────────────────────────────────────────────────
-	r.Get("/api/health", s.handleHealth)
-
-	// ── Accounts ─────────────────────────────────────────────────────────────
-	r.With(read).Get("/api/accounts", s.handleListAccounts)
-	r.With(admin).Post("/api/accounts/{account}/sync", s.handleSyncAccount)
-
-	// ── Folders ──────────────────────────────────────────────────────────────
-	r.With(read).Get("/api/accounts/{account}/folders", s.handleListFolders)
-
-	// ── Messages ─────────────────────────────────────────────────────────────
-	r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages", s.handleListMessages)
-	r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleGetMessage)
-	r.With(write).Delete("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleDeleteMessage)
-	r.With(write).Put("/api/accounts/{account}/folders/{folder}/messages/{uid}/flags", s.handleSetFlags)
-	r.With(write).Post("/api/accounts/{account}/folders/{folder}/messages/{uid}/move", s.handleMoveMessage)
-
-	// ── Search ───────────────────────────────────────────────────────────────
-	r.With(read).Get("/api/search", s.handleSearch)
-	r.With(read).Post("/api/search/semantic", s.handleSemanticSearch)
-
-	// ── Analytics (cache-based, fast) ────────────────────────────────────────
-	r.With(read).Get("/api/accounts/{account}/stats", s.handleAccountStats)
-	r.With(read).Get("/api/senders", s.handleListSenders)
-	r.With(read).Get("/api/senders/{address}", s.handleGetSender)
-	r.With(read).Get("/api/kg", s.handleKGQuery)
-	r.With(read).Get("/api/anomalies", s.handleGetAnomalies)
-	r.With(read).Get("/api/enrichment/status", s.handleEnrichmentStatus)
-	r.With(admin).Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
-
-	// ── Webhooks ─────────────────────────────────────────────────────────────
-	r.With(admin).Get("/api/webhooks", s.handleListWebhooks)
-	r.With(admin).Post("/api/webhooks", s.handleCreateWebhook)
-	r.With(admin).Delete("/api/webhooks/{id}", s.handleDeleteWebhook)
-
-	// ── Rules ────────────────────────────────────────────────────────────────
-	r.With(read).Get("/api/rules", s.handleListRules)
-	r.With(write).Post("/api/rules", s.handleCreateRule)
-	r.With(write).Put("/api/rules/{id}", s.handleUpdateRule)
-	r.With(write).Delete("/api/rules/{id}", s.handleDeleteRule)
-	r.With(write).Post("/api/rules/{id}/test", s.handleTestRule)
-
-	// ── Query DSL (algorithmic layer entry point) ─────────────────────────────
-	r.With(admin).Post("/api/query", s.handleQuery)
-
-	// ── Event stream ────────────────────────────────────────────────────────
+	// ── Event stream (long-lived: no request timeout) ───────────────────────
 	r.With(read).Get("/api/events", s.handleEventStream)
 
-	// ── Send message ─────────────────────────────────────────────────────────
-	r.With(send).Post("/api/accounts/{account}/messages/send", s.handleSendMessage)
+	// Every other route gets a 30 s request timeout.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Timeout(30 * time.Second))
+
+		// ── Health ────────────────────────────────────────────────────────────────
+		r.Get("/api/health", s.handleHealth)
+
+		// ── Accounts ─────────────────────────────────────────────────────────────
+		r.With(read).Get("/api/accounts", s.handleListAccounts)
+		r.With(admin).Post("/api/accounts/{account}/sync", s.handleSyncAccount)
+
+		// ── Folders ──────────────────────────────────────────────────────────────
+		r.With(read).Get("/api/accounts/{account}/folders", s.handleListFolders)
+
+		// ── Messages ─────────────────────────────────────────────────────────────
+		r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages", s.handleListMessages)
+		r.With(read).Get("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleGetMessage)
+		r.With(write).Delete("/api/accounts/{account}/folders/{folder}/messages/{uid}", s.handleDeleteMessage)
+		r.With(write).Put("/api/accounts/{account}/folders/{folder}/messages/{uid}/flags", s.handleSetFlags)
+		r.With(write).Post("/api/accounts/{account}/folders/{folder}/messages/{uid}/move", s.handleMoveMessage)
+
+		// ── Search ───────────────────────────────────────────────────────────────
+		r.With(read).Get("/api/search", s.handleSearch)
+		r.With(read).Post("/api/search/semantic", s.handleSemanticSearch)
+
+		// ── Analytics (cache-based, fast) ────────────────────────────────────────
+		r.With(read).Get("/api/accounts/{account}/stats", s.handleAccountStats)
+		r.With(read).Get("/api/senders", s.handleListSenders)
+		r.With(read).Get("/api/senders/{address}", s.handleGetSender)
+		r.With(read).Get("/api/kg", s.handleKGQuery)
+		r.With(read).Get("/api/anomalies", s.handleGetAnomalies)
+		r.With(read).Get("/api/enrichment/status", s.handleEnrichmentStatus)
+		r.With(admin).Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
+
+		// ── Webhooks ─────────────────────────────────────────────────────────────
+		r.With(admin).Get("/api/webhooks", s.handleListWebhooks)
+		r.With(admin).Post("/api/webhooks", s.handleCreateWebhook)
+		r.With(admin).Delete("/api/webhooks/{id}", s.handleDeleteWebhook)
+
+		// ── Rules ────────────────────────────────────────────────────────────────
+		r.With(read).Get("/api/rules", s.handleListRules)
+		r.With(write).Post("/api/rules", s.handleCreateRule)
+		r.With(write).Put("/api/rules/{id}", s.handleUpdateRule)
+		r.With(write).Delete("/api/rules/{id}", s.handleDeleteRule)
+		r.With(write).Post("/api/rules/{id}/test", s.handleTestRule)
+
+		// ── Query DSL (algorithmic layer entry point) ─────────────────────────────
+		r.With(admin).Post("/api/query", s.handleQuery)
+
+		// ── Send message ─────────────────────────────────────────────────────────
+		r.With(send).Post("/api/accounts/{account}/messages/send", s.handleSendMessage)
+	})
 
 	return r
 }
@@ -228,6 +232,13 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+
+	// The stream outlives the server's WriteTimeout; lift it for this response.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
+	// Send headers now so clients see 200 without waiting for the first event.
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
 
 	ch := make(chan bus.Event, 32)
 	s.addSSEClient(ch)

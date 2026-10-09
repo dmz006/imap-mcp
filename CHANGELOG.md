@@ -40,6 +40,10 @@ All notable changes to imap-mcp are documented here. The format is based on
   Non-browser clients (curl, datawatch, Claude Code) are unaffected.
 
 ### Fixed
+- `GET /api/events` (SSE) now sends its 200 headers immediately, instead of at
+  the first event or 15 s heartbeat, and is exempt from the 30 s route timeout
+  and the 60 s server `WriteTimeout`, which had cut the stream every 30–60 s
+  and forced datawatch's `imap_mcp` backend to reconnect (v0.5.3).
 - SQLite connection pragmas were never applied (v0.5.1). The DSN used
   mattn-style `_journal`/`_fk`/`_timeout` params, which `modernc.org/sqlite`
   silently ignores, so the DB ran in rollback-journal mode with no busy timeout
