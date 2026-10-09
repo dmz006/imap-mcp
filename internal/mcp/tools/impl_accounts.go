@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -39,15 +38,6 @@ func (h *Handlers) SyncAccount(ctx context.Context, req mcp.CallToolRequest) (*m
 	if account == "" {
 		account = h.cfg.DefaultAccount().Name
 	}
-	if err := h.syncer.SyncAccount(ctx, account); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("sync failed: %v", err)), nil
-	}
-	var folders []any
-	for _, st := range h.syncer.Stats() {
-		if st.Account == account {
-			folders = append(folders, st)
-		}
-	}
-	data, _ := json.Marshal(map[string]any{"account": account, "folders": folders})
-	return mcp.NewToolResultText(string(data)), nil
+	folders, err := h.svc.SyncAccount(ctx, account)
+	return result(map[string]any{"account": account, "folders": folders}, err)
 }

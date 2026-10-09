@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -33,17 +32,6 @@ func SweepFilterFromArgs(args map[string]any) (db.SweepFilter, bool) {
 
 // CacheSweep implements cache_sweep.
 func (h *Handlers) CacheSweep(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if h.syncer == nil {
-		return mcp.NewToolResultError("cache sync is not running in this mode"), nil
-	}
 	f, dryRun := SweepFilterFromArgs(req.GetArguments())
-	if f.Empty() && !f.All {
-		return mcp.NewToolResultError("refusing to sweep without a filter: set account, folder, older_than_days, errors_only, or all=true"), nil
-	}
-	res, err := h.syncer.Sweep(ctx, f, dryRun)
-	if err != nil {
-		return mcp.NewToolResultError("cache sweep failed: " + err.Error()), nil
-	}
-	data, _ := json.Marshal(res)
-	return mcp.NewToolResultText(string(data)), nil
+	return result(h.svc.SweepCache(ctx, f, dryRun))
 }

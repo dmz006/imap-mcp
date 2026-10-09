@@ -3,10 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
-	"strings"
+	"github.com/dmz006/imap-mcp/internal/service"
 
 	imaplib "github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -33,7 +32,7 @@ func (h *Handlers) PurgeSender(_ context.Context, req mcp.CallToolRequest) (*mcp
 
 	trash := ""
 	if !permanent {
-		trash, err = resolveTrash(client)
+		trash, err = service.ResolveTrash(client)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("could not find Trash folder: %v", err)), nil
 		}
@@ -59,16 +58,12 @@ func (h *Handlers) PurgeSender(_ context.Context, req mcp.CallToolRequest) (*mcp
 		}
 		set := imaplib.UIDSetNum(uids...)
 		if permanent {
-			if err := client.Store(set, &imaplib.StoreFlags{
-				Op: imaplib.StoreFlagsAdd, Flags: []imaplib.Flag{imaplib.FlagDeleted},
-			}, nil).Close(); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("flag deleted: %v", err)), nil
-			}
-			if err := client.Expunge().Close(); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("expunge: %v", err)), nil
+			// Only the matched UIDs — never other \\Deleted mail in the folder.
+			if err := service.DeleteUIDs(client, set); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("permanent delete: %v", err)), nil
 			}
 		} else {
-			if _, err := client.Move(set, trash).Wait(); err != nil {
+			if err := service.MoveUIDs(client, set, trash); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("move to %s: %v", trash, err)), nil
 			}
 		}
@@ -84,27 +79,3 @@ func (h *Handlers) PurgeSender(_ context.Context, req mcp.CallToolRequest) (*mcp
 
 // resolveTrash finds the account's Trash mailbox, preferring the IMAP \Trash
 // special-use attribute, then common names.
-func resolveTrash(client *imapclient.Client) (string, error) {
-	boxes, err := client.List("", "*", &imaplib.ListOptions{
-		ReturnSpecialUse: true,
-	}).Collect()
-	if err != nil {
-		return "", err
-	}
-	var nameMatch string
-	for _, b := range boxes {
-		for _, attr := range b.Attrs {
-			if attr == imaplib.MailboxAttrTrash {
-				return b.Mailbox, nil
-			}
-		}
-		n := b.Mailbox
-		if n == "[Gmail]/Trash" || n == "Trash" || strings.HasSuffix(n, "/Trash") {
-			nameMatch = n
-		}
-	}
-	if nameMatch != "" {
-		return nameMatch, nil
-	}
-	return "", fmt.Errorf("no \\Trash mailbox found")
-}

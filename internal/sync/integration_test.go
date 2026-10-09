@@ -1,11 +1,9 @@
 package sync
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"log/slog"
-	"net"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,18 +12,12 @@ import (
 
 	imaplib "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/emersion/go-imap/v2/imapserver"
-	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 
 	"github.com/dmz006/imap-mcp/internal/bus"
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
-	"github.com/dmz006/imap-mcp/internal/imap"
+	"github.com/dmz006/imap-mcp/internal/testutil/imaptest"
 )
-
-type literal struct{ *bytes.Reader }
-
-func (l literal) Size() int64 { return int64(l.Len()) }
 
 const multipartMsg = "From: =?ISO-8859-1?Q?Jos=E9?= <jose@example.com>\r\n" +
 	"To: user@example.com\r\n" +
@@ -53,83 +45,27 @@ const multipartMsg = "From: =?ISO-8859-1?Q?Jos=E9?= <jose@example.com>\r\n" +
 	"JVBERi0xLjQK\r\n" +
 	"--XX--\r\n"
 
-func plainMsg(id, subject string) string {
-	return "From: a@example.com\r\nTo: user@example.com\r\nSubject: " + subject +
-		"\r\nMessage-ID: <" + id + ">\r\nContent-Type: text/plain\r\n\r\nhello\r\n"
-}
-
-// startMemServer runs an in-memory IMAP server with INBOX and "Sent Items",
-// and returns its address and the user.
-func startMemServer(t *testing.T) (string, *imapmemserver.User) {
-	t.Helper()
-	mem := imapmemserver.New()
-	user := imapmemserver.NewUser("user@example.com", "pw")
-	if err := user.Create("INBOX", nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := user.Create("Sent Items", nil); err != nil {
-		t.Fatal(err)
-	}
-	mem.AddUser(user)
-	srv := imapserver.New(&imapserver.Options{
-		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
-		},
-		Caps:         imaplib.CapSet{imaplib.CapIMAP4rev1: {}, imaplib.CapSpecialUse: {}},
-		InsecureAuth: true,
-		Logger:       nopLogger{},
-	})
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go srv.Serve(ln) //nolint:errcheck
-	t.Cleanup(func() { srv.Close() })
-	return ln.Addr().String(), user
-}
-
-type nopLogger struct{}
-
-func (nopLogger) Printf(string, ...any) {}
-
-func appendMsg(t *testing.T, u *imapmemserver.User, folder, raw string, when time.Time, flags ...imaplib.Flag) {
-	t.Helper()
-	if _, err := u.Append(folder, literal{bytes.NewReader([]byte(raw))}, &imaplib.AppendOptions{Time: when, Flags: flags}); err != nil {
-		t.Fatal(err)
-	}
-}
+func plainMsg(id, subject string) string { return imaptest.Plain(id, "a@example.com", subject, "hello") }
 
 func TestSyncAgainstIMAPServer(t *testing.T) {
-	addr, user := startMemServer(t)
-	host, port, _ := net.SplitHostPort(addr)
-	var p int
-	for _, c := range port {
-		p = p*10 + int(c-'0')
-	}
+	srv := imaptest.Start(t, []string{"Sent Items"})
+	addr := srv.Addr
 	now := time.Now()
-	appendMsg(t, user, "INBOX", multipartMsg, now.Add(-24*time.Hour))
-	appendMsg(t, user, "INBOX", plainMsg("old@example.com", "old"), now.AddDate(0, 0, -60))
-	appendMsg(t, user, "INBOX", plainMsg("seen@example.com", "seen"), now.Add(-time.Hour), imaplib.FlagSeen)
-	appendMsg(t, user, "Sent Items", plainMsg("sent@example.com", "sent"), now.Add(-2*time.Hour))
+	srv.Append(t, "INBOX", multipartMsg, now.Add(-24*time.Hour))
+	srv.Append(t, "INBOX", plainMsg("old@example.com", "old"), now.AddDate(0, 0, -60))
+	srv.Append(t, "INBOX", plainMsg("seen@example.com", "seen"), now.Add(-time.Hour), imaplib.FlagSeen)
+	srv.Append(t, "Sent Items", plainMsg("sent@example.com", "sent"), now.Add(-2*time.Hour))
 
 	cfg := &config.Config{
-		Accounts: []config.AccountConfig{{
-			Name: "test", Default: true,
-			IMAP: config.IMAPConfig{Host: host, Port: p},
-			Auth: config.AuthConfig{Type: "plain", Username: "user@example.com", Password: "pw"},
-		}},
+		Accounts: []config.AccountConfig{srv.Account("test")},
 		// imapmemserver cannot mark folders SPECIAL-USE, so this uses the literal
 		// name; token resolution is covered by the fake-source tests and live runs.
 		Sync: config.SyncConfig{WindowDays: 30, MaxMessageMB: 25, Folders: []string{"INBOX", "Sent Items"}},
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
-	pool := imap.NewPool(cfg, b, log)
+	pool := imaptest.Pool(t, cfg, b)
 	ctx := context.Background()
-	if err := pool.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
 	dir := t.TempDir()
 	d, err := db.Open(db.Options{Path: filepath.Join(dir, "imap.db")}, db.Options{Path: filepath.Join(dir, "cache.db"), Key: "k"})
 	if err != nil {
@@ -183,7 +119,7 @@ func TestSyncAgainstIMAPServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if err := c.Login("user@example.com", "pw").Wait(); err != nil {
+	if err := c.Login(imaptest.Username, imaptest.Password).Wait(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Select("INBOX", nil).Wait(); err != nil {

@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -102,4 +103,46 @@ func (r *RuleRepo) Delete(id int64) error {
 func (r *RuleRepo) IncrementRun(id int64, n int) error {
 	_, err := r.db.Exec(`UPDATE rules SET run_count = run_count + ?, updated_at = unixepoch() WHERE id = ?`, n, id)
 	return err
+}
+
+// ErrRuleNotFound is returned by Get and Update for an unknown id.
+var ErrRuleNotFound = errors.New("rule not found")
+
+// Get returns one rule by id.
+func (r *RuleRepo) Get(id int64) (*Rule, error) {
+	rules, err := r.List()
+	if err != nil {
+		return nil, err
+	}
+	for i := range rules {
+		if rules[i].ID == id {
+			return &rules[i], nil
+		}
+	}
+	return nil, ErrRuleNotFound
+}
+
+// Update replaces a rule's editable fields (name, description, conditions,
+// actions, active, priority). run_count is preserved.
+func (r *RuleRepo) Update(rule *Rule) error {
+	cond, err := json.Marshal(rule.Conditions)
+	if err != nil {
+		return err
+	}
+	acts, err := json.Marshal(rule.Actions)
+	if err != nil {
+		return err
+	}
+	if rule.Priority == 0 {
+		rule.Priority = 100
+	}
+	res, err := r.db.Exec(`UPDATE rules SET name=?, description=?, conditions=?, actions=?, active=?, priority=?, updated_at=unixepoch() WHERE id=?`,
+		rule.Name, rule.Description, string(cond), string(acts), boolInt(rule.Active), rule.Priority, rule.ID)
+	if err != nil {
+		return fmt.Errorf("update rule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrRuleNotFound
+	}
+	return nil
 }

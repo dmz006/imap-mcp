@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"github.com/dmz006/imap-mcp/internal/service"
 
 	imaplib "github.com/emersion/go-imap/v2"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -108,7 +109,7 @@ func (h *Handlers) EmptyTrash(_ context.Context, req mcp.CallToolRequest) (*mcp.
 	defer conn.Unlock()
 	client := conn.Client()
 
-	trash, err := resolveTrash(client)
+	trash, err := service.ResolveTrash(client)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("find trash: %v", err)), nil
 	}
