@@ -4,7 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
-| 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | Planned — decisions D19–D26 open |
+| 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | Planned — decisions D19–D26 decided; P1 next |
 | 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P5 built (0.5.3–0.10.0) |
 
 ## Bugs
@@ -49,3 +49,4 @@
 | Stdio + webhooks | stdio mode never starts the webhook enqueuer/dispatcher, so `rule.fired` from `run_rules` there is never delivered. |
 
 | `run-rules --json` summary | Machine-readable run summary (rules evaluated, per-rule matched/action/error, duration; no message content) so the scheduled wrapper can post it to datawatch once dmz006/datawatch#204 (result panel) exists. |
+| "Asks for payment" anomaly | LLM check for a first-time or unusual sender asking for payment, credentials or gift cards. Deferred from D22 (2026-10-09); builds on the P4 detector. |

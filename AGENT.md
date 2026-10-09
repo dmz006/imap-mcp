@@ -349,6 +349,78 @@ they can be replaced or extended without touching call sites.
   `service:imap-mcp`), are never printed, and are referenced from the config as
   `${secret:…}`. A scheduled `run-rules` job needs the datawatch service token in
   its environment (e.g. a wrapper that loads a 0600 env file).
+- **2026-10-09 — D19 (intelligence store):** `senders`, `kg_*` and
+  `anomalies` move to the durable state store `imap.db`, through a state
+  migration with a backup first. History comes from two sources:
+  - a one-off, resumable, rate-limited header-only backfill of all folders
+    (envelope fields only, never bodies, PEEK);
+  - incremental updates as mail syncs.
+
+  The cache is an input too. For recent mail it supplies the enriched signals
+  (classification tags, embeddings, bodies, attachment metadata). The builders
+  persist what they derive from them into `imap.db`, so it survives the window
+  purge and cache rebuilds. Message-level detail stays in the cache.
+- **2026-10-09 — D20 (sender roles):** profile counts are header
+  statistics: first and last seen, received, sent-to, and average reply time
+  from Sent. Roles come from signals first:
+  - `List-Id`/`List-Unsubscribe` or `Precedence: bulk` → newsletter;
+  - noreply or `Auto-Submitted` → bot;
+  - you have sent to them → personal, or colleague when on the account's own
+    domain;
+  - otherwise, the majority of the cached classification tags.
+
+  Only senders still `unknown` go to the classify LLM, with a few recent
+  subjects, through the existing enrichment gates. The header backfill
+  therefore fetches those header fields (`HEADER.FIELDS`, PEEK), not just the
+  envelope.
+- **2026-10-09 — D21 (knowledge graph):** two sources feed the graph.
+  - **Deterministic, from headers and existing tags.** People, organizations
+    (by domain), threads and subscriptions come from headers. Edges are
+    `belongs_to`, `corresponds_with`, `cc_with`, `is_subscription` and
+    `participates_in`. Project and topic entities come from the wing/room
+    classification tags.
+  - **LLM body extraction.** The local classify model reads the cached bodies
+    of recent conversation and personal mail and extracts richer relations
+    (`manages`, `works_on`, organizations and deadlines mentioned). It runs
+    through the enrichment gates, sends bodies only to the configured classify
+  model, and stores
+    LLM-derived edges with a confidence below 1.0 so they can be filtered.
+- **2026-10-09 — D22 (anomalies):** detection runs at two points.
+  - **As each message syncs:**
+    - `new_sender`, only for conversation and personal mail;
+    - `auth_failure`, a known sender that used to pass DKIM/DMARC and now
+      fails;
+    - `lookalike_domain`, a near-spelling of a domain you correspond with;
+    - `reply_to_mismatch`, a known sender whose Reply-To is on another
+      domain.
+  - **Periodic sweep:** `silence` (a regular correspondent goes quiet) and
+    `volume_spike`.
+
+  Thresholds are configurable. Findings are written to `anomalies` and
+  published as `anomaly.detected` with identifiers only. Sync and backfill
+  capture `Authentication-Results` and `Reply-To`. LLM detection of
+  "asks for payment" goes to the backlog.
+- **2026-10-09 — D23 (`get_thread`):** answer from the cache first: every
+  cached folder, Sent included, ordered by date. If the thread has messages
+  outside the sync window, or none are cached, fall back to a live IMAP search
+  by Message-ID/References (Gmail: `X-GM-THRID`). Live `list_messages` uses
+  the same `thread_id` derivation as sync, so its IDs work with `get_thread`.
+- **2026-10-09 — D24 (`get_attachments`):** listing returns metadata only
+  (read scope), from the cache or live BODYSTRUCTURE. Fetching a part saves it
+  to the working-dir sandbox and needs the write scope. `text/*` parts under a
+  configurable size cap are also returned inline, decoded. Binary content is
+  never returned inline.
+- **2026-10-09 — D25 (`export_message`):** exports go to the working-dir
+  sandbox (write scope), never inline. A single message exports as `.eml`, the
+  raw RFC 822 fetched with PEEK. A batch exports as one `.mbox`, selected by a
+  list of UIDs, a `thread_id` (the D23 lookup, including the live fallback) or
+  a sender. Batches are capped by configurable message and byte limits.
+- **2026-10-09 — D26 (`cross_account_search`):** searches the cache's
+  full-text index by default, across every account and cached folder, merged
+  by date. With `live: true`, it runs IMAP SEARCH in parallel on each account
+  (`folder` param, default INBOX) to cover full history. Each result names its
+  source. A failing account gets its own error entry and doesn't stop the
+  others.
 
 ---
 

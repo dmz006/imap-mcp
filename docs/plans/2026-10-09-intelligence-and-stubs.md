@@ -2,8 +2,8 @@
 
 - **Date:** 2026-10-09
 - **Starting version:** 0.10.5
-- **Status:** Planned. Decisions D19–D26 are open; they are put to the operator
-  one at a time (AGENT.md DIP) before the phase that needs them starts.
+- **Status:** Planned. Decisions D19–D26 decided 2026-10-09 (DIP, one at a
+  time); see the table below and AGENT.md § Recorded Decisions.
 
 ## Scope
 
@@ -56,21 +56,20 @@ plugin or another classifier can replace them later.
 That last point is the main design problem. Profiles, a graph and anomaly
 baselines all need more history than a 30-day, wipe-on-upgrade cache holds.
 
-## Open decisions
+## Decisions
 
-Each one is asked separately, with options and a recommendation, before the
-phase that needs it.
+All decided 2026-10-09, one question at a time.
 
 | # | Decision | Blocks | Status |
 |---|----------|--------|--------|
-| D19 | Where intelligence data lives and what history it is built from (cache only / persistent store / one-off historical scan) | P2–P4 | Open |
-| D20 | How sender profiles are built: header statistics only, or with an LLM-assigned role | P2 | Open |
-| D21 | How the knowledge graph is extracted: deterministic from headers, LLM entity extraction from bodies, or both | P3 | Open |
-| D22 | Which anomaly types to detect first, how they are triggered, and whether security signals (auth failures, lookalike domains, first-time sender asking for payment) are included | P4 | Open |
-| D23 | `get_thread`: cache `thread_id` only, live IMAP (`THREAD` extension, Gmail `X-GM-THRID`), or cache with live fallback; and fixing the mismatched `list_messages` `thread_id` | P1 | Open |
-| D24 | `get_attachments`: where fetched content goes (working-dir sandbox, inline base64, or both with a size cap) and any MIME-type limits | P1 | Open |
-| D25 | `export_message`: return the `.eml` inline, write it to the working-dir sandbox, or both; single message only or a batch/mbox option | P1 | Open |
-| D26 | `cross_account_search`: live IMAP SEARCH fanned out to every account, or the cache's full-text index across accounts, or both | P1 | Open |
+| D19 | Intelligence store and history | P2–P4 | **Decided** 2026-10-09: tables move to `imap.db` (state migration, backup first); seeded by a one-off resumable, rate-limited, header-only backfill of all folders (never bodies, PEEK), then updated incrementally as mail syncs. The cache also feeds the builders with enriched signals for recent mail (classification tags, embeddings, bodies, attachment metadata); derived results are persisted in `imap.db` so they outlive the window. `/api/query` views `senders`/`kg`/`anomalies` read from `imap.db` |
+| D20 | Sender roles | P2 | **Decided** 2026-10-09: counts from headers (first/last seen, received, sent-to, avg reply time from Sent). Role from signals first (List-Id/List-Unsubscribe/Precedence → newsletter; noreply/Auto-Submitted → bot; sent-to → personal, or colleague on the account's domain; else majority cached classification tag). Only remaining `unknown` senders go to the classify LLM through the enrichment gates. Backfill fetches those header fields (`HEADER.FIELDS`, PEEK) |
+| D21 | Knowledge-graph source | P3 | **Decided** 2026-10-09: both. Deterministic: people, organizations (domain), threads, subscriptions from headers (edges `belongs_to`, `corresponds_with`, `cc_with`, `is_subscription`, `participates_in`); projects/topics from wing/room tags. Plus LLM extraction from cached bodies of recent conversation/personal mail (`manages`, `works_on`, mentioned organizations, deadlines) via the configured classify model and enrichment gates (bodies go nowhere else); LLM edges stored with confidence < 1.0 |
+| D22 | Anomaly set | P4 | **Decided** 2026-10-09: behavior + security. Per message: `new_sender` (conversation/personal only), `auth_failure` (known sender's DKIM/DMARC pass → fail), `lookalike_domain`, `reply_to_mismatch`. Periodic: `silence`, `volume_spike`. Configurable thresholds; `anomaly.detected` with IDs only; sync and backfill capture `Authentication-Results` and `Reply-To`. LLM "asks for payment" → backlog |
+| D23 | `get_thread` source | P1 | **Decided** 2026-10-09: cache first (all cached folders incl. Sent, by date), live IMAP fallback by Message-ID/References (Gmail `X-GM-THRID`) when the thread reaches outside the window or isn't cached. `list_messages` uses the sync `thread_id` derivation |
+| D24 | `get_attachments` content | P1 | **Decided** 2026-10-09: list = metadata (read scope, cache or live BODYSTRUCTURE); fetch saves the part to the working-dir sandbox (write scope); `text/*` under a configurable cap also returned inline, decoded; binary never inline |
+| D25 | `export_message` shape | P1 | **Decided** 2026-10-09: sandbox only (write scope). Single message → `.eml` (raw, PEEK). Batch → one `.mbox`, selected by UID list, `thread_id` (D23 lookup incl. live fallback) or sender; configurable message and byte caps |
+| D26 | `cross_account_search` source | P1 | **Decided** 2026-10-09: cache FTS across all accounts and cached folders by default, merged by date; `live: true` fans out IMAP SEARCH in parallel per account (`folder`, default INBOX) for full history; results carry their source; per-account errors don't fail the call |
 
 ## Phases
 
@@ -81,8 +80,8 @@ anomaly baselines need profiles, and the graph uses profile roles.
 | Phase | Version | Content | Needs | Status |
 |-------|---------|---------|-------|--------|
 | P1 | 0.11.0 | `get_thread`, `get_attachments`, `export_message`, `cross_account_search`, plus REST routes for any that lack one; `list_messages` `thread_id` made consistent with the cache | D23–D26 | Planned |
-| P2 | 0.12.0 | Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | Planned |
-| P3 | 0.13.0 | Knowledge-graph builder: entities and relationships, with `valid_from`/`valid_to`. Initial build over existing data | D19, D21 | Planned |
+| P2 | 0.12.0 | State migration moving the intelligence tables to `imap.db`; header backfill (resumable, rate-limited). Sender-profile builder: subscribes to sync/enrichment events, fills `senders` (counts, first/last seen, sent-to count, average reply time from Sent, role). Initial build over existing data | D19, D20 | Planned |
+| P3 | 0.13.0 | Knowledge-graph builder: deterministic entities and relationships with `valid_from`/`valid_to`, initial build over backfilled data; then the gated LLM body-extraction lane for recent conversation/personal mail | D19, D21 | Planned |
 | P4 | 0.14.0 | Anomaly detector: compares new mail with profile baselines, writes `anomalies`, publishes `anomaly.detected` (and so webhooks and SSE). Resolution through MCP and REST | D19, D22 | Planned |
 | P5 | after P4 | Docs and skill: examples.md "Not there yet" list removed or reduced, new agent workflows that use profiles, graph and anomalies, companion skill update and community PR, known-limitations and context file updated | P1–P4 | Planned |
 
