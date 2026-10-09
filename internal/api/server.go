@@ -8,9 +8,9 @@ import (
 	"github.com/dmz006/imap-mcp/internal/enrichment"
 	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"github.com/dmz006/imap-mcp/internal/mcp/tools"
+	"github.com/dmz006/imap-mcp/internal/service"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +18,6 @@ import (
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/imap"
-	imapsmtp "github.com/dmz006/imap-mcp/internal/smtp"
 	imapsync "github.com/dmz006/imap-mcp/internal/sync"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -33,6 +32,7 @@ type Server struct {
 	log    *slog.Logger
 	authn  *httpauth.Authenticator // nil = auth disabled
 	enrich *enrichment.Pipeline    // nil when not running
+	svc    *service.Service        // shared operation layer (D13)
 
 	// SSE fan-out: one bus subscription drives N connected clients.
 	sseMu    sync.RWMutex
@@ -52,6 +52,7 @@ func NewServer(cfg *config.Config, pool *imap.Pool, database *db.DB, b *bus.Bus,
 		syncer: syncer,
 		log:    log,
 	}
+	s.svc = service.New(cfg, pool, database, syncer, pipeline)
 	if b != nil {
 		b.SubscribeAll(s.broadcastSSE)
 	}
@@ -234,61 +235,34 @@ func (s *Server) enrichmentHealth(r *http.Request) any {
 
 // handleEnrichmentStatus: GET /api/enrichment/status
 func (s *Server) handleEnrichmentStatus(w http.ResponseWriter, r *http.Request) {
-	if s.enrich == nil {
-		http.Error(w, "enrichment not running", http.StatusServiceUnavailable)
-		return
-	}
-	st, err := s.enrich.Stats(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, st)
+	respond(w)(s.svc.EnrichmentStats(r.Context()))
 }
 
 // handleTriggerEnrichment: POST /api/enrichment/trigger  Body: {"limit": 50}
 func (s *Server) handleTriggerEnrichment(w http.ResponseWriter, r *http.Request) {
-	if s.enrich == nil || !s.cfg.Enrichment.Enabled {
-		http.Error(w, "enrichment not running", http.StatusServiceUnavailable)
-		return
-	}
 	var req struct {
 		Limit int `json:"limit"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+	if !decode(w, r, &req) {
 		return
 	}
 	if req.Limit <= 0 {
 		req.Limit = 50
 	}
-	writeJSON(w, map[string]any{"triggered": s.enrich.Trigger(req.Limit), "limit": req.Limit})
+	queued, err := s.svc.TriggerEnrichment(req.Limit)
+	respond(w)(map[string]any{"triggered": queued, "limit": req.Limit}, err)
 }
 
 // handleCacheSweep is the REST form of cache_sweep (D7).
 // POST /api/cache/sweep
 // Body: {"account","folder","older_than_days","errors_only","all","dry_run"}; dry_run defaults to true.
 func (s *Server) handleCacheSweep(w http.ResponseWriter, r *http.Request) {
-	if s.syncer == nil {
-		http.Error(w, "cache sync not running", http.StatusServiceUnavailable)
-		return
-	}
 	args := map[string]any{}
-	if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
-		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+	if !decode(w, r, &args) {
 		return
 	}
 	f, dryRun := tools.SweepFilterFromArgs(args)
-	if f.Empty() && !f.All {
-		http.Error(w, "refusing to sweep without a filter: set account, folder, older_than_days, errors_only, or all=true", http.StatusBadRequest)
-		return
-	}
-	res, err := s.syncer.Sweep(r.Context(), f, dryRun)
-	if err != nil {
-		http.Error(w, "cache sweep failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, res)
+	respond(w)(s.svc.SweepCache(r.Context(), f, dryRun))
 }
 
 // ── Stub handlers (iteration 2) ───────────────────────────────────────────────
@@ -298,16 +272,7 @@ func notImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"error": "not yet implemented — coming in iteration 2"})
 }
 
-func (s *Server) handleSyncAccount(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
-func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
-func (s *Server) handleSetFlags(w http.ResponseWriter, r *http.Request)       { notImplemented(w, r) }
-func (s *Server) handleMoveMessage(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
 func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
-func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request)   { notImplemented(w, r) }
 func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
 func (s *Server) handleGetSender(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
 func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request)        { notImplemented(w, r) }
@@ -316,11 +281,6 @@ func (s *Server) handleGetAnomalies(w http.ResponseWriter, r *http.Request)   { 
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request)  { notImplemented(w, r) }
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
 func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) { notImplemented(w, r) }
-func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request)     { notImplemented(w, r) }
-func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request)    { notImplemented(w, r) }
-func (s *Server) handleTestRule(w http.ResponseWriter, r *http.Request)      { notImplemented(w, r) }
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request)         { notImplemented(w, r) }
 
 // handleEventStream streams bus events as SSE. Each event is one JSON line
@@ -373,65 +333,25 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 
 // handleSendMessage sends an outbound email via the account's SMTP config.
 // POST /api/accounts/{account}/messages/send
-// Body: {"to":"addr","subject":"s","body":"b","cc":"optional"}
+// Body: {"to":"addr","subject":"s","body":"b","cc":"optional"}; account may be _default.
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
-	accountName := chi.URLParam(r, "account")
 	var req struct {
 		To      string `json:"to"`
 		Subject string `json:"subject"`
 		Body    string `json:"body"`
 		Cc      string `json:"cc,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+	if !decode(w, r, &req) {
 		return
 	}
-	if req.To == "" || req.Subject == "" || req.Body == "" {
-		http.Error(w, "to, subject, and body are required", http.StatusBadRequest)
-		return
-	}
-
-	acct := s.cfg.DefaultAccount()
-	if accountName != "" && accountName != "_default" {
-		a, err := s.cfg.Account(accountName)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("account %q not found", accountName), http.StatusNotFound)
-			return
-		}
-		acct = a
-	}
-
-	smtpCfg := acct.ResolvedSMTP()
-	if smtpCfg == nil {
-		http.Error(w, fmt.Sprintf("account %q has no smtp config (receive-only)", acct.Name), http.StatusUnprocessableEntity)
-		return
-	}
-	sender, err := imapsmtp.NewSender(smtpCfg)
+	res, err := s.svc.Send(r.Context(), service.SendParams{
+		Account: chi.URLParam(r, "account"), To: req.To, Cc: req.Cc, Subject: req.Subject, Body: req.Body,
+	})
 	if err != nil {
-		http.Error(w, "smtp setup: "+err.Error(), http.StatusInternalServerError)
+		writeError(w, err)
 		return
 	}
-
-	splitAddrs := func(s string) []string {
-		var out []string
-		for _, p := range strings.Split(s, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
-			}
-		}
-		return out
-	}
-	msg := imapsmtp.Message{
-		To:      splitAddrs(req.To),
-		Cc:      splitAddrs(req.Cc),
-		Subject: req.Subject,
-		Body:    req.Body,
-	}
-	if err := sender.Send(msg); err != nil {
-		http.Error(w, "send failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, map[string]string{"status": "sent", "from": smtpCfg.From, "account": acct.Name})
+	writeJSON(w, map[string]string{"status": res.Status, "from": res.From, "account": res.Account})
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
