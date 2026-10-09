@@ -263,6 +263,10 @@ they can be replaced or extended without touching call sites.
 - **2026-10-08 — D6 (cache content):** the cache stores headers, bodies, vectors and
   enrichment details whether or not it is encrypted. Encryption is a security
   setting and must never gate features.
+- **2026-10-08 — D7 (cleaning):** cache cleaning = auto window purge + orphan cleanup,
+  on-demand `cache_sweep` (dry_run defaults true, counts before deleting), and an
+  optional `\Flagged` exemption. Cleaning never touches the mailbox. Content cleaning
+  before enrichment is planned for iteration 3.
 
 ---
 

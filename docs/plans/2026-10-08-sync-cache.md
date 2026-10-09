@@ -109,7 +109,7 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | D4 | Embeddings when encrypted | Moot under D1 (whole-DB: all columns, FTS and vectors are inside the encrypted file) | **Resolved by D1** |
 | D5 | Key source | **Per-file `encryption.key` = `${secret:name}` (datawatch secrets) or `${ENV}` passphrase → Argon2id (adiantum).** Never auto-generate; fail closed (refuse to open) if the key is missing or wrong. Both files may reference the same secret. systemd unit gains `After=`/`Wants=datawatch.service` when a `${secret:}` key is used. TPM-sealed systemd creds = possible later add-on | **Decided** 2026-10-08 |
 | D6 | Content in unencrypted mode | **Same as encrypted: headers + bodies + vectors + enrichment details.** Security posture is the operator's configuration (D1b/D5) | **Decided** 2026-10-08 |
-| D7 | Meaning of "cleaning" | Retention sweep à la datawatch (dry-run, counts) plus optional content normalization before the LLM | Open |
+| D7 | Meaning of "cleaning" | **Iteration 2:** (A) automatic window purge + orphan cleanup (vectors/FTS/queue/sender links) + VACUUM/WAL checkpoint, cache-only; (B) on-demand `cache_sweep` MCP+REST tool, `dry_run` default true, counts per account/folder before deleting, sweep by age/account/folder/error state or full rebuild; (C) configurable `\Flagged` exemption (default off) keeps flagged mail cached past the window. **Iteration 3:** (D) content cleaning before enrichment (HTML→text, strip quoted replies/signatures/tracking pixels, redact OTP/card numbers) — planned here, see §Content cleaning | **Decided** 2026-10-08 |
 | D8 | Window semantics | INTERNALDATE, cache-only purge, global default with per-account override | Open |
 | D9 | Change detection | CONDSTORE where available plus a per-cycle UID-set diff in the window. IDLE deferred to iteration 4 | Open |
 | D10 | Folder selection config | `sync.folders: [INBOX, "\\Sent"]` with special-use tokens, per-account override | Open |
@@ -122,8 +122,8 @@ are recorded here, and the resulting rule goes into `AGENT.md`.
 | Phase | Scope | Depends on | Status |
 |-------|-------|------------|--------|
 | P1 | Sync engine: folder resolution, window, UID diff, flags, expunge, UIDVALIDITY, bus events, headers only | D8, D9, D10 | Planned |
-| P2 | Storage modes: crypto package, encrypted columns, bodies + MIME decode (go-message), key mgmt, migrate/rotate | D1–D6 | Planned |
-| P3 | Cleaning: retention sweep (dry-run), window-change purge/backfill, content normalization | D7, D8 | Planned |
+| P2 | Storage: driver swap to ncruces + adiantum, split cache.db/imap.db with one-time migration of rules/webhooks/nonces, per-file encryption + key resolution, bodies + MIME decode (go-message) | D1, D1a, D1b, D5, D6 | Planned |
+| P3 | Cleaning: auto purge + orphans, `cache_sweep` (dry-run), `\Flagged` exemption, window-change purge/backfill | D7, D8 | Planned |
 | P4 | Load and enrichment: provider interface (Ollama / datawatch proxy), throttling, priority, status endpoint | D11 | Planned |
 | P5 | REST endpoints for messages, folders, search | D13 | Planned |
 | P6 | Docs + release: CHANGELOG, config.example.yaml, IMAP-MCP-CONTEXT.md, README roadmap, live validation | all | Planned |
@@ -135,6 +135,18 @@ Each phase follows AGENT.md:
 - New config fields go in `config.example.yaml`, with `IMAP_MCP_*` overrides and
   exposure in `/api/health` or a stats endpoint.
 - Version bump, CHANGELOG entry, conventional commits.
+
+## Content cleaning (planned for iteration 3, D7-D)
+
+An optional normalization stage between MIME decode and enrichment. The cached body
+stays as received; only the text sent to the embedder or classifier is cleaned:
+- HTML→text, dropping tracking pixels and invisible elements
+- strip quoted reply chains and signatures
+- redact one-time codes, card/account numbers, and password-reset links
+
+Design it as a pluggable `Cleaner` interface (Option-4 rule) so it can be iterated
+on alongside the intelligence work. Iteration 2 only needs to leave the hook point
+in the enrichment pipeline.
 
 ## Out of scope
 
