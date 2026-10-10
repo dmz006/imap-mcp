@@ -108,6 +108,10 @@ func authResult(re *regexp.Regexp, ar string) string {
 
 // msgHash is the D28 index key: the first 8 bytes of SHA-256 of the
 // normalised Message-ID, as a signed integer for SQLite.
+// MsgHash is the D28 index key for a Message-ID (0 when empty), for callers
+// outside the scanner that look messages up in intel_messages.
+func MsgHash(id string) int64 { return msgHash(id) }
+
 func msgHash(id string) int64 {
 	id = strings.ToLower(strings.Trim(strings.TrimSpace(id), "<>"))
 	if id == "" {

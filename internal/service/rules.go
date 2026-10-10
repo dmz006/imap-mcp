@@ -38,8 +38,11 @@ func ValidateRule(r *db.Rule) error {
 		}
 	}
 	c := r.Conditions
-	if c.From == "" && c.Subject == "" && c.Text == "" && c.OlderThanDays == 0 {
-		return invalid("a rule needs at least one condition (from, subject, text, or older_than_days)")
+	if c.From == "" && c.Subject == "" && c.Text == "" && c.OlderThanDays == 0 && !c.NewSender {
+		return invalid("a rule needs at least one condition (from, subject, text, older_than_days, or new_sender)")
+	}
+	if c.NewSenderDays < 0 || (c.NewSenderDays > 0 && !c.NewSender) {
+		return invalid("new_sender_days needs new_sender and must be positive")
 	}
 	return nil
 }
@@ -163,6 +166,12 @@ func (s *Service) RunActiveRules(onlyID int64, dryRun bool) ([]RuleRunResult, er
 		}
 		results = append(results, res)
 	}
+	if !dryRun && onlyID == 0 {
+		// A full run is the hourly job: send the day's held-mail digest when due.
+		if err := s.sendHoldDigests(time.Now()); err != nil {
+			results = append(results, RuleRunResult{Name: "hold-digest", Error: err.Error()})
+		}
+	}
 	return results, nil
 }
 
@@ -199,12 +208,26 @@ func (s *Service) applyRule(rule db.Rule, dryRun bool) (int, error) {
 	if c.OlderThanDays > 0 {
 		criteria.Before = time.Now().AddDate(0, 0, -c.OlderThanDays)
 	}
+	var gate *newSenderGate
+	if c.NewSender {
+		if gate, err = s.newSenderGate(conn.Account(), c.NewSenderDays); err != nil {
+			return 0, err
+		}
+		// A new sender's mail is all inside the window.
+		criteria.Since = time.Unix(gate.cutoff, 0)
+	}
 
 	sd, err := client.UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return 0, fmt.Errorf("search: %w", err)
 	}
 	uids := sd.AllUIDs()
+	var held map[imaplib.UID]heldInfo
+	if gate != nil {
+		if uids, held, err = gate.filter(client, uids, dryRun); err != nil {
+			return 0, err
+		}
+	}
 	if len(uids) == 0 || dryRun {
 		return len(uids), nil
 	}
@@ -234,6 +257,15 @@ func (s *Service) applyRule(rule db.Rule, dryRun bool) (int, error) {
 			}
 		default:
 			return len(uids), fmt.Errorf("unknown action %q", act.Type)
+		}
+	}
+	if gate != nil {
+		dest := rule.Actions[0].Dest
+		if rule.Actions[0].Type == "trash" {
+			dest = "Trash"
+		}
+		if err := gate.record(held, dest); err != nil {
+			return len(uids), fmt.Errorf("record held mail: %w", err)
 		}
 	}
 	return len(uids), nil

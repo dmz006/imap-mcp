@@ -235,6 +235,7 @@ CREATE TABLE IF NOT EXISTS senders (
     reply_total_secs INTEGER DEFAULT 0,
     avg_reply_time   INTEGER,               -- seconds (reply_total_secs / reply_count)
     anomaly_score    REAL DEFAULT 0.0,
+    trusted          INTEGER DEFAULT 0,     -- released from a new-sender hold (D30)
     profile_json     TEXT,
     dirty            INTEGER DEFAULT 1,     -- role needs recomputing
     updated_at       INTEGER DEFAULT (unixepoch())
@@ -273,6 +274,22 @@ CREATE TABLE IF NOT EXISTS intel_scan (
     completed_at INTEGER,                     -- first time the folder was fully scanned
     updated_at   INTEGER DEFAULT (unixepoch()),
     PRIMARY KEY (account, folder)
+);
+
+-- held_messages: mail a new_sender rule held (D30), for release detection
+-- and the daily digest (D31). Rows are pruned after 90 days.
+CREATE TABLE IF NOT EXISTS held_messages (
+    account      TEXT NOT NULL,
+    msg_hash     INTEGER NOT NULL,  -- D28 key of the Message-ID
+    message_ref  TEXT,              -- the Message-ID
+    sender       TEXT,
+    subject      TEXT,              -- first 200 bytes, for the digest
+    reasons      TEXT,              -- why it was held
+    folder       TEXT,              -- where it was moved
+    held_at      INTEGER NOT NULL,
+    released_at  INTEGER,           -- found back in the inbox: the sender is trusted
+    digested_at  INTEGER,
+    PRIMARY KEY (account, msg_hash)
 );
 
 CREATE TABLE IF NOT EXISTS kg_entities (

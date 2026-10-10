@@ -46,6 +46,7 @@ var Events = []string{
 	string(bus.EventEnrichmentError),
 	string(bus.EventAnomalyDetected),
 	string(bus.EventRuleFired),
+	string(bus.EventHoldDigest),
 	string(bus.EventAccountConnected),
 	string(bus.EventAccountError),
 	string(bus.EventAccountDisconnect),
@@ -136,6 +137,7 @@ var metadataKeys = []string{
 	"folder", "uid", "id", "message_id", "rule_id", "action", "matched", "flags",
 	"anomaly_id", "kind", "new", "cached", "removed", "flags_updated", "rebuilt",
 	"type", "severity", // anomaly.detected (D22): the finding's type and severity, never the sender
+	"held", // hold.digest (D31): how many messages, never who or what (the account is on the event)
 }
 
 // Metadata reduces an event payload to allowlisted identifier/count fields.

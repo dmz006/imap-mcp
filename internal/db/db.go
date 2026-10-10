@@ -306,6 +306,7 @@ var stateColumns = []struct{ table, column, decl string }{
 	{"anomalies", "uid", "INTEGER"},
 	{"anomalies", "message_ref", "TEXT"},
 	{"anomalies", "details", "TEXT"},
+	{"senders", "trusted", "INTEGER DEFAULT 0"},
 }
 
 // migrateState brings an existing imap.db up to the current schema: missing

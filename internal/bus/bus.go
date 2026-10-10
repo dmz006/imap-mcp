@@ -22,6 +22,7 @@ const (
 	EventEnrichmentError   EventType = "enrichment.error"
 	EventAnomalyDetected   EventType = "anomaly.detected"
 	EventRuleFired         EventType = "rule.fired"
+	EventHoldDigest        EventType = "hold.digest" // D31: account + held count only
 	EventAccountConnected  EventType = "account.connected"
 	EventAccountError      EventType = "account.error"
 	EventAccountDisconnect EventType = "account.disconnected"

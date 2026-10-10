@@ -409,13 +409,15 @@ func TopSendersTool() mcp.Tool {
 // CreateRuleTool persists an automation rule (match → action).
 func CreateRuleTool() mcp.Tool {
 	return mcp.NewTool("create_rule",
-		mcp.WithDescription("Create a persistent rule: match messages by sender/subject/text/age and apply an action (trash/move/flag/seen). Run with run_rules; ideal for recurring spam so it never rebuilds."),
+		mcp.WithDescription("Create a persistent rule: match messages by sender/subject/text/age or new (unknown) sender and apply an action (trash/move/flag/seen). Run with run_rules; ideal for recurring spam so it never rebuilds."),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Unique rule name")),
 		mcp.WithString("action", mcp.Required(), mcp.Description("trash | move | flag | seen")),
 		mcp.WithString("from", mcp.Description("Match From substring")),
 		mcp.WithString("subject", mcp.Description("Match Subject substring")),
 		mcp.WithString("text", mcp.Description("Match body text")),
 		mcp.WithNumber("older_than_days", mcp.Description("Match messages older than N days")),
+		mcp.WithBoolean("new_sender", mcp.Description("Match only mail from senders with no history: never written to, nothing from them before new_sender_days. Needs the intelligence history scan complete. Pair with action=move to a holding folder")),
+		mcp.WithNumber("new_sender_days", mcp.Description("Window for new_sender (default 30)")),
 		mcp.WithString("dest", mcp.Description("Destination folder (for action=move)")),
 		mcp.WithString("flags", mcp.Description("Flags to add (for action=flag), comma-separated")),
 		mcp.WithString("account", mcp.Description("Account scope (omit for default)")),

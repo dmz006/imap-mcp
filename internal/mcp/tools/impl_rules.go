@@ -23,6 +23,8 @@ func (h *Handlers) CreateRule(ctx context.Context, req mcp.CallToolRequest) (*mc
 			Subject:       req.GetString("subject", ""),
 			Text:          req.GetString("text", ""),
 			OlderThanDays: int(req.GetFloat("older_than_days", 0)),
+			NewSender:     req.GetBool("new_sender", false),
+			NewSenderDays: int(req.GetFloat("new_sender_days", 0)),
 		},
 	}
 	if action := req.GetString("action", ""); action != "" {

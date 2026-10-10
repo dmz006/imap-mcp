@@ -25,6 +25,7 @@ type Config struct {
 	Sync       SyncConfig       `yaml:"sync"`
 	Tools      ToolsConfig      `yaml:"tools"`
 	Intel      IntelConfig      `yaml:"intelligence"`
+	Rules      RulesConfig      `yaml:"rules"`
 	Log        LogConfig        `yaml:"log"`
 	// Datawatch is optional. When present, ${secret:name} references in
 	// credentials resolve against a datawatch secrets service. When absent,
@@ -316,6 +317,20 @@ type ToolsConfig struct {
 	ExportMaxMB int `yaml:"export_max_mb"`
 }
 
+// RulesConfig tunes rule runs. The held-mail digest (AGENT.md D31) lists what
+// new_sender rules held since the last digest.
+type RulesConfig struct {
+	// HoldDigest turns the daily digest on (default true). Pointer so an
+	// explicit false is kept.
+	HoldDigest *bool `yaml:"hold_digest"`
+	// HoldDigestHour: the first full rule run at or after this local hour
+	// (0-23) sends the day's digest. Default 8.
+	HoldDigestHour int `yaml:"hold_digest_hour"`
+}
+
+// HoldDigestOn reports whether the held-mail digest is on (default true).
+func (c RulesConfig) HoldDigestOn() bool { return c.HoldDigest == nil || *c.HoldDigest }
+
 // IntelConfig drives the header scanner that builds sender profiles (AGENT.md
 // D19, D20, D28). The scan reads headers only, never bodies, and never sets
 // \Seen.
@@ -464,6 +479,7 @@ func defaults() *Config {
 			AnomalySpikeMin:           10,
 			AnomalySpikeFactor:        5,
 		},
+		Rules: RulesConfig{HoldDigestHour: 8},
 		Log: LogConfig{
 			Level:  "info",
 			Format: "text",
@@ -571,12 +587,14 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SILENCE_MIN_DAYS", &cfg.Intel.AnomalySilenceMinDays)
 	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_MIN", &cfg.Intel.AnomalySpikeMin)
 	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_FACTOR", &cfg.Intel.AnomalySpikeFactor)
+	envInt("IMAP_MCP_RULES_HOLD_DIGEST_HOUR", &cfg.Rules.HoldDigestHour)
 	for key, dst := range map[string]**bool{
 		"IMAP_MCP_INTELLIGENCE_ENABLED":   &cfg.Intel.Enabled,
 		"IMAP_MCP_INTELLIGENCE_LLM_ROLES": &cfg.Intel.LLMRoles,
 		"IMAP_MCP_INTELLIGENCE_KG":        &cfg.Intel.KG,
 		"IMAP_MCP_INTELLIGENCE_KG_LLM":    &cfg.Intel.KGLLM,
 		"IMAP_MCP_INTELLIGENCE_ANOMALIES": &cfg.Intel.Anomalies,
+		"IMAP_MCP_RULES_HOLD_DIGEST":      &cfg.Rules.HoldDigest,
 	} {
 		if v := os.Getenv(key); v != "" {
 			if b, err := strconv.ParseBool(v); err == nil {
@@ -640,6 +658,9 @@ func validate(cfg *Config) error {
 		in.KGStaleDays < 1 || in.KGLLMPerTick < 0 || in.AnomalyLookbackDays < 1 || in.AnomalyAuthMinPasses < 1 ||
 		in.AnomalySilenceMinMessages < 2 || in.AnomalySilenceMinDays < 1 || in.AnomalySpikeMin < 1 || in.AnomalySpikeFactor < 1 {
 		return fmt.Errorf("intelligence: scan_interval_minutes, backfill_per_minute, kg_stale_days and the anomaly_* thresholds must be >= 1 (anomaly_silence_min_messages >= 2); batch_size 1-1000; llm_roles_per_tick, kg_llm_per_tick >= 0")
+	}
+	if h := cfg.Rules.HoldDigestHour; h < 0 || h > 23 {
+		return fmt.Errorf("rules: hold_digest_hour must be 0-23")
 	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")

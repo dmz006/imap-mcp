@@ -26,6 +26,10 @@ type RuleConditions struct {
 	Subject       string `json:"subject,omitempty"`
 	Text          string `json:"text,omitempty"`
 	OlderThanDays int    `json:"older_than_days,omitempty"`
+	// NewSender matches only mail from senders with no history (AGENT.md D30):
+	// never written to, nothing from them before NewSenderDays (default 30).
+	NewSender     bool `json:"new_sender,omitempty"`
+	NewSenderDays int  `json:"new_sender_days,omitempty"`
 }
 
 // RuleAction is what to do with matched messages.
