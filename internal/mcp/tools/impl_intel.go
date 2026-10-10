@@ -61,7 +61,7 @@ func replyParams(req mcp.CallToolRequest) service.ReplyParams {
 	return service.ReplyParams{
 		Account:       req.GetString("account", ""),
 		OlderThanDays: int(req.GetFloat("older_than_days", 2)),
-		WithinDays:    int(req.GetFloat("within_days", 30)),
+		WithinDays:    int(req.GetFloat("within_days", 90)),
 		Limit:         int(req.GetFloat("limit", 20)),
 	}
 }

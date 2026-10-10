@@ -76,7 +76,7 @@ func replyParams(r *http.Request) service.ReplyParams {
 	return service.ReplyParams{
 		Account:       r.URL.Query().Get("account"),
 		OlderThanDays: queryInt(r, "older_than_days", 2),
-		WithinDays:    queryInt(r, "within_days", 30),
+		WithinDays:    queryInt(r, "within_days", 90),
 		Limit:         queryInt(r, "limit", 20),
 	}
 }

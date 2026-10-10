@@ -25,7 +25,7 @@ import (
 
 const (
 	defaultReplyOlderDays  = 2
-	defaultReplyWithinDays = 30
+	defaultReplyWithinDays = 90
 	maxReplyWithinDays     = 36500
 	defaultReplyLimit      = 20
 	maxReplyLimit          = 200
@@ -35,7 +35,7 @@ const (
 type ReplyParams struct {
 	Account       string // "" = every account
 	OlderThanDays int    // waiting at least this many days (0 = no minimum)
-	WithinDays    int    // latest message at most this many days old (0 = 30)
+	WithinDays    int    // latest message at most this many days old (0 = 90)
 	Limit         int    // 0 = 20
 }
 

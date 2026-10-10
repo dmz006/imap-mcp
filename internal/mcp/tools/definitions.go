@@ -315,7 +315,7 @@ func NeedsReplyTool() mcp.Tool {
 			"history_complete is false while the history scan is still filling in older conversations"),
 		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
 		mcp.WithNumber("older_than_days", mcp.Description("Only conversations waiting at least this many days (default: 2)")),
-		mcp.WithNumber("within_days", mcp.Description("Only conversations whose latest message is at most this many days old (default: 30; e.g. 3650 for all history)")),
+		mcp.WithNumber("within_days", mcp.Description("Only conversations whose latest message is at most this many days old (default: 90; e.g. 3650 for all history)")),
 		mcp.WithNumber("limit", mcp.Description("Max results (default: 20, max 200)")),
 	)
 }
@@ -326,7 +326,7 @@ func AwaitingReplyTool() mcp.Tool {
 			"subject and days_waiting. Same history and filters as needs_reply"),
 		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
 		mcp.WithNumber("older_than_days", mcp.Description("Only conversations waiting at least this many days (default: 2)")),
-		mcp.WithNumber("within_days", mcp.Description("Only conversations whose latest message is at most this many days old (default: 30; e.g. 3650 for all history)")),
+		mcp.WithNumber("within_days", mcp.Description("Only conversations whose latest message is at most this many days old (default: 90; e.g. 3650 for all history)")),
 		mcp.WithNumber("limit", mcp.Description("Max results (default: 20, max 200)")),
 	)
 }

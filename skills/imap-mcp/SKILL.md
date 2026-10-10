@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.14.0"
+version: "0.14.1"
 tags:
   - email
   - imap
@@ -421,7 +421,7 @@ When you run on a schedule with nobody watching:
 | | `kg_query` | `entity` (address, domain, thread id, project or topic; exact), `predicate`, `entity_type`, `limit` (50); strongest first, with `weight`, `last_seen`, `current`, `confidence` | read |
 | | `get_anomalies` | `severity`, `type`, `sender`, `account`, `unresolved_only` (true), `limit` (20) | read |
 | | `resolve_anomaly` | **`id`** | write |
-| Replies | `needs_reply` | `account` (all), `older_than_days` (2), `within_days` (30; 3650 = all history), `limit` (20); items: `thread_id`, `counterpart`, `name`, `subject`, `folder`, `uid`, `message_ref`, `days_waiting`; plus `history_complete` | read |
+| Replies | `needs_reply` | `account` (all), `older_than_days` (2), `within_days` (90; 3650 = all history), `limit` (20); items: `thread_id`, `counterpart`, `name`, `subject`, `folder`, `uid`, `message_ref`, `days_waiting`; plus `history_complete` | read |
 | | `awaiting_reply` | same as `needs_reply`; you wrote last, `counterpart` = your first recipient | read |
 | | `dismiss_reply` | **`account`**, **`thread_id`**; back when a newer message arrives | write |
 | | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |

@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.16.0 |
+| Current version | 0.16.1 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -241,7 +241,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
 | Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies` (built by `internal/intel`); `resolve_anomaly` | read; write |
-| Reply tracking | `needs_reply`, `awaiting_reply` (`account`, `older_than_days` 2, `within_days` 30, `limit` 20; items carry `thread_id`, `history_complete` flag); `dismiss_reply` (`account`, `thread_id`) | read; write |
+| Reply tracking | `needs_reply`, `awaiting_reply` (`account`, `older_than_days` 2, `within_days` 90, `limit` 20; items carry `thread_id`, `history_complete` flag); `dismiss_reply` (`account`, `thread_id`) | read; write |
 
 Behaviour notes:
 
@@ -365,7 +365,7 @@ with the listed scope (`internal/api/server.go` `Router`). Full reference:
 `docs/rest-api.md`.
 
 ```
-GET    /api/health                                                     open  (sync, enrichment, intelligence progress unnamed, rules: digest settings + held counts, tools, storage)
+GET    /api/health                                                     open  (sync, enrichment, intelligence progress unnamed incl. reply-tracking rescan, rules: digest settings + held counts, tools, storage)
 GET    /api/events                                                     read (SSE)
 GET    /api/accounts                                                   read
 POST   /api/accounts/{account}/sync                                    admin

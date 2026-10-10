@@ -264,7 +264,7 @@ incoming mail without list, bulk or auto-submitted headers count.
 - **`awaiting_reply`**: you wrote last and nobody has answered.
 
 Both take `account`, `older_than_days` (default 2), `within_days` (default
-30; use a large number such as 3650 for all history) and `limit`. Each item
+90; use a large number such as 3650 for all history) and `limit`. Each item
 has a `thread_id` (the same id `get_thread` takes), the `counterpart`, `subject`, `folder`, `uid`,
 `message_ref` (Message-ID) and `days_waiting`. Longest-waiting first.
 
@@ -285,6 +285,8 @@ of INBOX, so moving or archiving a message does not clear it.
 The 0.16 upgrade rescans all history once to fill this in. Until it
 finishes, results carry `history_complete: false` and may miss older
 conversations; the rest of the intelligence keeps working meanwhile.
+`/api/health` shows its progress: `intelligence.reply_history_complete`,
+and per account `rescan_complete` and `rescan_folders_remaining`.
 
 ## Configuration
 

@@ -6,6 +6,22 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-10
+
+### Changed
+- **Reply tracking looks back 90 days by default** (was 30): `needs_reply`,
+  `awaiting_reply`, their REST routes and the digest's "Waiting on you"
+  section (D45). Pass `within_days` to narrow or widen it.
+
+### Added
+- **Rescan progress in `/api/health`.** `intelligence.reply_history_complete`,
+  and per account `rescan_complete` and `rescan_folders_remaining`, for the
+  one-time 0.16 rescan that fills reply tracking. Counts only, no names.
+
+### Documentation
+- AGENT.md D44 (official 1.0.0 after Q5) and D45 (review of the 0.16.0
+  implementation choices with the operator).
+
 ## [0.16.0] - 2026-10-10
 
 ### Added

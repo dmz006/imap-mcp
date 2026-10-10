@@ -20,6 +20,9 @@ type IntelStats struct {
 	KGRelationships  int64          `json:"kg_relationships"`
 	KGModelMessages  int64          `json:"kg_model_messages"` // bodies read by the extraction model
 	LastScan         string         `json:"last_scan,omitempty"`
+	// ReplyHistoryComplete: every account's scan, including the one-time
+	// 0.16 rescan for reply tracking, has caught up (D45).
+	ReplyHistoryComplete bool `json:"reply_history_complete"`
 	// Accounts is the scan progress per account, in config order (D29).
 	Accounts []AccountScan `json:"accounts"`
 }
@@ -32,7 +35,11 @@ type AccountScan struct {
 	FoldersComplete  int    `json:"folders_complete"`
 	Scanned          int64  `json:"scanned"` // headers read in the current pass
 	BackfillComplete bool   `json:"backfill_complete"`
-	LastScan         string `json:"last_scan,omitempty"`
+	// RescanComplete and RescanFoldersRemaining track the one-time 0.16
+	// rescan that fills reply tracking (D45).
+	RescanComplete         bool   `json:"rescan_complete"`
+	RescanFoldersRemaining int    `json:"rescan_folders_remaining"`
+	LastScan               string `json:"last_scan,omitempty"`
 }
 
 // Anonymous returns a copy without account names, for unauthenticated
@@ -75,15 +82,21 @@ func (s *Service) IntelStats(ctx context.Context) (IntelStats, error) {
 	for i, a := range s.cfg.Accounts {
 		as := AccountScan{Index: i + 1, Account: a.Name}
 		var last int64
-		if err := db.QueryRowContext(ctx, `SELECT count(*), count(completed_at), COALESCE(sum(scanned),0), COALESCE(max(updated_at),0)
-			FROM intel_scan WHERE account = ?`, a.Name).Scan(&as.Folders, &as.FoldersComplete, &as.Scanned, &last); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count(*), count(completed_at), COALESCE(sum(scanned),0), COALESCE(max(updated_at),0),
+				count(*) FILTER (WHERE completed_at IS NULL OR last_uid < COALESCE(rescan_until, 0))
+			FROM intel_scan WHERE account = ?`, a.Name).Scan(&as.Folders, &as.FoldersComplete, &as.Scanned, &last, &as.RescanFoldersRemaining); err != nil {
 			return st, err
 		}
 		as.BackfillComplete = as.Folders > 0 && as.Folders == as.FoldersComplete
+		as.RescanComplete = as.Folders > 0 && as.RescanFoldersRemaining == 0
 		if last > 0 {
 			as.LastScan = time.Unix(last, 0).UTC().Format(time.RFC3339)
 		}
 		st.Accounts = append(st.Accounts, as)
+	}
+	st.ReplyHistoryComplete = len(st.Accounts) > 0
+	for _, a := range st.Accounts {
+		st.ReplyHistoryComplete = st.ReplyHistoryComplete && a.RescanComplete
 	}
 	rows, err := db.QueryContext(ctx, `SELECT COALESCE(role,'unknown'), count(*) FROM senders GROUP BY 1`)
 	if err != nil {

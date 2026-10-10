@@ -38,15 +38,15 @@ func TestReplyLists(t *testing.T) {
 		exec(`INSERT INTO reply_threads(account, thread_hash, thread_id, last_hash, last_date, outgoing, direct, counterpart, subject, message_ref, folder, uid)
 			VALUES('test',?,?,?,?,?,?,?,?,?,'INBOX',?)`, intel.MsgHash(id), id, intel.MsgHash(id), ago(days), outgoing, 1-outgoing, counterpart, "s-"+id, id, uid)
 	}
-	thread("t1@x", 0, "friend@example.org", 5, 1)  // needs a reply
-	thread("t2@x", 0, "news@list.example", 5, 0)   // newsletter: never
-	thread("t3@x", 0, "who@unknown.example", 5, 0) // unknown sender, never written to: no
-	thread("t4@x", 0, "friend@example.org", 5, 0)  // the owner replied (index)
-	thread("t5@x", 0, "friend@example.org", 5, 2)  // \Answered on the server
-	thread("t6@x", 0, "friend@example.org", 1, 0)  // too recent
-	thread("t7@x", 0, "friend@example.org", 5, 0)  // held by a new_sender rule
-	thread("o1@x", 1, "friend@example.org", 4, 0)  // awaiting their reply
-	thread("o2@x", 1, "friend@example.org", 40, 0) // older than the window
+	thread("t1@x", 0, "friend@example.org", 5, 1)   // needs a reply
+	thread("t2@x", 0, "news@list.example", 5, 0)    // newsletter: never
+	thread("t3@x", 0, "who@unknown.example", 5, 0)  // unknown sender, never written to: no
+	thread("t4@x", 0, "friend@example.org", 5, 0)   // the owner replied (index)
+	thread("t5@x", 0, "friend@example.org", 5, 2)   // \Answered on the server
+	thread("t6@x", 0, "friend@example.org", 1, 0)   // too recent
+	thread("t7@x", 0, "friend@example.org", 5, 0)   // held by a new_sender rule
+	thread("o1@x", 1, "friend@example.org", 4, 0)   // awaiting their reply
+	thread("o2@x", 1, "friend@example.org", 120, 0) // older than the 90-day window
 	exec(`INSERT INTO intel_messages(account, msg_hash, date, outgoing, reply_hash) VALUES('test', 99, ?, 1, ?)`, now.Unix(), intel.MsgHash("t4@x"))
 	exec(`INSERT INTO held_messages(account, msg_hash, held_at) VALUES('test', ?, ?)`, intel.MsgHash("t7@x"), now.Unix())
 	exec(`INSERT INTO intel_scan(account, folder, last_uid, completed_at, rescan_until) VALUES('test','INBOX',10,1,20)`)
@@ -109,5 +109,25 @@ func TestReplyLists(t *testing.T) {
 	exec(`UPDATE intel_scan SET last_uid = 20`)
 	if n, _ := f.s.NeedsReply(ctx, ReplyParams{OlderThanDays: 2}); !n.HistoryComplete {
 		t.Error("history_complete false after the rescan caught up")
+	}
+}
+
+// TestRescanProgress (D45): health shows the reply-tracking rescan per
+// account, and reply_history_complete once every account has caught up.
+func TestRescanProgress(t *testing.T) {
+	f := newHoldFixture(t)
+	if _, err := f.d.StateSQL().Exec(`INSERT INTO intel_scan(account, folder, last_uid, completed_at, rescan_until)
+		VALUES('test','INBOX',10,1,20), ('test','Sent',5,1,NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	st, err := f.s.IntelStats(context.Background())
+	if err != nil || st.ReplyHistoryComplete || st.Accounts[0].RescanComplete || st.Accounts[0].RescanFoldersRemaining != 1 {
+		t.Fatalf("during rescan = %+v, %v", st, err)
+	}
+	if _, err := f.d.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 20 WHERE folder = 'INBOX'`); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := f.s.IntelStats(context.Background()); !st.ReplyHistoryComplete || !st.Accounts[0].RescanComplete {
+		t.Errorf("after rescan = %+v", st.Accounts)
 	}
 }
