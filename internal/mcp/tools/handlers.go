@@ -2,6 +2,9 @@
 package tools
 
 import (
+	"bytes"
+	"encoding/json"
+
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
 	"github.com/dmz006/imap-mcp/internal/enrichment"
@@ -30,11 +33,23 @@ func (h *Handlers) SetPipeline(p *enrichment.Pipeline) { h.svc.SetPipeline(p) }
 func (h *Handlers) Service() *service.Service { return h.svc }
 
 // result renders a service result as JSON, or its error as a tool error.
+// structuredContent must be a JSON object, so lists (list_folders) are
+// returned as text only; clients reject an array there.
 func result(v any, err error) (*mcp.CallToolResult, error) {
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultJSON(v)
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(b), []byte("{")) {
+		return mcp.NewToolResultText(string(b)), nil
+	}
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{mcp.NewTextContent(string(b))},
+		StructuredContent: v,
+	}, nil
 }
 
 // text renders a confirmation message, or the error as a tool error.
