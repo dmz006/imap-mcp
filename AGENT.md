@@ -425,6 +425,14 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D47 (Q2 history, rejecting, webmail):** 0.17 rescans all
+  history once to record each message's location. Mail already in Trash or
+  Junk counts as discarded, but senders matched by an existing rule or held
+  by the new-sender hold are never suggested, so past rule clean-ups do not
+  turn into suggestions. `dismiss_suggestion` (tool and REST) marks a sender
+  or domain never-suggest; deleting a learned rule does the same, so it is
+  never re-created; a later rescue clears it. Freemail domains are never
+  domain-ruled, only per address.
 - **2026-10-10 — D46 (webhook payload setting; amends D16):** each webhook has
   a payload setting: `metadata` (D16's identifiers and counts), `full` (the
   whole event payload) or a list of fields. Existing webhooks stay
