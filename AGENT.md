@@ -404,6 +404,17 @@ they can be replaced or extended without touching call sites.
   full history, not the 30-day cache: the D28 index gains a conversation hash
   per message (and the header scan restarts once to fill it). The aim is the
   complete record needed to respond well, across all of the owner's mail.
+- **2026-10-10 — D45 (Q1 implementation review):** the 0.16.0 choices made
+  without DIP were reviewed with the operator one at a time. Kept: storing
+  subject, counterpart, Message-ID, folder and UID per conversation in
+  `reply_threads`; the rescan keeps the hold running; vendor/unknown senders
+  count only if written to or classified conversation/personal; `\Answered`
+  checked live on listing; a newer message re-opens a dismissed conversation;
+  `thread_id` as the item id; the combined digest (sent when only replies
+  wait, 25 items); counterpart = first recipient, no notes to self, list mail
+  never a thread's latest. Changed: rescan progress is shown in
+  `/api/health`; the default lookback (`within_days`) is 90 days for the
+  tools and the digest. Changes ship as 0.16.1.
 - **2026-10-10 — D44 (1.0.0 milestone):** when the current path is complete
   (assistant features Q0–Q5), that release is the official 1.0.0. imap-mcp
   versions independently of datawatch.

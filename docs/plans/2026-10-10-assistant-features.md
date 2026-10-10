@@ -384,8 +384,9 @@ When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).
 
 Q1 review (2026-10-10): the implementation choices in "Implementation notes"
-below were made without DIP. They are being reviewed with the operator one
-at a time; any change ships as 0.16.x.
+below were made without DIP. Reviewed with the operator one at a time
+(D45): all kept except two changes for 0.16.1 — rescan progress in
+`/api/health`, and a 90-day default lookback for the tools and digest.
 
 ## Risks
 
