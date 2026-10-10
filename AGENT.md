@@ -99,6 +99,14 @@ Both must match on every commit.
 
 Never reuse a version. Bump before every push.
 
+**Releases.** Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`: it
+checks the tag matches `config.Version`, runs the tests, builds
+linux/darwin × amd64/arm64 binaries with `SHA256SUMS`, and publishes a GitHub
+release whose notes are the version's `CHANGELOG.md` section
+(`scripts/release-notes.sh`). So every tagged version needs its CHANGELOG
+section before the tag is pushed. For a tag pushed earlier, run the workflow by
+hand with its `tag` input.
+
 ---
 
 ## Dependency Rules

@@ -336,6 +336,13 @@ intelligence:
   anomaly_spike_min: 10        # volume_spike: more than max(min, factor x daily average) in 24 hours
   anomaly_spike_factor: 5
 
+# Rule runs (docs/rules.md). The held-mail digest lists what new_sender rules
+# held since the last one: a summary APPENDed to the account's INBOX (no mail is
+# sent) plus a hold.digest event.
+rules:
+  hold_digest: true            # IMAP_MCP_RULES_HOLD_DIGEST
+  hold_digest_hour: 8          # first full run at or after this local hour (0-23); IMAP_MCP_RULES_HOLD_DIGEST_HOUR
+
 log:
   level: info
   format: text
