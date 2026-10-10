@@ -198,3 +198,20 @@ func TestNewSenderValidation(t *testing.T) {
 		}
 	}
 }
+
+// TestHallIgnoresPlaceholders: a stored hall that is a copied placeholder
+// counts as not classified, so a one-signal message stays.
+func TestHallIgnoresPlaceholders(t *testing.T) {
+	f := newHoldFixture(t)
+	g := &newSenderGate{account: "test", cache: f.d.SQL()}
+	for id, hall := range map[string]string{"p1@x": "project or context", "p2@x": "<Newsletter>", "p3@x": "alert"} {
+		if _, err := f.d.SQL().Exec(`INSERT INTO messages(account, folder, uid, from_addr, date, message_id, hall) VALUES('test','INBOX',?,'a@b.example',1,?,?)`, len(id)+int(id[1]), id, hall); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, want := range map[string]string{"p1@x": "", "p2@x": "newsletter", "p3@x": "alert", "none@x": ""} {
+		if got, err := g.hall(id); err != nil || got != want {
+			t.Errorf("hall(%s) = %q, %v; want %q", id, got, err, want)
+		}
+	}
+}

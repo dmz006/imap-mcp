@@ -271,6 +271,16 @@ func ensureCacheSchema(conn *sql.DB) error {
 			return fmt.Errorf("clear placeholder %s tags: %w", col, err)
 		}
 	}
+	// 0.15.1: halls copied from the prompt template ("<newsletter>") are
+	// unwrapped; anything else that is not a hall is cleared.
+	for _, q := range []string{
+		`UPDATE messages SET hall = lower(trim(hall, '<> ')) WHERE hall LIKE '%<%' OR hall LIKE '%>%' OR hall <> lower(trim(hall))`,
+		`UPDATE messages SET hall = NULL WHERE hall IS NOT NULL AND hall NOT IN ('transactional','conversation','newsletter','notification','alert','personal','unclassified')`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			return fmt.Errorf("clean halls: %w", err)
+		}
+	}
 	for _, t := range droppedCacheTables {
 		if _, err := conn.Exec(`DROP TABLE IF EXISTS ` + t); err != nil {
 			return fmt.Errorf("drop moved table %s: %w", t, err)

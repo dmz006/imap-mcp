@@ -6,6 +6,14 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-10
+
+### Fixed
+- **`new_sender` trusted malformed halls.** Halls stored before 0.15.0 could be
+  copied placeholders ("project or context", "<newsletter>"), and the hold
+  treated them as classifications. Only real halls count now; startup unwraps
+  bracketed halls and clears the rest (`unclassified` is kept).
+
 ## [0.15.0] - 2026-10-10
 
 ### Added

@@ -448,8 +448,21 @@ func (g *newSenderGate) hall(messageID string) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
-	return strings.ToLower(hall.String), err
+	if err != nil {
+		return "", err
+	}
+	// Only a real hall counts; labels stored before 0.15.0 may be copied
+	// placeholders ("project or context", "<newsletter>").
+	h := strings.Trim(strings.ToLower(strings.TrimSpace(hall.String)), "<>")
+	if !validHalls[h] {
+		return "", nil
+	}
+	return h, nil
 }
+
+// validHalls are the classify model's halls (enrichment prompt).
+var validHalls = map[string]bool{"transactional": true, "conversation": true, "newsletter": true,
+	"notification": true, "alert": true, "personal": true}
 
 // record stores what a rule run held, for release detection and the digest.
 func (g *newSenderGate) record(info map[imaplib.UID]heldInfo, folder string) error {
