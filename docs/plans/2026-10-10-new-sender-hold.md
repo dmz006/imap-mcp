@@ -1,6 +1,6 @@
 # New-sender hold and held-mail digest (0.15.0)
 
-Decisions: AGENT.md D30 (hold) and D31 (digest). Status: done in 0.15.0 (live validation below).
+Decisions: AGENT.md D30 (hold) and D31 (digest). Status: done (0.15.0, 0.15.1). Validated live 2026-10-10.
 
 ## Problem
 
@@ -68,7 +68,7 @@ marked trusted and never held again.
 | H2 | Header signals, real-contact overrides, hall fallback | Done |
 | H3 | `held_messages`, release detection, `senders.trusted` | Done |
 | H4 | Daily digest: INBOX summary + `hold.digest` event; config | Done |
-| H5 | Tests, docs (rules, webhooks, examples, skill), live validation with the rule inactive first | Tests and docs done; live validation in progress |
+| H5 | Tests, docs (rules, webhooks, examples, skill), live validation with the rule inactive first | Done. Live: the rule previewed inactive first (40 → 39 after the 0.15.1 hall fix), then ran; a released sender was trusted and not held again |
 
 Also in 0.15.0: classification placeholders. The classify model sometimes
 copied its prompt's placeholder text into the wing/room tags, and those became
