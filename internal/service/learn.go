@@ -186,7 +186,7 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 	for addr, t := range tally {
 		// A rule covers a sender when its From matches the address or the
 		// display name, as IMAP SEARCH FROM does (e.g. a "Dr. Martin" rule).
-		if ex.own[addr] || ex.ownDomains[t.domain] || ex.held[addr] || ex.covered(addr) || (t.name != "" && ex.covered(t.name)) ||
+		if ex.own[addr] || ex.me.has(addr) || ex.ownDomains[t.domain] || ex.held[addr] || ex.covered(addr) || (t.name != "" && ex.covered(t.name)) ||
 			ex.state[addr] == learnStatusDismissed ||
 			ex.state["@"+t.domain] == learnStatusDismissed { // a dismissed domain covers its addresses too
 			continue
@@ -269,6 +269,7 @@ func (s *Service) suggestion(account, target, kind string, addrs []string, t *se
 
 // learnExclusions is what learning never suggests (D36, D47).
 type learnExclusions struct {
+	me                    meSet // the owner's addresses (D50)
 	own, ownDomains, held map[string]bool
 	froms                 []string          // lower-case From conditions of the account's rules
 	state                 map[string]string // learn_state status by target
@@ -281,7 +282,7 @@ func (e *learnExclusions) covered(target string) bool {
 }
 
 func (s *Service) learnExclusions(ctx context.Context, account string) (*learnExclusions, error) {
-	ex := &learnExclusions{own: map[string]bool{}, ownDomains: map[string]bool{}, held: map[string]bool{},
+	ex := &learnExclusions{me: s.me(ctx), own: map[string]bool{}, ownDomains: map[string]bool{}, held: map[string]bool{},
 		state: map[string]string{}, ruleID: map[string]int64{}}
 	for _, a := range s.cfg.Accounts {
 		addrs := []string{a.Auth.Username}

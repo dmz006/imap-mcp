@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.17.2"
+var Version = "0.18.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -26,6 +26,7 @@ type Config struct {
 	Tools      ToolsConfig      `yaml:"tools"`
 	Intel      IntelConfig      `yaml:"intelligence"`
 	Rules      RulesConfig      `yaml:"rules"`
+	Identity   IdentityConfig   `yaml:"identity"`
 	Log        LogConfig        `yaml:"log"`
 	// Datawatch is optional. When present, ${secret:name} references in
 	// credentials resolve against a datawatch secrets service. When absent,
@@ -315,6 +316,13 @@ type ToolsConfig struct {
 	ExportMaxMessages int `yaml:"export_max_messages"`
 	// ExportMaxMB caps the total size of one export. Default 100.
 	ExportMaxMB int `yaml:"export_max_mb"`
+}
+
+// IdentityConfig lists the owner's other addresses (AGENT.md D50): work,
+// Kindle, old addresses. They count as the owner everywhere, like the
+// account logins. Entries are addresses or @domains.
+type IdentityConfig struct {
+	AlsoMe []string `yaml:"also_me"`
 }
 
 // RulesConfig tunes rule runs. The held-mail digest (AGENT.md D31) lists what
@@ -646,6 +654,9 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_RULES_HOLD_DIGEST_HOUR", &cfg.Rules.HoldDigestHour)
 	envInt("IMAP_MCP_RULES_LEARN_MIN_DISCARDS", &cfg.Rules.Learn.MinDiscards)
 	envInt("IMAP_MCP_RULES_LEARN_DOMAIN_MIN_ADDRESSES", &cfg.Rules.Learn.DomainMinAddresses)
+	if v := os.Getenv("IMAP_MCP_IDENTITY_ALSO_ME"); v != "" {
+		cfg.Identity.AlsoMe = strings.Split(v, ",")
+	}
 	if v := os.Getenv("IMAP_MCP_RULES_LEARN_MODE"); v != "" {
 		cfg.Rules.Learn.Mode = v
 	}
@@ -730,6 +741,11 @@ func validate(cfg *Config) error {
 	}
 	if h := cfg.Rules.HoldDigestHour; h < 0 || h > 23 {
 		return fmt.Errorf("rules: hold_digest_hour must be 0-23")
+	}
+	for _, a := range cfg.Identity.AlsoMe {
+		if a = strings.TrimSpace(a); !strings.Contains(a, "@") || strings.ContainsAny(a, " <>") {
+			return fmt.Errorf("identity.also_me: %q must be an address or @domain", a)
+		}
 	}
 	switch l := cfg.Rules.Learn; {
 	case l.Mode != "" && l.Mode != LearnSuggest && l.Mode != LearnInactive && l.Mode != LearnActive:

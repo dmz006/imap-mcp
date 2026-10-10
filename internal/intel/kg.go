@@ -103,13 +103,13 @@ func (w *kgWriter) link(st, sn, pred, ot, on string, when int64, conf float64, p
 
 // addMessage adds the header edges of one message. owner is the account's
 // own address (the mailbox owner); own holds all of the account's addresses.
-func (w *kgWriter) addMessage(h Header, owner string, own map[string]bool) error {
+func (w *kgWriter) addMessage(h Header, owner string, own ownSet) error {
 	when := h.Date.Unix()
-	outgoing := own[h.From.Addr]
+	outgoing := own.has(h.From.Addr)
 	var people []Address // participants other than the owner, de-duplicated
 	seen := map[string]bool{}
 	for _, a := range append(append([]Address{h.From}, h.To...), h.Cc...) {
-		if a.Addr == "" || !strings.Contains(a.Addr, "@") || own[a.Addr] || seen[a.Addr] {
+		if a.Addr == "" || !strings.Contains(a.Addr, "@") || own.has(a.Addr) || seen[a.Addr] {
 			continue
 		}
 		seen[a.Addr] = true
@@ -138,7 +138,7 @@ func (w *kgWriter) addMessage(h Header, owner string, own map[string]bool) error
 				return err
 			}
 		}
-	} else if !own[h.From.Addr] {
+	} else if !own.has(h.From.Addr) {
 		if err := w.link(EntPerson, h.From.Addr, PredCorrespondsWith, EntPerson, owner, when, confHeader, ""); err != nil {
 			return err
 		}

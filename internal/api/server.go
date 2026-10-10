@@ -171,6 +171,9 @@ func (s *Server) Router() http.Handler {
 		// ── Rules ────────────────────────────────────────────────────────────────
 		r.With(read).Get("/api/rules", s.handleListRules)
 		r.With(read).Get("/api/rules/suggestions", s.handleSuggestRules)
+		r.With(read).Get("/api/identities", s.handleSuggestIdentities)
+		r.With(write).Post("/api/identities/confirm", s.handleConfirmIdentity)
+		r.With(write).Post("/api/identities/reject", s.handleRejectIdentity)
 		r.With(write).Post("/api/rules/suggestions/dismiss", s.handleDismissSuggestion)
 		r.With(write).Post("/api/rules", s.handleCreateRule)
 		r.With(write).Put("/api/rules/{id}", s.handleUpdateRule)

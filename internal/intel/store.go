@@ -44,7 +44,7 @@ type applied struct {
 // apply records one batch and the folder's new progress in a single
 // transaction, so a crash between batches never counts a message twice:
 // either the batch and its progress are both stored, or neither is.
-func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool, kg *kgTarget, det *detector, acfg anomalyCfg, k *folderKinds) (applied, error) {
+func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own ownSet, kg *kgTarget, det *detector, acfg anomalyCfg, k *folderKinds) (applied, error) {
 	var res applied
 	tx, err := st.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -60,7 +60,7 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 		if hash == 0 {
 			hash = keyHash(folder, h)
 		}
-		outgoing := own[h.From.Addr]
+		outgoing := own.has(h.From.Addr)
 		var replyHash sql.NullInt64
 		if outgoing {
 			if rh := msgHash(h.InReplyTo); rh != 0 {
@@ -79,6 +79,11 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 			}
 		} else {
 			res.New++
+			if outgoing && h.From.Name != "" {
+				if err := st.ownerName(ctx, tx, h.From.Name); err != nil {
+					return res, err
+				}
+			}
 			// Anomaly checks see the sender's profile before this message.
 			ids, err := det.check(ctx, tx, acfg, account, folder, h, own)
 			if err != nil {
@@ -119,7 +124,7 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 // and a message moved to another folder is found where it now is. Only
 // person-to-person mail counts: the owner's own messages to someone else, and
 // incoming mail with no list, bulk or auto-submitted headers.
-func (st *store) thread(ctx context.Context, tx *sql.Tx, account, folder string, hash int64, h Header, outgoing bool, own map[string]bool) error {
+func (st *store) thread(ctx context.Context, tx *sql.Tx, account, folder string, hash int64, h Header, outgoing bool, own ownSet) error {
 	if !outgoing && !h.Conversation() {
 		return nil
 	}
@@ -131,7 +136,7 @@ func (st *store) thread(ctx context.Context, tx *sql.Tx, account, folder string,
 	var counterpart string
 	direct := false
 	for _, a := range append(append([]Address{}, h.To...), h.Cc...) {
-		if own[a.Addr] {
+		if own.has(a.Addr) {
 			direct = true
 		} else if counterpart == "" && a.Addr != "" {
 			counterpart = a.Addr
@@ -167,14 +172,14 @@ type kgTarget struct {
 }
 
 // profile updates sender profiles for one newly indexed message.
-func (st *store) profile(ctx context.Context, tx *sql.Tx, account string, hash int64, h Header, outgoing bool, own map[string]bool) error {
+func (st *store) profile(ctx context.Context, tx *sql.Tx, account string, hash int64, h Header, outgoing bool, own ownSet) error {
 	var senderID sql.NullInt64
 	{
 		when := h.Date.Unix()
 		if outgoing {
 			seen := map[string]bool{}
 			for _, a := range append(append([]Address{}, h.To...), h.Cc...) {
-				if a.Addr == "" || own[a.Addr] || seen[a.Addr] {
+				if a.Addr == "" || own.has(a.Addr) || seen[a.Addr] {
 					return nil
 				}
 				seen[a.Addr] = true

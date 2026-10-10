@@ -123,3 +123,30 @@ func (s *Server) handleDismissSuggestion(w http.ResponseWriter, r *http.Request)
 	}
 	respond(w)(s.svc.DismissSuggestion(r.Context(), req.Account, req.Target))
 }
+
+// GET /api/identities
+func (s *Server) handleSuggestIdentities(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.SuggestIdentities(r.Context()))
+}
+
+// POST /api/identities/confirm  Body: {"address"}
+func (s *Server) handleConfirmIdentity(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Address string `json:"address"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	respond(w)(s.svc.ConfirmIdentity(r.Context(), req.Address))
+}
+
+// POST /api/identities/reject  Body: {"address"}
+func (s *Server) handleRejectIdentity(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Address string `json:"address"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	respond(w)(s.svc.RejectIdentity(r.Context(), req.Address))
+}

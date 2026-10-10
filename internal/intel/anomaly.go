@@ -72,8 +72,8 @@ type priorSender struct {
 // check runs the per-message checks for one new incoming message, inside the
 // batch transaction, before the message is added to the profile. It returns
 // the ids of new anomalies.
-func (d *detector) check(ctx context.Context, tx *sql.Tx, cfg anomalyCfg, account, folder string, h Header, own map[string]bool) ([]int64, error) {
-	if d == nil || !d.active[account] || h.Date.Unix() < d.since || own[h.From.Addr] {
+func (d *detector) check(ctx context.Context, tx *sql.Tx, cfg anomalyCfg, account, folder string, h Header, own ownSet) ([]int64, error) {
+	if d == nil || !d.active[account] || h.Date.Unix() < d.since || own.has(h.From.Addr) {
 		return nil, nil
 	}
 	var p priorSender

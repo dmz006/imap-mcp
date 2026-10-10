@@ -326,6 +326,28 @@ func DismissSuggestionTool() mcp.Tool {
 	)
 }
 
+func SuggestIdentitiesTool() mcp.Tool {
+	return mcp.NewTool("suggest_identities",
+		mcp.WithDescription("Addresses that look like your own other addresses (work, Kindle, old accounts): they use your display name, "+
+			"or are built from your name. Each candidate has the evidence; confirm or reject it. Also lists the addresses already known to be you "+
+			"(identity.also_me config and confirmed ones). Your own addresses never count as people you owe or await replies from"),
+	)
+}
+
+func ConfirmIdentityTool() mcp.Tool {
+	return mcp.NewTool("confirm_identity",
+		mcp.WithDescription("Record that an address (or @domain) is yours. It counts as you everywhere from now on, and past mail from it is re-marked as yours"),
+		mcp.WithString("address", mcp.Required(), mcp.Description("Address or @domain")),
+	)
+}
+
+func RejectIdentityTool() mcp.Tool {
+	return mcp.NewTool("reject_identity",
+		mcp.WithDescription("Record that a suggested address is not yours; it is never suggested again"),
+		mcp.WithString("address", mcp.Required(), mcp.Description("Address from suggest_identities")),
+	)
+}
+
 func NeedsReplyTool() mcp.Tool {
 	return mcp.NewTool("needs_reply",
 		mcp.WithDescription("Conversations waiting on you: the latest message is someone else's, addressed to you, and you have not replied, "+

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	imaplib "github.com/emersion/go-imap/v2"
 
 	"github.com/dmz006/imap-mcp/internal/intel"
+	imapsync "github.com/dmz006/imap-mcp/internal/sync"
 )
 
 // Reply tracking (Q1; AGENT.md D32, D33). The header scan keeps the latest
@@ -148,14 +150,19 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 		LEFT JOIN intel_messages im ON im.account = t.account AND im.msg_hash = t.last_hash
 		WHERE t.account = ? AND t.outgoing = ? AND t.last_date <= ? AND t.last_date >= ?
 			AND COALESCE(t.dismissed_hash, 0) <> t.last_hash
-			AND COALESCE(s.role,'unknown') NOT IN ('newsletter','bot')`
+			AND COALESCE(s.role,'unknown') NOT IN ('newsletter','bot','self')`
 	out := 0
 	if outgoing {
 		out = 1
 	}
 	args = append(args, out, olderThan, within)
 	if !outgoing {
-		q += ` AND t.direct = 1 AND t.answered = 0
+		// Automated senders never need a reply, even ones the owner once wrote
+		// to (D51): vendor role, or mostly list/bulk/auto-submitted mail.
+		q += ` AND COALESCE(s.role,'unknown') <> 'vendor'
+			AND NOT (COALESCE(s.message_count,0) > 0
+				AND (COALESCE(s.list_count,0) + COALESCE(s.bulk_count,0) + COALESCE(s.auto_count,0)) * 2 > COALESCE(s.message_count,0))
+			AND t.direct = 1 AND t.answered = 0
 			AND NOT EXISTS (SELECT 1 FROM intel_messages o WHERE o.account = t.account AND o.outgoing = 1 AND o.reply_hash = t.last_hash)
 			AND NOT EXISTS (SELECT 1 FROM held_messages h WHERE h.account = t.account AND h.msg_hash = t.last_hash AND h.released_at IS NULL)`
 		gone, err := s.replyClearingFolders(ctx, account)
@@ -198,10 +205,17 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	me := s.me(ctx)
 	var items []ReplyItem
 	firstContact := map[int64]bool{} // thread hash → needs the live header check
 	for _, r := range all {
 		it := r.it
+		if me.has(it.Counterpart) { // the owner's other address (D50)
+			continue
+		}
+		if !outgoing && (intel.IsNoReply(it.Counterpart) || isInvite(it.Subject, it.MessageRef) || s.automatedHall(ctx, account, it.MessageRef)) {
+			continue // D51
+		}
 		if !r.known {
 			if !replyFirstContacts {
 				continue
@@ -233,6 +247,123 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 // the D48 checks. Off until Q3's model second opinion can judge content
 // (D49): header checks and the classify label alone let look-alike spam in.
 var replyFirstContacts = false
+
+// isInvite reports a calendar invitation or update by its subject or its
+// Message-ID (D51); liveCheck also looks for a text/calendar part.
+func isInvite(subject, messageRef string) bool {
+	s := strings.ToLower(strings.TrimSpace(subject))
+	for _, p := range []string{"invitation:", "updated invitation", "invitation from google calendar", "accepted:", "declined:",
+		"tentatively accepted:", "canceled event", "cancelled event", "event canceled", "new event:"} {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return strings.HasPrefix(strings.ToLower(messageRef), "calendar-")
+}
+
+// automatedHall reports a message the classify model labelled transactional,
+// notification or alert (D51). Messages outside the cache are not labelled.
+func (s *Service) automatedHall(ctx context.Context, account, messageRef string) bool {
+	cache := s.db.SQL()
+	id := strings.Trim(messageRef, "<>")
+	if cache == nil || id == "" {
+		return false
+	}
+	var hall sql.NullString
+	if err := cache.QueryRowContext(ctx, `SELECT hall FROM messages WHERE account = ? AND message_id IN (?, ?) AND COALESCE(hall,'') <> '' LIMIT 1`,
+		account, id, "<"+id+">").Scan(&hall); err != nil {
+		return false
+	}
+	switch strings.Trim(strings.ToLower(strings.TrimSpace(hall.String)), "<>") {
+	case "transactional", "notification", "alert":
+		return true
+	}
+	return false
+}
+
+// cachedText returns a cached message's text body, if the cache has it.
+func (s *Service) cachedText(ctx context.Context, account, messageRef string) (string, bool) {
+	cache := s.db.SQL()
+	id := strings.Trim(messageRef, "<>")
+	if cache == nil || id == "" {
+		return "", false
+	}
+	var text, html sql.NullString
+	if err := cache.QueryRowContext(ctx, `SELECT body_text, body_html FROM messages WHERE account = ? AND message_id IN (?, ?)
+		AND COALESCE(body_skipped,0) = 0 LIMIT 1`, account, id, "<"+id+">").Scan(&text, &html); err != nil {
+		return "", false
+	}
+	if text.String != "" {
+		return text.String, true
+	}
+	if html.String != "" {
+		return stripTags(html.String), true
+	}
+	return "", false
+}
+
+var tagRe = regexp.MustCompile(`(?s)<(script|style)[^>]*>.*?</(script|style)>|<br\s*/?>|</(p|div|tr|li)>|<[^>]+>`)
+
+// stripTags turns HTML into rough text: block ends become new lines.
+func stripTags(html string) string {
+	return html2text.Replace(tagRe.ReplaceAllStringFunc(html, func(t string) string {
+		if strings.HasPrefix(t, "<br") || strings.HasPrefix(t, "</") {
+			return "\n"
+		}
+		return ""
+	}))
+}
+
+var html2text = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&#39;", "'")
+
+// hasCalendarPart reports a text/calendar or application/ics part.
+func hasCalendarPart(bs imaplib.BodyStructure) bool {
+	found := false
+	bs.Walk(func(path []int, part imaplib.BodyStructure) bool {
+		mt := strings.ToLower(part.MediaType())
+		if mt == "text/calendar" || mt == "application/ics" {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// isForward reports a subject that forwards a message.
+func isForward(subject string) bool {
+	s := strings.ToLower(strings.TrimSpace(subject))
+	return strings.HasPrefix(s, "fwd:") || strings.HasPrefix(s, "fw:") || strings.HasPrefix(s, "fwd :")
+}
+
+// forwardMarkers start the forwarded part of a message body.
+var forwardMarkers = []string{
+	"---------- forwarded message", "begin forwarded message", "-----original message-----",
+	"________________________________", "-------- original message", "-------- forwarded message",
+}
+
+// hasOwnNote reports whether a forward carries text of the sender's own
+// above the forwarded message (D51). Signatures and "Sent from my ..." lines
+// do not count.
+func hasOwnNote(text string) bool {
+	lower := strings.ToLower(text)
+	cut := len(lower)
+	for _, m := range forwardMarkers {
+		if i := strings.Index(lower, m); i >= 0 && i < cut {
+			cut = i
+		}
+	}
+	for _, line := range strings.Split(text[:cut], "\n") {
+		l := strings.TrimSpace(line)
+		ll := strings.ToLower(l)
+		switch {
+		case l == "", l == "--", strings.HasPrefix(ll, "sent from my"), strings.HasPrefix(ll, "get outlook for"),
+			strings.HasPrefix(l, ">"), strings.HasPrefix(ll, "from:"), strings.HasPrefix(ll, "on ") && strings.HasSuffix(ll, "wrote:"):
+			continue
+		}
+		return true
+	}
+	return false
+}
 
 // replyClearingFolders are the folders whose mail never needs a reply:
 // Trash, Junk, configured discard folders and hold folders (D48).
@@ -305,12 +436,26 @@ func (s *Service) liveCheck(ctx context.Context, account string, items []ReplyIt
 	}
 	key := func(folder string, uid uint32) string { return folder + "|" + strconv.FormatUint(uint64(uid), 10) }
 	byFolder := map[string][]imaplib.UID{}
+	// Forwards need their text (D51): from the cache when it has the body,
+	// else read live below.
+	noted := map[int64]bool{}       // thread hash → forward with a note of its own
+	liveFwd := map[string][]int64{} // folder|uid → forwards read live
+	needBody := map[string][]imaplib.UID{}
 	for _, it := range items {
 		if it.Folder != "" && it.UID > 0 {
 			byFolder[it.Folder] = append(byFolder[it.Folder], imaplib.UID(it.UID))
 		}
+		if isForward(it.Subject) {
+			if text, ok := s.cachedText(ctx, account, it.MessageRef); ok {
+				noted[it.threadHash] = hasOwnNote(text)
+			} else if it.Folder != "" && it.UID > 0 {
+				needBody[it.Folder] = append(needBody[it.Folder], imaplib.UID(it.UID))
+				k := key(it.Folder, it.UID)
+				liveFwd[k] = append(liveFwd[k], it.threadHash)
+			}
+		}
 	}
-	answered, clean := map[string]bool{}, map[string]bool{}
+	answered, clean, invite := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	if s.pool != nil {
 		if c, err := s.pool.Resolve(account); err == nil {
 			c.Lock()
@@ -322,7 +467,7 @@ func (s *Service) liveCheck(ctx context.Context, account string, items []ReplyIt
 					slog.Debug("replies: live check select", "account", account, "err", err)
 					continue
 				}
-				opts := &imaplib.FetchOptions{UID: true, Flags: true}
+				opts := &imaplib.FetchOptions{UID: true, Flags: true, BodyStructure: &imaplib.FetchItemBodyStructure{}}
 				if gate != nil {
 					opts.Envelope = true
 					opts.BodySection = []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierHeader, HeaderFields: holdHeaderFields, Peek: true}}
@@ -337,10 +482,31 @@ func (s *Service) liveCheck(ctx context.Context, account string, items []ReplyIt
 					if slices.Contains(m.Flags, imaplib.FlagAnswered) {
 						answered[k] = true
 					}
+					if m.BodyStructure != nil && hasCalendarPart(m.BodyStructure) {
+						invite[k] = true
+					}
 					if gate != nil && m.Envelope != nil && len(m.Envelope.From) > 0 {
 						real, score, _, err := gate.signals(m.Envelope, headerOf(m), bareAddr(m.Envelope.From[0].Addr()))
 						if err == nil && (real || score == 0) {
 							clean[k] = true
+						}
+					}
+				}
+				if uids := needBody[folder]; len(uids) > 0 {
+					bodies, err := c.Client().Fetch(imaplib.UIDSetNum(uids...), &imaplib.FetchOptions{UID: true,
+						BodySection: []*imaplib.FetchItemBodySection{{Peek: true}}}).Collect()
+					if err != nil {
+						slog.Debug("replies: forward body fetch", "account", account, "err", err)
+					}
+					for _, m := range bodies {
+						for _, bs := range m.BodySection {
+							text, html := imapsync.PlainText(bs.Bytes)
+							if text == "" {
+								text = stripTags(html)
+							}
+							for _, th := range liveFwd[key(folder, uint32(m.UID))] {
+								noted[th] = hasOwnNote(text)
+							}
 						}
 					}
 				}
@@ -360,6 +526,12 @@ func (s *Service) liveCheck(ctx context.Context, account string, items []ReplyIt
 		}
 		if firstContact[it.threadHash] && !clean[k] {
 			continue
+		}
+		if invite[k] {
+			continue // a calendar invitation (D51)
+		}
+		if note, checked := noted[it.threadHash]; isForward(it.Subject) && checked && !note {
+			continue // a bare forward (D51)
 		}
 		kept = append(kept, it)
 	}

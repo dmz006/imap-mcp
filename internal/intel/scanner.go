@@ -33,8 +33,8 @@ type Scanner struct {
 	cache      *sql.DB // cache.db; nil disables hall roles and the model pass
 	st         *store
 	classify   ClassifyFunc
-	own        map[string]map[string]bool // account → own addresses
-	owner      map[string]string          // account → the address that stands for the mailbox owner (KG)
+	own        map[string]ownSet // account → own addresses (logins, also_me, confirmed identities; D50)
+	owner      map[string]string // account → the address that stands for the mailbox owner (KG)
 	ownDomains map[string]bool
 	log        *slog.Logger
 	now        func() time.Time
@@ -50,6 +50,8 @@ type Scanner struct {
 	det *detector // this tick's anomaly detector (nil = off)
 
 	discardFolders []string                // rules.learn.discard_folders
+	alsoMe         []string                // identity.also_me (D50)
+	base           map[string]ownSet       // account → login addresses only
 	folderKinds    map[string]*folderKinds // this tick's classification per account (D34)
 	locScope       map[string][]string     // this tick's location-only folders per account
 }
@@ -61,15 +63,16 @@ func (sc *Scanner) SetBus(b *bus.Bus) { sc.bus = b }
 func New(cfg *config.Config, src Source, state, cache *sql.DB, classify ClassifyFunc, log *slog.Logger) *Scanner {
 	sc := &Scanner{
 		cfg: cfg.Intel, src: src, state: state, cache: cache, st: &store{db: state},
-		own: map[string]map[string]bool{}, owner: map[string]string{}, ownDomains: map[string]bool{},
+		own: map[string]ownSet{}, owner: map[string]string{}, ownDomains: map[string]bool{},
 		log: log, now: time.Now, sleep: sleepCtx, refreshEvery: 5000,
 		discardFolders: cfg.Rules.Learn.DiscardFolders,
 	}
 	if cfg.Intel.LLMRolesOn() {
 		sc.classify = classify
 	}
+	sc.alsoMe = cfg.Identity.AlsoMe
 	for _, a := range cfg.Accounts {
-		set := map[string]bool{}
+		set := ownSet{}
 		for _, addr := range []string{a.Auth.Username, smtpFrom(a)} {
 			addr = strings.ToLower(strings.TrimSpace(addr))
 			if i := strings.LastIndexByte(addr, '<'); i >= 0 { // "Name <a@b>"
@@ -84,6 +87,10 @@ func New(cfg *config.Config, src Source, state, cache *sql.DB, classify Classify
 			}
 		}
 		sc.own[a.Name] = set
+	}
+	sc.base = map[string]ownSet{}
+	for k, v := range sc.own {
+		sc.base[k] = v.clone()
 	}
 	return sc
 }
@@ -136,6 +143,9 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 	start := sc.now()
 	// List and register every account's folders first, so progress reflects
 	// the whole job from the start of the tick.
+	if err := sc.refreshIdentities(ctx); err != nil {
+		return err
+	}
 	scopes := map[string][]string{}
 	sc.folderKinds, sc.locScope = map[string]*folderKinds{}, map[string][]string{}
 	for _, account := range sc.src.Accounts() {
@@ -198,6 +208,9 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 		return err
 	}
 	res.Roles = n
+	if err := sc.detectIdentities(ctx); err != nil {
+		return err
+	}
 	found, err := sc.periodic(ctx, det)
 	if err != nil {
 		return err

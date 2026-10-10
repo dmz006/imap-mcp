@@ -39,6 +39,21 @@ var webmailDomains = map[string]bool{
 var noReplyLocal = []string{"noreply", "no-reply", "no_reply", "donotreply", "do-not-reply", "do_not_reply",
 	"mailer-daemon", "postmaster", "bounce", "bounces", "notifications", "notification", "alerts", "automated"}
 
+// IsNoReply reports a no-reply style address (noreply@, notifications@,
+// mailer-daemon@ and the like).
+func IsNoReply(addr string) bool {
+	local := strings.ToLower(addr)
+	if i := strings.IndexByte(local, '@'); i >= 0 {
+		local = local[:i]
+	}
+	for _, p := range noReplyLocal {
+		if local == p || strings.HasPrefix(local, p+"+") || strings.HasPrefix(local, p+".") || strings.HasSuffix(local, "-"+p) {
+			return true
+		}
+	}
+	return false
+}
+
 // signalRole assigns a role from header signals, in the D20 order: list or
 // bulk mail → newsletter; noreply or Auto-Submitted → bot; someone we have
 // written to → colleague (same, non-webmail domain as one of our accounts) or
@@ -52,14 +67,8 @@ func signalRole(s senderStats, ownDomains map[string]bool) (role, source string)
 			return RoleBot, "signal:auto-submitted"
 		}
 	}
-	local := s.Address
-	if i := strings.IndexByte(local, '@'); i >= 0 {
-		local = local[:i]
-	}
-	for _, p := range noReplyLocal {
-		if local == p || strings.HasPrefix(local, p+"+") || strings.HasPrefix(local, p+".") || strings.HasSuffix(local, "-"+p) {
-			return RoleBot, "signal:noreply"
-		}
+	if IsNoReply(s.Address) {
+		return RoleBot, "signal:noreply"
 	}
 	if s.Sent > 0 {
 		if ownDomains[s.Domain] && !webmailDomains[s.Domain] {
@@ -119,6 +128,13 @@ func (sc *Scanner) recomputeRoles(ctx context.Context) (int, error) {
 			return total, err
 		}
 		for _, s := range batch {
+			if s.RoleSource == "identity" { // the owner's own address (D50)
+				if _, err := tx.ExecContext(ctx, `UPDATE senders SET dirty=0 WHERE id=?`, s.ID); err != nil {
+					tx.Rollback() //nolint:errcheck
+					return total, err
+				}
+				continue
+			}
 			role, source := signalRole(s, sc.ownDomains)
 			if role == RoleUnknown {
 				if r := hallRole(halls[s.Address]); r != RoleUnknown {

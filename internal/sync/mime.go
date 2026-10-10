@@ -92,3 +92,10 @@ func ThreadID(refs, inReplyTo []string, messageID string) string {
 	}
 	return strings.Trim(messageID, "<>")
 }
+
+// PlainText returns a raw message's first text/plain part, decoded, or its
+// first text/html part when it has no plain text.
+func PlainText(raw []byte) (text, html string) {
+	b := parseBody(raw)
+	return b.Text, b.HTML
+}

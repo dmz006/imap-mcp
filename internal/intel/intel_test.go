@@ -538,3 +538,72 @@ func TestLocations(t *testing.T) {
 		t.Errorf("rescue: trusted=%d open anomalies=%d location=%q", trusted, open, where("m1@mystery.example"))
 	}
 }
+
+func TestIdentityHelpers(t *testing.T) {
+	if got := normName("Roe, Jane (Work)"); got != "jane roe" {
+		t.Errorf("normName = %q", got)
+	}
+	if normName("David") != "" {
+		t.Error("a single word must not count as a name")
+	}
+	f := localForms([]string{"jane", "roe"})
+	for _, want := range []string{"janeroe", "jane.roe", "jroe", "roe.jane", "roejane"} {
+		if !f[want] {
+			t.Errorf("localForms missing %q", want)
+		}
+	}
+	o := ownSet{"me@example.com": true, "@work.example": true}
+	if !o.has("me@example.com") || !o.has("anyone@work.example") || o.has("me@other.example") {
+		t.Error("ownSet.has")
+	}
+}
+
+// TestIdentities (D50): a confirmed address rewrites history; detection
+// proposes addresses that use the owner's name.
+func TestIdentities(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := f.d.StateSQL()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := st.Exec(q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO owner_names(name, count) VALUES('jane roe', 5)`)
+	exec(`INSERT INTO senders(address, name, domain) VALUES('jroe@work.example','Roe, Jane (Work)','work.example'),
+		('janeroe@kindle.example','','kindle.example'), ('bob@other.example','Bob Smith','other.example')`)
+	if err := f.sc.detectIdentities(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	st.QueryRow(`SELECT count(*) FROM identities WHERE status = 'candidate'`).Scan(&n) //nolint:errcheck
+	if n != 2 {
+		t.Errorf("candidates = %d, want 2 (jroe@work, janeroe@kindle)", n)
+	}
+	// Confirming who@mystery rewrites its history: its mail becomes the owner's.
+	exec(`INSERT INTO identities(address, status, updated_at) VALUES('who@mystery.example','confirmed',1)`)
+	if err := f.sc.refreshIdentities(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var incoming, threads int
+	var role string
+	st.QueryRow(`SELECT count(*) FROM intel_messages m JOIN senders s ON s.id = m.sender_id WHERE s.address = 'who@mystery.example' AND m.outgoing = 0`).Scan(&incoming) //nolint:errcheck
+	st.QueryRow(`SELECT count(*) FROM reply_threads WHERE counterpart = 'who@mystery.example'`).Scan(&threads)                                                           //nolint:errcheck
+	st.QueryRow(`SELECT role FROM senders WHERE address = 'who@mystery.example'`).Scan(&role)                                                                            //nolint:errcheck
+	if incoming != 0 || threads != 0 || role != "self" || !f.sc.own["test"].has("who@mystery.example") {
+		t.Errorf("after confirming: incoming=%d threads=%d role=%q", incoming, threads, role)
+	}
+	// Roles are never recomputed for it.
+	exec(`UPDATE senders SET dirty = 1 WHERE address = 'who@mystery.example'`)
+	if _, err := f.sc.recomputeRoles(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st.QueryRow(`SELECT role FROM senders WHERE address = 'who@mystery.example'`).Scan(&role) //nolint:errcheck
+	if role != "self" {
+		t.Errorf("role recomputed to %q", role)
+	}
+}

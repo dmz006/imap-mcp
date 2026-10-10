@@ -109,7 +109,12 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 {
+	ids, err := s.SuggestIdentities(context.Background())
+	if err != nil {
+		return err
+	}
+	learned.identities = ids.Candidates
+	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 && len(learned.identities) == 0 {
 		return nil
 	}
 
@@ -204,6 +209,14 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 		}
 		body.WriteString("\r\n")
 	}
+	if len(learned.identities) > 0 {
+		fmt.Fprintf(&body, "Is this you? %d address(es) look like your own.\r\n", len(learned.identities))
+		body.WriteString("Confirm with confirm_identity (it then counts as you everywhere) or reject with reject_identity.\r\n\r\n")
+		for _, id := range learned.identities {
+			fmt.Fprintf(&body, "- %s: %s\r\n", id.Address, id.Evidence)
+		}
+		body.WriteString("\r\n")
+	}
 	body.WriteString("-- \r\nimap-mcp daily digest\r\n")
 
 	var parts []string
@@ -218,6 +231,9 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 	}
 	if n := len(learned.created); n > 0 {
 		parts = append(parts, fmt.Sprintf("Rules created: %d", n))
+	}
+	if n := len(learned.identities); n > 0 {
+		parts = append(parts, fmt.Sprintf("Is this you: %d", n))
 	}
 	subject := strings.Join(parts, "; ")
 	var msg strings.Builder
@@ -240,6 +256,7 @@ type digestLearning struct {
 		target string
 		ruleID int64
 	} // learned rules created since the last digest
+	identities []Identity // addresses that may be the owner's (D50)
 }
 
 func (s *Service) digestLearned(account string) (digestLearning, error) {

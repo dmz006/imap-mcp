@@ -92,3 +92,18 @@ func (h *Handlers) SuggestRules(ctx context.Context, req mcp.CallToolRequest) (*
 func (h *Handlers) DismissSuggestion(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.DismissSuggestion(ctx, req.GetString("account", ""), req.GetString("target", "")))
 }
+
+// SuggestIdentities lists addresses that look like the owner's.
+func (h *Handlers) SuggestIdentities(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.SuggestIdentities(ctx))
+}
+
+// ConfirmIdentity records an address as the owner's.
+func (h *Handlers) ConfirmIdentity(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.ConfirmIdentity(ctx, req.GetString("address", "")))
+}
+
+// RejectIdentity records that an address is not the owner's.
+func (h *Handlers) RejectIdentity(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.RejectIdentity(ctx, req.GetString("address", "")))
+}

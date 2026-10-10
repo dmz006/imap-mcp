@@ -162,3 +162,89 @@ func TestRescanProgress(t *testing.T) {
 		t.Errorf("after rescan = %+v", st.Accounts)
 	}
 }
+
+// TestReplyNoise covers D50 and D51: the owner's other addresses, calendar
+// invitations, automated senders and bare forwards never need a reply;
+// forwards with a note of their own do.
+func TestReplyNoise(t *testing.T) {
+	f := newHoldFixture(t)
+	ctx := context.Background()
+	me := imaptest.Username
+	now := time.Now()
+	f.s.cfg.Identity.AlsoMe = []string{"@corp.example"}
+	invite := "Message-ID: <ics@x>\r\nFrom: Pal <pal@example.org>\r\nTo: " + me + "\r\nSubject: Lunch\r\nContent-Type: text/calendar; method=REQUEST\r\n\r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"
+	bareLive := "Message-ID: <fwd2@x>\r\nFrom: Pal <pal@example.org>\r\nTo: " + me + "\r\nSubject: Fwd: deal\r\nContent-Type: text/plain\r\n\r\n---------- Forwarded message ---------\r\nFrom: shop\r\n"
+	f.srv.Append(t, "INBOX", raw("plain@x", "Pal <pal@example.org>", me, "Question"), now)     // UID 1
+	f.srv.Append(t, "INBOX", invite, now)                                                      // UID 2
+	f.srv.Append(t, "INBOX", bareLive, now)                                                    // UID 3
+	f.srv.Append(t, "INBOX", raw("fwd3@x", "Pal <pal@example.org>", me, "Fwd: estimate"), now) // UID 4: body "body" is a note
+
+	st := f.d.StateSQL()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := st.Exec(q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO senders(address, domain, role, sent_count, message_count, list_count) VALUES
+		('pal@example.org','example.org','personal',2,5,0), ('boss@corp.example','corp.example','colleague',3,9,0),
+		('shop@store.example','store.example','unknown',1,4,0), ('noreply@bank.example','bank.example','unknown',1,3,0),
+		('news@list.example','list.example','unknown',1,4,3), ('billing@vendor.example','vendor.example','vendor',1,2,0)`)
+	ago := now.Add(-5 * 24 * time.Hour).Unix()
+	thread := func(id, counterpart, subject string, uid int) {
+		exec(`INSERT INTO reply_threads(account, thread_hash, thread_id, last_hash, last_date, outgoing, direct, counterpart, subject, message_ref, folder, uid)
+			VALUES('test',?,?,?,?,0,1,?,?,?,'INBOX',?)`, intel.MsgHash(id), id, intel.MsgHash(id), ago, counterpart, subject, id, uid)
+	}
+	thread("plain@x", "pal@example.org", "Question", 1)
+	thread("ics@x", "pal@example.org", "Lunch", 2)                     // text/calendar part: an invite
+	thread("fwd2@x", "pal@example.org", "Fwd: deal", 3)                // bare forward, read live
+	thread("fwd3@x", "pal@example.org", "Fwd: estimate", 4)            // forward with a note, read live
+	thread("inv@x", "pal@example.org", "Invitation: Truck service", 0) // invite by subject
+	thread("boss@x", "boss@corp.example", "Status", 0)                 // the owner's other domain
+	thread("ship@x", "shop@store.example", "Your order shipped", 0)    // model: transactional
+	thread("nr@x", "noreply@bank.example", "Statement", 0)             // no-reply address
+	thread("nl@x", "news@list.example", "Weekly", 0)                   // mostly list mail
+	thread("vd@x", "billing@vendor.example", "Invoice", 0)             // vendor
+	thread("fwd1@x", "pal@example.org", "Fwd: sale", 0)                // bare forward, cached
+	thread("fwd4@x", "pal@example.org", "FW: quote", 0)                // forward with a note, cached
+	for i, row := range [][3]string{
+		{"ship@x", "transactional", ""},
+		{"fwd1@x", "conversation", "\n---------- Forwarded message ---------\nFrom: shop\n50% off"},
+		{"fwd4@x", "conversation", "Can you check this quote?\n\n-----Original Message-----\nFrom: x"},
+	} {
+		if _, err := f.d.SQL().Exec(`INSERT INTO messages(account, folder, uid, from_addr, date, message_id, hall, body_text) VALUES('test','INBOX',?,'x',1,?,?,?)`,
+			1000+i, row[0], row[1], row[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := f.s.NeedsReply(ctx, ReplyParams{OlderThanDays: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refs []string
+	for _, it := range got.Items {
+		refs = append(refs, it.MessageRef)
+	}
+	sort.Strings(refs)
+	if strings.Join(refs, " ") != "fwd3@x fwd4@x plain@x" {
+		t.Errorf("needs_reply = %v, want fwd3@x fwd4@x plain@x", refs)
+	}
+
+	// Identities: confirm and reject.
+	if _, err := f.s.ConfirmIdentity(ctx, "Me@Kindle.example"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RejectIdentity(ctx, "son@school.example"); err != nil {
+		t.Fatal(err)
+	}
+	if !f.s.me(ctx).has("me@kindle.example") || f.s.me(ctx).has("son@school.example") {
+		t.Error("confirmed identity not treated as the owner, or rejected one is")
+	}
+	if _, err := f.s.ConfirmIdentity(ctx, "not an address"); err == nil {
+		t.Error("invalid identity accepted")
+	}
+	list, err := f.s.SuggestIdentities(ctx)
+	if err != nil || len(list.Known) != 1 || list.Known[0].Address != "me@kindle.example" {
+		t.Errorf("identities = %+v, %v", list, err)
+	}
+}

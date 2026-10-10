@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -127,6 +128,17 @@ func (s *Service) newSenderGate(account string, days int) (*newSenderGate, error
 					g.ownDomains[d] = true
 				}
 			}
+		}
+	}
+	// The owner's other addresses (D50): exact ones are the owner's; @domain
+	// entries make the domain the owner's.
+	for e := range s.me(context.Background()) {
+		if strings.HasPrefix(e, "@") {
+			if d := strings.TrimPrefix(e, "@"); !freemailDomains[d] {
+				g.ownDomains[d] = true
+			}
+		} else {
+			g.own[e] = true
 		}
 	}
 	for d := range g.ownDomains {

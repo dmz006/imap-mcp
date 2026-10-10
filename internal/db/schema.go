@@ -337,6 +337,24 @@ CREATE TABLE IF NOT EXISTS learn_state (
     PRIMARY KEY (account, target)
 );
 
+-- identities: addresses that may be the owner's own (D50). Candidates are
+-- detected from the owner's display name and address forms; the owner
+-- confirms or rejects them. Confirmed ones count as the owner everywhere.
+CREATE TABLE IF NOT EXISTS identities (
+    address    TEXT PRIMARY KEY,  -- lower-case address or @domain
+    status     TEXT NOT NULL,     -- candidate | confirmed | rejected | config
+    evidence   TEXT,
+    applied_at INTEGER,           -- when the stored history was rewritten for it
+    updated_at INTEGER NOT NULL
+);
+
+-- owner_names: display names the owner sends under, counted from outgoing
+-- mail; identity detection looks for them on other addresses (D50).
+CREATE TABLE IF NOT EXISTS owner_names (
+    name  TEXT PRIMARY KEY,  -- lower-case
+    count INTEGER NOT NULL DEFAULT 0
+);
+
 -- digest_log: when each account's daily digest was last sent (D31).
 CREATE TABLE IF NOT EXISTS digest_log (
     account TEXT PRIMARY KEY,
