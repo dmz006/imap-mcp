@@ -433,6 +433,12 @@ they can be replaced or extended without touching call sites.
   Bccs to an address, and similar evidence; `suggest_identities` lists
   candidates with the evidence, `confirm_identity` / `reject_identity`
   record the answer in `imap.db`, and the daily digest lists new candidates.
+  The config list is global (`identity.also_me`: addresses and @domains,
+  every account). When an address becomes "you", reads treat it as you at
+  once, and the stored history is rewritten: past messages from it are
+  re-marked as the owner's and its profile is hidden. Recipients were never
+  stored, so other senders' counts are not recomputed. Ships as 0.18.0;
+  Q3–Q5 move to 0.19.0–0.21.0.
 - **2026-10-10 — D51 (needs_reply noise, from live validation):** never in
   `needs_reply`: (1) calendar invitations and updates; (2) automated
   senders, even ones the owner once wrote to: role bot or vendor, mostly

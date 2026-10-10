@@ -381,9 +381,10 @@ not from the owner) is rejected and logged.
 | Q0 | 0.15.5 | Done | Yes | Yes |
 | Q1 | 0.16.0 | Built | Yes | Pending (production rescan) |
 | Q2 | 0.17.0 | Built | Yes | Pending (production rescan) |
-| Q3 | 0.18.0 | Planned | | |
-| Q4 | 0.19.0 | Planned | | |
-| Q5 | 0.20.0 → 1.0.0 | Planned | | |
+| V1 | 0.18.0 | Planned (validation follow-ups: D50, D51) | | |
+| Q3 | 0.19.0 | Planned | | |
+| Q4 | 0.20.0 | Planned | | |
+| Q5 | 0.21.0 → 1.0.0 | Planned | | |
 
 When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).
