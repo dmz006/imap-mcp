@@ -113,6 +113,15 @@ type RuleRunResult struct {
 	Matched int    `json:"matched"`
 	Action  string `json:"action"`
 	Error   string `json:"error,omitempty"`
+	// Preview lists, for a new_sender rule's dry run, who would be held and
+	// why (no subjects).
+	Preview []HoldPreview `json:"preview,omitempty"`
+}
+
+// HoldPreview is one message a new_sender rule would hold.
+type HoldPreview struct {
+	Sender  string `json:"sender"`
+	Reasons string `json:"reasons"`
 }
 
 // TestRule dry-runs one rule (active or not): counts matches, changes nothing.
@@ -125,7 +134,7 @@ func (s *Service) TestRule(ctx context.Context, id int64) (RuleRunResult, error)
 	if len(r.Actions) > 0 {
 		res.Action = r.Actions[0].Type
 	}
-	n, err := s.applyRule(*r, true)
+	n, err := s.applyRule(*r, true, &res.Preview)
 	res.Matched = n
 	if err != nil {
 		res.Error = err.Error()
@@ -152,7 +161,11 @@ func (s *Service) RunActiveRules(onlyID int64, dryRun bool) ([]RuleRunResult, er
 		if len(rule.Actions) > 0 {
 			res.Action = rule.Actions[0].Type
 		}
-		n, aerr := s.applyRule(rule, dryRun)
+		var preview *[]HoldPreview
+		if dryRun {
+			preview = &res.Preview
+		}
+		n, aerr := s.applyRule(rule, dryRun, preview)
 		res.Matched = n
 		if aerr != nil {
 			res.Error = aerr.Error()
@@ -177,7 +190,8 @@ func (s *Service) RunActiveRules(onlyID int64, dryRun bool) ([]RuleRunResult, er
 
 // applyRule searches a rule's folder by its conditions and applies its actions.
 // Returns the number of matched messages. With dryRun it only counts.
-func (s *Service) applyRule(rule db.Rule, dryRun bool) (int, error) {
+// For a new_sender rule, a non-nil preview receives who would be held and why.
+func (s *Service) applyRule(rule db.Rule, dryRun bool, preview *[]HoldPreview) (int, error) {
 	folder := rule.Conditions.Folder
 	if folder == "" {
 		folder = "INBOX"
@@ -226,6 +240,11 @@ func (s *Service) applyRule(rule db.Rule, dryRun bool) (int, error) {
 	if gate != nil {
 		if uids, held, err = gate.filter(client, uids, dryRun); err != nil {
 			return 0, err
+		}
+		if preview != nil {
+			for _, u := range uids {
+				*preview = append(*preview, HoldPreview{Sender: held[u].sender, Reasons: strings.Join(held[u].reasons, "; ")})
+			}
 		}
 	}
 	if len(uids) == 0 || dryRun {

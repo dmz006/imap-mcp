@@ -101,8 +101,8 @@ func TestNewSenderHold(t *testing.T) {
 	}
 	exec(`UPDATE intel_scan SET completed_at = ?`, now.Unix())
 
-	if res, _ := f.s.TestRule(ctx, id); res.Matched != 2 || res.Error != "" {
-		t.Fatalf("dry run = %+v, want 2 (h1, h2)", res)
+	if res, _ := f.s.TestRule(ctx, id); res.Matched != 2 || res.Error != "" || len(res.Preview) != 2 || res.Preview[0].Reasons == "" {
+		t.Fatalf("dry run = %+v, want 2 (h1, h2) with reasons", res)
 	}
 	// The model classifies h3 as a newsletter: one signal plus a bulk hall holds it.
 	if _, err := f.d.SQL().Exec(`INSERT INTO messages(account, folder, uid, from_addr, date, message_id, hall) VALUES('test','INBOX',99,'promo@single.example',1,'h3@x','newsletter')`); err != nil {
