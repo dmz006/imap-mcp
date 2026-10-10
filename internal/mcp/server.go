@@ -77,6 +77,8 @@ func NewServer(
 	s.AddTool(tools.ListRulesTool(), h.ListRules)
 	s.AddTool(tools.DeleteRuleTool(), h.DeleteRule)
 	s.AddTool(tools.RunRulesTool(), h.RunRules)
+	s.AddTool(tools.SuggestRulesTool(), h.SuggestRules)
+	s.AddTool(tools.DismissSuggestionTool(), h.DismissSuggestion)
 
 	// ── Search ───────────────────────────────────────────────────────────────
 	s.AddTool(tools.SearchMessagesTool(), h.SearchMessages)

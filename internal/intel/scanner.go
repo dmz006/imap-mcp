@@ -48,6 +48,10 @@ type Scanner struct {
 
 	bus *bus.Bus  // anomaly.detected; nil = not published
 	det *detector // this tick's anomaly detector (nil = off)
+
+	discardFolders []string                // rules.learn.discard_folders
+	folderKinds    map[string]*folderKinds // this tick's classification per account (D34)
+	locScope       map[string][]string     // this tick's location-only folders per account
 }
 
 // SetBus lets the scanner publish anomaly.detected.
@@ -59,6 +63,7 @@ func New(cfg *config.Config, src Source, state, cache *sql.DB, classify Classify
 		cfg: cfg.Intel, src: src, state: state, cache: cache, st: &store{db: state},
 		own: map[string]map[string]bool{}, owner: map[string]string{}, ownDomains: map[string]bool{},
 		log: log, now: time.Now, sleep: sleepCtx, refreshEvery: 5000,
+		discardFolders: cfg.Rules.Learn.DiscardFolders,
 	}
 	if cfg.Intel.LLMRolesOn() {
 		sc.classify = classify
@@ -132,6 +137,7 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 	// List and register every account's folders first, so progress reflects
 	// the whole job from the start of the tick.
 	scopes := map[string][]string{}
+	sc.folderKinds, sc.locScope = map[string]*folderKinds{}, map[string][]string{}
 	for _, account := range sc.src.Accounts() {
 		all, err := sc.src.Folders(ctx, account)
 		if err != nil {
@@ -145,6 +151,12 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 		if err := sc.st.register(ctx, account, scopes[account]); err != nil {
 			return err
 		}
+		k, err := sc.kinds(ctx, account, all)
+		if err != nil {
+			return err
+		}
+		sc.folderKinds[account] = k
+		sc.locScope[account] = sc.locationScope(all, scopes[account], k)
 	}
 	accounts := make([]string, 0, len(scopes))
 	for a := range scopes {
@@ -166,6 +178,14 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 			}
 			sc.log.Warn("intel: scan account", "account", account, "err", err)
 			continue
+		}
+		for _, folder := range sc.locScope[account] {
+			if err := sc.locateFolder(ctx, account, folder, sc.folderKinds[account]); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				sc.log.Warn("intel: location pass", "account", account, "folder", folder, "err", err)
+			}
 		}
 		n, err := sc.st.pairReplies(ctx, account)
 		if err != nil {
@@ -275,7 +295,7 @@ func (sc *Scanner) scanFolder(ctx context.Context, account, folder string, res *
 			continue
 		}
 		st.UIDValidity = b.UIDValidity
-		a, err := sc.st.apply(ctx, account, folder, b.UIDValidity, b, own, kg, sc.det, sc.anomalyCfg())
+		a, err := sc.st.apply(ctx, account, folder, b.UIDValidity, b, own, kg, sc.det, sc.anomalyCfg(), sc.folderKinds[account])
 		if err != nil {
 			return err
 		}

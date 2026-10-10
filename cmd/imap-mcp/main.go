@@ -136,6 +136,7 @@ func runRules(args []string) error {
 	enq := webhook.NewEnqueuer(database.Webhooks, log, nil)
 	b.Subscribe(bus.EventRuleFired, enq.Handle)
 	b.Subscribe(bus.EventHoldDigest, enq.Handle)
+	b.Subscribe(bus.EventRuleSuggested, enq.Handle)
 	pool := imap.NewPool(cfg, b, log)
 	if err := pool.Connect(ctx); err != nil {
 		return fmt.Errorf("connect accounts: %w", err)

@@ -87,7 +87,7 @@ func TestReplyLists(t *testing.T) {
 	if err := f.s.sendHoldDigests(now.Add(time.Minute)); err != nil || f.count(t, "INBOX") != 3 {
 		t.Errorf("second digest the same day: %v", err)
 	}
-	msg := string(digestMessage("user@example.com", "test", nil, needs, now))
+	msg := string(digestMessage("user@example.com", "test", nil, needs, digestLearning{}, now))
 	if !strings.Contains(msg, "Waiting on you: 1") || !strings.Contains(msg, "Friend <friend@example.org>") || !strings.Contains(msg, "still being scanned") {
 		t.Errorf("digest body:\n%s", msg)
 	}

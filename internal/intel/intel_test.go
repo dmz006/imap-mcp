@@ -453,3 +453,88 @@ func TestReplyThreads(t *testing.T) {
 		t.Error("a note to self made a thread")
 	}
 }
+
+func TestDiscardKind(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		attrs []string
+		want  string
+	}{
+		{"Bin", []string{`\Trash`}, KindTrash},
+		{"Bulk", []string{`\Junk`}, KindJunk},
+		{"[Gmail]/Trash", nil, KindTrash},
+		{"[Gmail]/Spam", nil, KindJunk},
+		{"INBOX.Junk", nil, KindJunk},
+		{"Deleted Items", nil, KindTrash},
+		{"Unwanted", nil, KindDiscard},
+		{"INBOX", nil, ""},
+		{"Archive", nil, ""},
+	} {
+		if got := DiscardKind(c.name, c.attrs, []string{"unwanted"}); got != c.want {
+			t.Errorf("DiscardKind(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestLocations (D34): the scan records where each message was last seen; the
+// location-only pass reads Junk without touching profiles; a message pulled
+// back out of Junk trusts its sender and resolves their anomalies.
+func TestLocations(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.srv.User.Create("Trash", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	where := func(id string) string {
+		var folder sql.NullString
+		f.d.StateSQL().QueryRow(`SELECT folder FROM intel_messages WHERE msg_hash = ?`, msgHash(id)).Scan(&folder) //nolint:errcheck
+		return folder.String
+	}
+	if w := where("v1@vendor.example.org"); w != "INBOX" {
+		t.Errorf("v1 location = %q", w)
+	}
+	// The owner trashes the vendor's message: the scan sees it in Trash.
+	f.srv.Append(t, "Trash", msg("v1@vendor.example.org", "billing@vendor.example.org", imaptest.Username, ""), time.Now())
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if w := where("v1@vendor.example.org"); w != "Trash" {
+		t.Errorf("after trashing, v1 location = %q", w)
+	}
+	before := f.sender(t, "billing@vendor.example.org")
+
+	// The owner junks who@mystery's message; Junk gets a location-only pass.
+	f.srv.Append(t, "Junk", msg("m1@mystery.example", "who@mystery.example", imaptest.Username, ""), time.Now())
+	k := &folderKinds{kind: map[string]string{"Junk": KindJunk, "Trash": KindTrash}, hold: map[string]bool{}}
+	if err := f.sc.locateFolder(ctx, "test", "Junk", k); err != nil {
+		t.Fatal(err)
+	}
+	if w := where("m1@mystery.example"); w != "Junk" {
+		t.Errorf("after junking, m1 location = %q", w)
+	}
+	if after := f.sender(t, "billing@vendor.example.org"); after.Received != before.Received {
+		t.Error("the location pass changed a profile")
+	}
+	var trusted int
+	f.d.StateSQL().QueryRow(`SELECT COALESCE(trusted,0) FROM senders WHERE address = 'who@mystery.example'`).Scan(&trusted) //nolint:errcheck
+	if trusted != 0 {
+		t.Fatal("trusted before any rescue")
+	}
+	if _, err := f.d.StateSQL().Exec(`INSERT INTO anomalies(account, sender, anomaly_type, severity) VALUES('test','who@mystery.example','new_sender','low')`); err != nil {
+		t.Fatal(err)
+	}
+	// Pulled back out of Junk into Archive: a rescue.
+	f.srv.Append(t, "Archive", msg("m1@mystery.example", "who@mystery.example", imaptest.Username, ""), time.Now())
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var open int
+	f.d.StateSQL().QueryRow(`SELECT COALESCE(trusted,0) FROM senders WHERE address = 'who@mystery.example'`).Scan(&trusted)     //nolint:errcheck
+	f.d.StateSQL().QueryRow(`SELECT count(*) FROM anomalies WHERE sender = 'who@mystery.example' AND resolved = 0`).Scan(&open) //nolint:errcheck
+	if trusted != 1 || open != 0 || where("m1@mystery.example") != "Archive" {
+		t.Errorf("rescue: trusted=%d open anomalies=%d location=%q", trusted, open, where("m1@mystery.example"))
+	}
+}

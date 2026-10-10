@@ -17,16 +17,17 @@ func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
 	respond(w)(map[string]any{"count": len(hooks), "webhooks": hooks, "events": webhook.Events}, err)
 }
 
-// POST /api/webhooks {url, events} → 201 with the signing secret (shown once).
+// POST /api/webhooks {url, events, payload} → 201 with the signing secret (shown once).
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		URL    string   `json:"url"`
-		Events []string `json:"events"`
+		URL     string   `json:"url"`
+		Events  []string `json:"events"`
+		Payload string   `json:"payload"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
-	created, err := s.svc.CreateWebhook(r.Context(), b.URL, b.Events)
+	created, err := s.svc.CreateWebhook(r.Context(), b.URL, b.Events, b.Payload)
 	if err != nil {
 		writeError(w, err)
 		return

@@ -22,7 +22,8 @@ const (
 	EventEnrichmentError   EventType = "enrichment.error"
 	EventAnomalyDetected   EventType = "anomaly.detected"
 	EventRuleFired         EventType = "rule.fired"
-	EventHoldDigest        EventType = "hold.digest" // D31: account + held count only
+	EventHoldDigest        EventType = "hold.digest"    // D31: account + held count only
+	EventRuleSuggested     EventType = "rule.suggested" // D36, D46: rules learned from the owner's moves
 	EventAccountConnected  EventType = "account.connected"
 	EventAccountError      EventType = "account.error"
 	EventAccountDisconnect EventType = "account.disconnected"

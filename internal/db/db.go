@@ -318,6 +318,8 @@ var stateColumns = []struct{ table, column, decl string }{
 	{"anomalies", "details", "TEXT"},
 	{"senders", "trusted", "INTEGER DEFAULT 0"},
 	{"intel_scan", "rescan_until", "INTEGER"},
+	{"intel_messages", "folder", "TEXT"},
+	{"webhooks", "payload", "TEXT DEFAULT 'metadata'"},
 }
 
 // migrateState brings an existing imap.db up to the current schema: missing
@@ -342,8 +344,8 @@ func migrateState(conn *sql.DB) error {
 		switch c.column {
 		case "kg_done":
 			addedKG = true
-		case "rescan_until":
-			addedThreads = true
+		case "rescan_until", "folder":
+			addedThreads = true // both need every message read once more
 		}
 	}
 	if addedKG {
@@ -351,10 +353,13 @@ func migrateState(conn *sql.DB) error {
 			return fmt.Errorf("restart header scan for the knowledge graph: %w", err)
 		}
 	} else if addedThreads {
-		// 0.16 (D32): rescan every folder once to fill reply_threads from the
-		// whole history. completed_at is kept, so profiles and the new-sender
-		// hold stay usable while it runs; rescan_until marks how far it must go.
-		if _, err := conn.Exec(`UPDATE intel_scan SET rescan_until = last_uid, last_uid = 0 WHERE last_uid > 0`); err != nil {
+		// 0.16 (D32) and 0.17 (D34): rescan every folder once to fill
+		// reply_threads and message locations from the whole history.
+		// completed_at is kept, so profiles and the new-sender hold stay usable
+		// while it runs; rescan_until marks how far it must go (an unfinished
+		// earlier rescan keeps its higher mark).
+		if _, err := conn.Exec(`UPDATE intel_scan SET rescan_until = MAX(last_uid, COALESCE(rescan_until, 0)), last_uid = 0
+			WHERE last_uid > 0 OR rescan_until > 0`); err != nil {
 			return fmt.Errorf("restart header scan for reply threads: %w", err)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -103,6 +104,7 @@ func (s *Service) DeleteRule(ctx context.Context, id int64) error {
 	if err := s.db.Rules.Delete(id); err != nil {
 		return notFound("%v", err)
 	}
+	s.forgetLearnedRule(id) // a deleted learned rule is never re-created (D47)
 	return nil
 }
 
@@ -180,7 +182,11 @@ func (s *Service) RunActiveRules(onlyID int64, dryRun bool) ([]RuleRunResult, er
 		results = append(results, res)
 	}
 	if !dryRun && onlyID == 0 {
-		// A full run is the hourly job: send the day's held-mail digest when due.
+		// A full run is the hourly job: learn from the owner's moves (D36),
+		// then send the day's digest when due.
+		if err := s.learnRun(context.Background(), time.Now()); err != nil {
+			results = append(results, RuleRunResult{Name: "learn", Error: err.Error()})
+		}
 		if err := s.sendHoldDigests(time.Now()); err != nil {
 			results = append(results, RuleRunResult{Name: "hold-digest", Error: err.Error()})
 		}
@@ -252,6 +258,21 @@ func (s *Service) applyRule(rule db.Rule, dryRun bool, preview *[]HoldPreview) (
 	}
 
 	set := imaplib.UIDSetNum(uids...)
+	// Remember which messages this rule moves, so learning from moves never
+	// counts them as the owner's own discards (D34). Read before the move,
+	// while the UIDs are still valid here.
+	var moved []string
+	if slices.ContainsFunc(rule.Actions, func(a db.RuleAction) bool { return a.Type == "trash" || a.Type == "move" }) {
+		msgs, err := client.Fetch(set, &imaplib.FetchOptions{UID: true, Envelope: true}).Collect()
+		if err != nil {
+			return len(uids), fmt.Errorf("read message ids: %w", err)
+		}
+		for _, m := range msgs {
+			if m.Envelope != nil && m.Envelope.MessageID != "" {
+				moved = append(moved, m.Envelope.MessageID)
+			}
+		}
+	}
 	for _, act := range rule.Actions {
 		switch act.Type {
 		case "trash":
@@ -277,6 +298,9 @@ func (s *Service) applyRule(rule db.Rule, dryRun bool, preview *[]HoldPreview) (
 		default:
 			return len(uids), fmt.Errorf("unknown action %q", act.Type)
 		}
+	}
+	if err := s.recordRuleMoves(conn.Account(), rule, moved); err != nil {
+		return len(uids), fmt.Errorf("record rule moves: %w", err)
 	}
 	if gate != nil {
 		dest := rule.Actions[0].Dest

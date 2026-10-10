@@ -307,6 +307,25 @@ func ResolveAnomalyTool() mcp.Tool {
 	)
 }
 
+func SuggestRulesTool() mcp.Tool {
+	return mcp.NewTool("suggest_rules",
+		mcp.WithDescription("Rules learned from your own moves: senders (or domains, when 2+ addresses there qualify) whose mail you mostly moved to Trash or Junk. "+
+			"Each suggestion has the exact rule (pass it to create_rule; it starts inactive), the evidence (received, discarded, ratio), "+
+			"the action that mirrors what you did, and how many INBOX messages it would match now. People you've written to, trusted senders, "+
+			"senders a rule already covers and held senders are never suggested"),
+		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
+		mcp.WithNumber("limit", mcp.Description("Max results (default: 50)")),
+	)
+}
+
+func DismissSuggestionTool() mcp.Tool {
+	return mcp.NewTool("dismiss_suggestion",
+		mcp.WithDescription("Never suggest (or auto-create) a rule for this sender or domain again"),
+		mcp.WithString("account", mcp.Required(), mcp.Description("Account name")),
+		mcp.WithString("target", mcp.Required(), mcp.Description("target from suggest_rules: an address or @domain")),
+	)
+}
+
 func NeedsReplyTool() mcp.Tool {
 	return mcp.NewTool("needs_reply",
 		mcp.WithDescription("Conversations waiting on you: the latest message is someone else's, addressed to you, and you have not replied, "+

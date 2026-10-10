@@ -44,7 +44,7 @@ type applied struct {
 // apply records one batch and the folder's new progress in a single
 // transaction, so a crash between batches never counts a message twice:
 // either the batch and its progress are both stored, or neither is.
-func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool, kg *kgTarget, det *detector, acfg anomalyCfg) (applied, error) {
+func (st *store) apply(ctx context.Context, account, folder string, validity uint32, b Batch, own map[string]bool, kg *kgTarget, det *detector, acfg anomalyCfg, k *folderKinds) (applied, error) {
 	var res applied
 	tx, err := st.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -67,13 +67,16 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 				replyHash = sql.NullInt64{Int64: rh, Valid: true}
 			}
 		}
-		r, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO intel_messages(account, msg_hash, date, outgoing, reply_hash)
-			VALUES(?,?,?,?,?)`, account, hash, h.Date.Unix(), boolInt(outgoing), replyHash)
+		r, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO intel_messages(account, msg_hash, date, outgoing, reply_hash, folder)
+			VALUES(?,?,?,?,?,?)`, account, hash, h.Date.Unix(), boolInt(outgoing), replyHash, folder)
 		if err != nil {
 			return res, err
 		}
 		if n, _ := r.RowsAffected(); n == 0 {
 			res.Duplicate++ // already seen in another folder or label (D28)
+			if err := st.locate(ctx, tx, account, hash, folder, k); err != nil {
+				return res, err
+			}
 		} else {
 			res.New++
 			// Anomaly checks see the sender's profile before this message.

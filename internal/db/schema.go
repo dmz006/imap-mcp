@@ -159,7 +159,8 @@ CREATE TABLE IF NOT EXISTS webhooks (
     active     INTEGER DEFAULT 1,
     created_at INTEGER DEFAULT (unixepoch()),
     last_fired INTEGER,
-    fail_count INTEGER DEFAULT 0
+    fail_count INTEGER DEFAULT 0,
+    payload    TEXT DEFAULT 'metadata' -- D46: metadata | full | comma-separated fields
 );
 
 -- Durable webhook outbox (AGENT.md D16): one row per (webhook, event),
@@ -259,6 +260,7 @@ CREATE TABLE IF NOT EXISTS intel_messages (
     kg_done      INTEGER NOT NULL DEFAULT 0, -- header edges added to the knowledge graph (P3)
     kg_tags_done INTEGER NOT NULL DEFAULT 0, -- wing/room edges added from the cache
     kg_llm_done  INTEGER NOT NULL DEFAULT 0, -- body read by the extraction model
+    folder       TEXT,                       -- where the scan last saw it (D34)
     PRIMARY KEY (account, msg_hash)
 ) WITHOUT ROWID;
 
@@ -301,6 +303,39 @@ CREATE TABLE IF NOT EXISTS reply_threads (
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_reply_threads_open ON reply_threads(account, outgoing, last_date);
+
+-- intel_locscan: progress of the location-only pass over Trash and Junk
+-- (D34): Message-ID hashes and folder only, never profiles or graph edges.
+CREATE TABLE IF NOT EXISTS intel_locscan (
+    account     TEXT NOT NULL,
+    folder      TEXT NOT NULL,
+    uidvalidity INTEGER NOT NULL DEFAULT 0,
+    last_uid    INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER DEFAULT (unixepoch()),
+    PRIMARY KEY (account, folder)
+);
+
+-- rule_moves: messages a rule moved or trashed (D34), so they never count as
+-- the owner's own discards. Pruned after a year.
+CREATE TABLE IF NOT EXISTS rule_moves (
+    account  TEXT NOT NULL,
+    msg_hash INTEGER NOT NULL,
+    rule_id  INTEGER,
+    dest     TEXT,
+    moved_at INTEGER NOT NULL,
+    PRIMARY KEY (account, msg_hash)
+) WITHOUT ROWID;
+
+-- learn_state: what learning from moves did with each sender or domain
+-- (D35, D36, D47): suggested, created (rule_id) or dismissed (never again).
+CREATE TABLE IF NOT EXISTS learn_state (
+    account    TEXT NOT NULL,
+    target     TEXT NOT NULL,  -- an address, or @domain
+    status     TEXT NOT NULL,  -- suggested | created | dismissed
+    rule_id    INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (account, target)
+);
 
 -- digest_log: when each account's daily digest was last sent (D31).
 CREATE TABLE IF NOT EXISTS digest_log (

@@ -22,7 +22,10 @@ type Webhook struct {
 	LastFired int64    `json:"last_fired,omitempty"`
 	FailCount int      `json:"fail_count"`
 	Pending   int      `json:"pending"`
-	Secret    string   `json:"-"`
+	// Payload is what deliveries carry (D46): metadata, full, or a
+	// comma-separated list of payload fields.
+	Payload string `json:"payload"`
+	Secret  string `json:"-"`
 }
 
 // Delivery is one outbox row.
@@ -42,9 +45,9 @@ type Delivery struct {
 }
 
 // Create stores a webhook and returns its id.
-func (r *WebhookRepo) Create(ctx context.Context, url string, events []string, secret string) (int64, error) {
+func (r *WebhookRepo) Create(ctx context.Context, url string, events []string, secret, payload string) (int64, error) {
 	ev, _ := json.Marshal(events)
-	res, err := r.db.ExecContext(ctx, `INSERT INTO webhooks(url, events, secret, active) VALUES(?,?,?,1)`, url, string(ev), secret)
+	res, err := r.db.ExecContext(ctx, `INSERT INTO webhooks(url, events, secret, active, payload) VALUES(?,?,?,1,?)`, url, string(ev), secret, payload)
 	if err != nil {
 		return 0, err
 	}
@@ -52,13 +55,13 @@ func (r *WebhookRepo) Create(ctx context.Context, url string, events []string, s
 }
 
 const webhookCols = `w.id, w.url, w.events, COALESCE(w.secret,''), w.active, COALESCE(w.created_at,0),
-	COALESCE(w.last_fired,0), COALESCE(w.fail_count,0),
+	COALESCE(w.last_fired,0), COALESCE(w.fail_count,0), COALESCE(w.payload,'metadata'),
 	(SELECT count(*) FROM webhook_deliveries d WHERE d.webhook_id = w.id AND d.status = 'pending')`
 
 func scanWebhook(sc interface{ Scan(...any) error }) (Webhook, error) {
 	var w Webhook
 	var ev string
-	err := sc.Scan(&w.ID, &w.URL, &ev, &w.Secret, &w.Active, &w.CreatedAt, &w.LastFired, &w.FailCount, &w.Pending)
+	err := sc.Scan(&w.ID, &w.URL, &ev, &w.Secret, &w.Active, &w.CreatedAt, &w.LastFired, &w.FailCount, &w.Payload, &w.Pending)
 	if err == nil {
 		_ = json.Unmarshal([]byte(ev), &w.Events)
 	}

@@ -80,3 +80,15 @@ func (h *Handlers) AwaitingReply(ctx context.Context, req mcp.CallToolRequest) (
 func (h *Handlers) DismissReply(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.DismissReply(ctx, req.GetString("account", ""), req.GetString("thread_id", "")))
 }
+
+// SuggestRules lists rules learned from the owner's moves.
+func (h *Handlers) SuggestRules(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.SuggestRules(ctx, service.SuggestParams{
+		Account: req.GetString("account", ""), Limit: int(req.GetFloat("limit", 50)),
+	}))
+}
+
+// DismissSuggestion marks a sender or domain never-suggest.
+func (h *Handlers) DismissSuggestion(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.DismissSuggestion(ctx, req.GetString("account", ""), req.GetString("target", "")))
+}

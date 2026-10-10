@@ -23,7 +23,9 @@ func (s *Service) ListWebhooks(ctx context.Context) ([]db.Webhook, error) {
 }
 
 // CreateWebhook validates and registers a webhook with a generated secret.
-func (s *Service) CreateWebhook(ctx context.Context, url string, events []string) (*CreatedWebhook, error) {
+// payload is metadata, full or a comma-separated field list; empty picks
+// the D46 default.
+func (s *Service) CreateWebhook(ctx context.Context, url string, events []string, payload string) (*CreatedWebhook, error) {
 	url = strings.TrimSpace(url)
 	if err := webhook.ValidateURL(url); err != nil {
 		return nil, invalid("%v", err)
@@ -31,8 +33,12 @@ func (s *Service) CreateWebhook(ctx context.Context, url string, events []string
 	if err := webhook.ValidateEvents(events); err != nil {
 		return nil, invalid("%v", err)
 	}
+	payload, err := webhook.NormalizePayload(payload, events)
+	if err != nil {
+		return nil, invalid("%v", err)
+	}
 	secret := webhook.NewSecret()
-	id, err := s.db.Webhooks.Create(ctx, url, events, secret)
+	id, err := s.db.Webhooks.Create(ctx, url, events, secret, payload)
 	if err != nil {
 		return nil, err
 	}

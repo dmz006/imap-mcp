@@ -89,7 +89,7 @@ func (q *Enqueuer) Handle(e bus.Event) {
 		if ev == EventTest || !Subscribed(w.Events, ev) {
 			continue
 		}
-		if err := q.EnqueueFor(ctx, w.ID, e); err != nil {
+		if err := q.enqueue(ctx, w.ID, w.Payload, e); err != nil {
 			q.log.Warn("webhooks: enqueue", "webhook", w.ID, "event", ev, "err", err)
 			continue
 		}
@@ -100,9 +100,14 @@ func (q *Enqueuer) Handle(e bus.Event) {
 	}
 }
 
-// EnqueueFor writes one delivery of e for webhook id.
+// EnqueueFor writes one metadata-only delivery of e for webhook id (the test ping).
 func (q *Enqueuer) EnqueueFor(ctx context.Context, id int64, e bus.Event) error {
-	p := Payload{DeliveryID: newDeliveryID(), Event: string(e.Type), Timestamp: q.now().UTC(), Account: e.Account, Data: Metadata(e)}
+	return q.enqueue(ctx, id, PayloadMetadata, e)
+}
+
+// enqueue writes one delivery of e shaped by the webhook's payload setting (D46).
+func (q *Enqueuer) enqueue(ctx context.Context, id int64, payload string, e bus.Event) error {
+	p := Payload{DeliveryID: newDeliveryID(), Event: string(e.Type), Timestamp: q.now().UTC(), Account: e.Account, Data: Shape(e, payload)}
 	body, err := json.Marshal(p)
 	if err != nil {
 		return err

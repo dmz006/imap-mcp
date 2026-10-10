@@ -103,3 +103,23 @@ func (s *Server) handleDismissReply(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w)(s.svc.DismissReply(r.Context(), req.Account, req.Thread))
 }
+
+// GET /api/rules/suggestions?account=&limit=
+func (s *Server) handleSuggestRules(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.SuggestRules(r.Context(), service.SuggestParams{
+		Account: r.URL.Query().Get("account"), Limit: queryInt(r, "limit", 50),
+	}))
+}
+
+// POST /api/rules/suggestions/dismiss
+// Body: {"account", "target"}
+func (s *Server) handleDismissSuggestion(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Account string `json:"account"`
+		Target  string `json:"target"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	respond(w)(s.svc.DismissSuggestion(r.Context(), req.Account, req.Target))
+}

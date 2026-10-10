@@ -105,7 +105,11 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 			return err
 		}
 	}
-	if len(held) == 0 && waiting.Count == 0 {
+	learned, err := s.digestLearned(account)
+	if err != nil {
+		return err
+	}
+	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 {
 		return nil
 	}
 
@@ -119,7 +123,7 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 			owner = bareAddr(a.Auth.Username)
 		}
 	}
-	raw := digestMessage(owner, account, held, waiting, now)
+	raw := digestMessage(owner, account, held, waiting, learned, now)
 	conn.Lock()
 	cmd := conn.Client().Append("INBOX", int64(len(raw)), &imaplib.AppendOptions{Time: now})
 	_, werr := cmd.Write(raw)
@@ -141,7 +145,7 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 	}
 	if b := s.pool.Bus(); b != nil {
 		b.Publish(bus.Event{Type: bus.EventHoldDigest, Account: account,
-			Payload: map[string]any{"account": account, "held": len(held), "waiting": waiting.Count}})
+			Payload: map[string]any{"account": account, "held": len(held), "waiting": waiting.Count, "suggested": len(learned.suggested)}})
 	}
 	return nil
 }
@@ -149,7 +153,7 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 // digestMessage renders the digest as a plain-text message from and to the
 // account owner: mail held from first-time senders, then conversations
 // waiting on the owner.
-func digestMessage(owner, account string, held []heldRow, waiting ReplyList, now time.Time) []byte {
+func digestMessage(owner, account string, held []heldRow, waiting ReplyList, learned digestLearning, now time.Time) []byte {
 	oneLine := strings.NewReplacer("\r", " ", "\n", " ")
 	var body strings.Builder
 	if len(held) > 0 {
@@ -177,6 +181,29 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, now
 			fmt.Fprintf(&body, "- %d day(s)  %s\r\n  \"%s\"\r\n\r\n", w.DaysWaiting, oneLine.Replace(who), oneLine.Replace(w.Subject))
 		}
 	}
+	if len(learned.suggested) > 0 {
+		fmt.Fprintf(&body, "Suggested rules: %d sender(s) whose mail you mostly move to Trash or Junk.\r\n", len(learned.suggested))
+		body.WriteString("Create one with create_rule (it starts inactive), or say no with dismiss_suggestion.\r\n\r\n")
+		for i, sg := range learned.suggested {
+			if i == digestSuggestLimit {
+				fmt.Fprintf(&body, "...and %d more (suggest_rules lists them all).\r\n\r\n", len(learned.suggested)-i)
+				break
+			}
+			what := "trash"
+			if sg.Action == "move" {
+				what = "move to " + sg.Dest
+			}
+			fmt.Fprintf(&body, "- %s: you discarded %d of %d -> %s\r\n\r\n", sg.Target, sg.Discarded, sg.Received, what)
+		}
+	}
+	if len(learned.created) > 0 {
+		fmt.Fprintf(&body, "Rules created from your moves since the last digest: %d.\r\n", len(learned.created))
+		body.WriteString("Delete one with delete_rule and it is never created again.\r\n\r\n")
+		for _, c := range learned.created {
+			fmt.Fprintf(&body, "- rule %d: %s\r\n", c.ruleID, c.target)
+		}
+		body.WriteString("\r\n")
+	}
 	body.WriteString("-- \r\nimap-mcp daily digest\r\n")
 
 	var parts []string
@@ -185,6 +212,12 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, now
 	}
 	if waiting.Count > 0 {
 		parts = append(parts, fmt.Sprintf("Waiting on you: %d", waiting.Count))
+	}
+	if n := len(learned.suggested); n > 0 {
+		parts = append(parts, fmt.Sprintf("Suggested rules: %d", n))
+	}
+	if n := len(learned.created); n > 0 {
+		parts = append(parts, fmt.Sprintf("Rules created: %d", n))
 	}
 	subject := strings.Join(parts, "; ")
 	var msg strings.Builder
@@ -198,6 +231,50 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, now
 	msg.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
 	msg.WriteString(body.String())
 	return []byte(msg.String())
+}
+
+// digestLearning is the digest's learning-from-moves part (Q2).
+type digestLearning struct {
+	suggested []Suggestion // open suggestions (suggest mode)
+	created   []struct {
+		target string
+		ruleID int64
+	} // learned rules created since the last digest
+}
+
+func (s *Service) digestLearned(account string) (digestLearning, error) {
+	var out digestLearning
+	if !s.cfg.Intel.On() {
+		return out, nil
+	}
+	ctx := context.Background()
+	list, err := s.suggestions(ctx, account, false)
+	if err != nil {
+		return out, err
+	}
+	for _, sg := range list {
+		if sg.Status != learnStatusCreated {
+			out.suggested = append(out.suggested, sg)
+		}
+	}
+	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT target, COALESCE(rule_id,0) FROM learn_state
+		WHERE account = ? AND status = ? AND updated_at > COALESCE((SELECT sent_at FROM digest_log WHERE account = ?), 0)
+		ORDER BY target`, account, learnStatusCreated, account)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c struct {
+			target string
+			ruleID int64
+		}
+		if err := rows.Scan(&c.target, &c.ruleID); err != nil {
+			return out, err
+		}
+		out.created = append(out.created, c)
+	}
+	return out, rows.Err()
 }
 
 // HoldStatus is the new-sender hold's state for /api/health: settings and

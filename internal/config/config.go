@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.16.1"
+var Version = "0.17.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -326,6 +326,62 @@ type RulesConfig struct {
 	// HoldDigestHour: the first full rule run at or after this local hour
 	// (0-23) sends the day's digest. Default 8.
 	HoldDigestHour int `yaml:"hold_digest_hour"`
+	// Learn turns the owner's own moves into rule suggestions (AGENT.md D34–D36, D47).
+	Learn LearnConfig `yaml:"learn"`
+}
+
+// LearnConfig tunes learning from moves. Zero values mean the defaults.
+type LearnConfig struct {
+	// Mode: suggest (default; a rule exists only when accepted), inactive
+	// (create inactive rules) or active (create active rules).
+	Mode string `yaml:"mode"`
+	// Ratio: the share of a sender's received mail the owner discarded (default 0.8).
+	Ratio float64 `yaml:"ratio"`
+	// MinDiscards: at least this many discards (default 3).
+	MinDiscards int `yaml:"min_discards"`
+	// DomainMinAddresses: a domain rule when this many addresses there qualify (default 2).
+	DomainMinAddresses int `yaml:"domain_min_addresses"`
+	// DiscardFolders: folders that count as discards besides Trash and Junk.
+	DiscardFolders []string `yaml:"discard_folders"`
+}
+
+// Learn modes.
+const (
+	LearnSuggest  = "suggest"
+	LearnInactive = "inactive"
+	LearnActive   = "active"
+)
+
+// ModeOrDefault returns the learn mode (default suggest).
+func (c LearnConfig) ModeOrDefault() string {
+	if c.Mode == "" {
+		return LearnSuggest
+	}
+	return c.Mode
+}
+
+// RatioOrDefault returns the discard ratio (default 0.8).
+func (c LearnConfig) RatioOrDefault() float64 {
+	if c.Ratio <= 0 {
+		return 0.8
+	}
+	return c.Ratio
+}
+
+// MinDiscardsOrDefault returns the minimum discards (default 3).
+func (c LearnConfig) MinDiscardsOrDefault() int {
+	if c.MinDiscards <= 0 {
+		return 3
+	}
+	return c.MinDiscards
+}
+
+// DomainMinOrDefault returns the addresses needed for a domain rule (default 2).
+func (c LearnConfig) DomainMinOrDefault() int {
+	if c.DomainMinAddresses <= 0 {
+		return 2
+	}
+	return c.DomainMinAddresses
 }
 
 // HoldDigestOn reports whether the held-mail digest is on (default true).
@@ -588,6 +644,19 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_MIN", &cfg.Intel.AnomalySpikeMin)
 	envInt("IMAP_MCP_INTELLIGENCE_ANOMALY_SPIKE_FACTOR", &cfg.Intel.AnomalySpikeFactor)
 	envInt("IMAP_MCP_RULES_HOLD_DIGEST_HOUR", &cfg.Rules.HoldDigestHour)
+	envInt("IMAP_MCP_RULES_LEARN_MIN_DISCARDS", &cfg.Rules.Learn.MinDiscards)
+	envInt("IMAP_MCP_RULES_LEARN_DOMAIN_MIN_ADDRESSES", &cfg.Rules.Learn.DomainMinAddresses)
+	if v := os.Getenv("IMAP_MCP_RULES_LEARN_MODE"); v != "" {
+		cfg.Rules.Learn.Mode = v
+	}
+	if v := os.Getenv("IMAP_MCP_RULES_LEARN_RATIO"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.Rules.Learn.Ratio = f
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_RULES_LEARN_DISCARD_FOLDERS"); v != "" {
+		cfg.Rules.Learn.DiscardFolders = strings.Split(v, ",")
+	}
 	for key, dst := range map[string]**bool{
 		"IMAP_MCP_INTELLIGENCE_ENABLED":   &cfg.Intel.Enabled,
 		"IMAP_MCP_INTELLIGENCE_LLM_ROLES": &cfg.Intel.LLMRoles,
@@ -661,6 +730,14 @@ func validate(cfg *Config) error {
 	}
 	if h := cfg.Rules.HoldDigestHour; h < 0 || h > 23 {
 		return fmt.Errorf("rules: hold_digest_hour must be 0-23")
+	}
+	switch l := cfg.Rules.Learn; {
+	case l.Mode != "" && l.Mode != LearnSuggest && l.Mode != LearnInactive && l.Mode != LearnActive:
+		return fmt.Errorf("rules.learn.mode must be suggest, inactive or active")
+	case l.Ratio < 0 || l.Ratio > 1:
+		return fmt.Errorf("rules.learn.ratio must be between 0 and 1")
+	case l.MinDiscards < 0 || l.DomainMinAddresses < 0:
+		return fmt.Errorf("rules.learn.min_discards and domain_min_addresses must be >= 1")
 	}
 	if len(cfg.Accounts) == 0 {
 		return fmt.Errorf("at least one account is required")

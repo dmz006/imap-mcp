@@ -148,7 +148,7 @@ func setup(t *testing.T, statuses ...int) (*db.DB, string, *receiver, *Enqueuer,
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
 	rc.secret = NewSecret()
-	id, err := d.Webhooks.Create(ctx, srv.URL+"/hook", []string{"message.synced", "rule.fired"}, rc.secret)
+	id, err := d.Webhooks.Create(ctx, srv.URL+"/hook", []string{"message.synced", "rule.fired"}, rc.secret, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,5 +317,42 @@ func TestMetadataAnomaly(t *testing.T) {
 		Payload: map[string]any{"id": 7, "type": "auth_failure", "severity": "high", "sender": "eve@example.com", "description": "x"}})
 	if len(m) != 3 || m["id"] != 7 || m["type"] != "auth_failure" || m["severity"] != "high" {
 		t.Fatalf("metadata = %v", m)
+	}
+}
+
+// TestPayloadSetting (D46): metadata keeps D16's allowlist, full sends the
+// whole payload, a field list sends just those fields; the default is full
+// only for rule.suggested or "*" subscriptions.
+func TestPayloadSetting(t *testing.T) {
+	e := bus.Event{Type: bus.EventRuleSuggested, Account: "a", Payload: map[string]any{
+		"suggested": 1, "created": 0, "suggestions": []map[string]any{{"target": "x@bad.example"}}}}
+	if m := Shape(e, PayloadMetadata); m["suggestions"] != nil || m["suggested"] != 1 {
+		t.Errorf("metadata = %v", m)
+	}
+	if m := Shape(e, PayloadFull); m["suggestions"] == nil {
+		t.Errorf("full = %v", m)
+	}
+	if m := Shape(e, "suggested,created"); len(m) != 2 || m["suggestions"] != nil {
+		t.Errorf("fields = %v", m)
+	}
+	if m := Shape(bus.Event{Type: bus.EventAccountError, Payload: "login failed"}, PayloadFull); m["error"] != "login failed" {
+		t.Errorf("full error text = %v", m)
+	}
+	for _, c := range []struct {
+		in     string
+		events []string
+		want   string
+	}{
+		{"", []string{"rule.suggested"}, PayloadFull},
+		{"", []string{"*"}, PayloadFull},
+		{"", []string{"rule.fired"}, PayloadMetadata},
+		{"Held, Waiting", []string{"hold.digest"}, "held,waiting"},
+	} {
+		if got, err := NormalizePayload(c.in, c.events); err != nil || got != c.want {
+			t.Errorf("NormalizePayload(%q, %v) = %q, %v", c.in, c.events, got, err)
+		}
+	}
+	if _, err := NormalizePayload("held; drop table", nil); err == nil {
+		t.Error("invalid field list accepted")
 	}
 }
