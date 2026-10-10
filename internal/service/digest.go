@@ -147,3 +147,34 @@ func holdDigestMessage(owner, account string, held []heldRow, now time.Time) []b
 	msg.WriteString(body.String())
 	return []byte(msg.String())
 }
+
+// HoldStatus is the new-sender hold's state for /api/health: settings and
+// counts only, never senders, subjects or account names.
+type HoldStatus struct {
+	HoldDigest     bool   `json:"hold_digest"`
+	HoldDigestHour int    `json:"hold_digest_hour"`
+	Held           int    `json:"held"`                  // held, not released, in the last 90 days
+	AwaitingDigest int    `json:"awaiting_digest"`       // held since the last digest
+	LastDigest     string `json:"last_digest,omitempty"` // RFC 3339 (UTC)
+}
+
+// HoldStatus reports the digest settings and held-mail counts.
+func (s *Service) HoldStatus() (HoldStatus, error) {
+	st := HoldStatus{HoldDigest: s.cfg.Rules.HoldDigestOn(), HoldDigestHour: s.cfg.Rules.HoldDigestHour}
+	if s.db == nil || s.db.StateSQL() == nil {
+		return st, unavailable("the state database is not open in this mode")
+	}
+	var last int64
+	err := s.db.StateSQL().QueryRow(`SELECT
+			count(*) FILTER (WHERE released_at IS NULL),
+			count(*) FILTER (WHERE released_at IS NULL AND digested_at IS NULL),
+			COALESCE(max(digested_at), 0)
+		FROM held_messages`).Scan(&st.Held, &st.AwaitingDigest, &last)
+	if err != nil {
+		return st, err
+	}
+	if last > 0 {
+		st.LastDigest = time.Unix(last, 0).UTC().Format(time.RFC3339)
+	}
+	return st, nil
+}

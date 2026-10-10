@@ -172,7 +172,8 @@ func TestIntelProgressNamesOnlyBehindAuth(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || strings.Contains(string(body), `"work"`) || !strings.Contains(string(body), `"index":1`) {
+	if resp.StatusCode != 200 || strings.Contains(string(body), `"work"`) || !strings.Contains(string(body), `"index":1`) ||
+		!strings.Contains(string(body), `"hold_digest_hour"`) {
 		t.Errorf("health %d: %s", resp.StatusCode, body)
 	}
 	if resp, _ := http.Get(hs.URL + "/api/intelligence/status"); resp.StatusCode != http.StatusUnauthorized {

@@ -202,6 +202,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		},
 		"enrichment":   s.enrichmentHealth(r),
 		"intelligence": s.intelHealth(r),
+		"rules":        s.rulesHealth(),
 		"tools": map[string]int{
 			"attachment_inline_kb": s.cfg.Tools.AttachmentInlineKB,
 			"attachment_max_mb":    s.cfg.Tools.AttachmentMaxMB,
@@ -394,6 +395,16 @@ func (s *Server) intelHealth(r *http.Request) any {
 		return map[string]any{"enabled": s.cfg.Intel.On()}
 	}
 	return st.Anonymous() // health is unauthenticated: no account names (D29)
+}
+
+// rulesHealth reports the held-mail digest settings and counts (D30, D31).
+// Health is unauthenticated: counts only.
+func (s *Server) rulesHealth() any {
+	st, err := s.svc.HoldStatus()
+	if err != nil {
+		return map[string]any{"hold_digest": s.cfg.Rules.HoldDigestOn(), "hold_digest_hour": s.cfg.Rules.HoldDigestHour}
+	}
+	return st
 }
 
 // GET /api/intelligence/status — scan progress with account names (D29).

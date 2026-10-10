@@ -169,6 +169,9 @@ func TestHoldDigest(t *testing.T) {
 	if len(events) != 1 || len(events[0].Payload.(map[string]any)) != 2 || events[0].Payload.(map[string]any)["held"] != 2 {
 		t.Fatalf("events = %+v", events)
 	}
+	if st, err := f.s.HoldStatus(); err != nil || st.Held != 2 || st.AwaitingDigest != 0 || st.LastDigest == "" || st.HoldDigestHour != 8 {
+		t.Errorf("hold status after digest = %+v, %v", st, err)
+	}
 	// Same day, nothing new: no second digest.
 	if err := f.s.sendHoldDigests(now.Add(time.Hour)); err != nil || f.count(t, "INBOX") != 1 {
 		t.Errorf("second digest the same day: %v", err)
