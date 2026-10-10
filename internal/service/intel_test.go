@@ -217,3 +217,30 @@ func TestResolveAnomaly(t *testing.T) {
 		t.Errorf("zero id: %v", err)
 	}
 }
+
+func TestIntelStatsPerAccount(t *testing.T) {
+	s, d := intelSvc(t)
+	s.cfg = &config.Config{Accounts: []config.AccountConfig{{Name: "work"}, {Name: "home"}}}
+	if _, err := d.StateSQL().Exec(`INSERT INTO intel_scan(account, folder, uidvalidity, last_uid, scanned, completed_at) VALUES
+		('work','INBOX',1,10,10,unixepoch()),('work','Sent',1,4,4,unixepoch()),('home','[Gmail]/All Mail',1,50,50,NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.IntelStats(context.Background())
+	if err != nil || len(st.Accounts) != 2 {
+		t.Fatalf("stats = %+v %v", st, err)
+	}
+	w, h := st.Accounts[0], st.Accounts[1]
+	if w.Index != 1 || w.Account != "work" || w.Folders != 2 || !w.BackfillComplete || w.Scanned != 14 {
+		t.Errorf("work = %+v", w)
+	}
+	if h.Index != 2 || h.Account != "home" || h.FoldersComplete != 0 || h.BackfillComplete || h.Scanned != 50 {
+		t.Errorf("home = %+v", h)
+	}
+	anon := st.Anonymous()
+	if anon.Accounts[0].Account != "" || anon.Accounts[1].Account != "" || anon.Accounts[1].Scanned != 50 {
+		t.Errorf("anonymous = %+v", anon.Accounts)
+	}
+	if st.Accounts[0].Account != "work" {
+		t.Error("Anonymous modified the original")
+	}
+}

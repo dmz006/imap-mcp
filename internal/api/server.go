@@ -151,6 +151,7 @@ func (s *Server) Router() http.Handler {
 		r.With(read).Get("/api/anomalies", s.handleGetAnomalies)
 		r.With(write).Post("/api/anomalies/{id}/resolve", s.handleResolveAnomaly)
 		r.With(read).Get("/api/enrichment/status", s.handleEnrichmentStatus)
+		r.With(read).Get("/api/intelligence/status", s.handleIntelStatus)
 		r.With(admin).Post("/api/enrichment/trigger", s.handleTriggerEnrichment)
 
 		// ── Cache maintenance (cache only, never the mailbox) ───────────────
@@ -392,5 +393,10 @@ func (s *Server) intelHealth(r *http.Request) any {
 	if err != nil {
 		return map[string]any{"enabled": s.cfg.Intel.On()}
 	}
-	return st
+	return st.Anonymous() // health is unauthenticated: no account names (D29)
+}
+
+// GET /api/intelligence/status — scan progress with account names (D29).
+func (s *Server) handleIntelStatus(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.IntelStats(r.Context()))
 }

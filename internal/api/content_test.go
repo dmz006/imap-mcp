@@ -161,3 +161,26 @@ func TestRESTResolveAnomaly(t *testing.T) {
 		t.Errorf("bad id: %d, want 400", resp.StatusCode)
 	}
 }
+
+// TestIntelProgressNamesOnlyBehindAuth (D29): health is open and must not name
+// accounts; /api/intelligence/status names them and needs a token.
+func TestIntelProgressNamesOnlyBehindAuth(t *testing.T) {
+	hs := contentServer(t)
+	resp, err := http.Get(hs.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || strings.Contains(string(body), `"work"`) || !strings.Contains(string(body), `"index":1`) {
+		t.Errorf("health %d: %s", resp.StatusCode, body)
+	}
+	if resp, _ := http.Get(hs.URL + "/api/intelligence/status"); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status without token: %d", resp.StatusCode)
+	}
+	resp = do(t, "GET", hs.URL+"/api/intelligence/status", readToken, "")
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || !strings.Contains(string(body), `"account":"work"`) {
+		t.Errorf("status %d: %s", resp.StatusCode, body)
+	}
+}
