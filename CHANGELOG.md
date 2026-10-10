@@ -6,6 +6,15 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-10
+
+### Fixed
+- **Identity detection found nothing on production.** Your display names
+  were counted only from mail indexed after 0.18 and from cached sent mail,
+  and the cache may sync only INBOX. When no names are known, the scan now
+  reads the From names of up to 200 messages in each Sent folder once
+  (headers only).
+
 ## [0.18.0] - 2026-10-10
 
 ### Added

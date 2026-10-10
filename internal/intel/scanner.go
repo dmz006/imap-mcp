@@ -165,6 +165,9 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if err := sc.seedOwnerNames(ctx, account, all); err != nil {
+			sc.log.Warn("intel: read sent-mail names", "account", account, "err", err)
+		}
 		sc.folderKinds[account] = k
 		sc.locScope[account] = sc.locationScope(all, scopes[account], k)
 	}

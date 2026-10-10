@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.18.0 |
+| Current version | 0.18.1 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -287,8 +287,8 @@ Behaviour notes:
 - Identities (D50): own set = logins + `identity.also_me` + confirmed;
   `intel.ownSet.has` matches @domain entries. Scanner refreshes it each
   tick and `ApplyIdentity` rewrites history once (outgoing=1, role `self`,
-  reply_threads dropped). Detection: `owner_names` (≥3 uses, also from the
-  cache's sent mail) and name-built local parts → `identities` candidates.
+  reply_threads dropped). Detection: `owner_names` (≥3 uses; seeded once from up
+  to 200 Sent messages' From names, plus the cache's sent mail) and name-built local parts → `identities` candidates.
   Clears on an indexed reply (thread root or In-Reply-To), `\Answered`
   (checked live on the listed messages and recorded), or `dismiss_reply`
   (keyed to the latest message; a newer one re-opens). Other folders never clear.

@@ -607,3 +607,21 @@ func TestIdentities(t *testing.T) {
 		t.Errorf("role recomputed to %q", role)
 	}
 }
+
+// TestSeedOwnerNames: with no names known, the Sent folder's From names are
+// read once, so identity detection can start.
+func TestSeedOwnerNames(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		f.srv.Append(t, "Sent", msg("s"+strconv.Itoa(i)+"@example.com", "Jane Roe <"+imaptest.Username+">", "x@example.net", ""), time.Now())
+	}
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	f.d.StateSQL().QueryRow(`SELECT count FROM owner_names WHERE name = 'jane roe'`).Scan(&count) //nolint:errcheck
+	if count < 3 {
+		t.Errorf("owner name count = %d, want >= 3", count)
+	}
+}

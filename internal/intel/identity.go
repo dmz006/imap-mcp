@@ -147,6 +147,61 @@ func (st *store) ownerName(ctx context.Context, tx *sql.Tx, name string) error {
 	return err
 }
 
+// seedSample is how many Sent messages are read for the owner's display
+// names when none are known yet (headers only).
+const seedSample = 200
+
+// seedOwnerNames reads the owner's display names from the Sent folder once,
+// when none are known: the index only counts names on mail indexed from
+// 0.18 on, and the cache may not sync Sent.
+func (sc *Scanner) seedOwnerNames(ctx context.Context, account string, all []Folder) error {
+	var n int
+	if err := sc.state.QueryRowContext(ctx, `SELECT count(*) FROM owner_names`).Scan(&n); err != nil || n > 0 {
+		return err
+	}
+	sent := ""
+	for _, f := range all {
+		if slicesContains(f.Attrs, `\Sent`) {
+			sent = f.Name
+			break
+		}
+		switch strings.ToLower(f.Name) {
+		case "sent", "sent mail", "sent items", "sent messages", "[gmail]/sent mail", "inbox.sent":
+			sent = f.Name
+		}
+	}
+	if sent == "" {
+		return nil
+	}
+	b, err := sc.src.Fetch(ctx, account, sent, 0, seedSample)
+	if err != nil {
+		return err
+	}
+	own := sc.own[account]
+	tx, err := sc.state.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for _, h := range b.Headers {
+		if own.has(h.From.Addr) && h.From.Name != "" {
+			if err := sc.st.ownerName(ctx, tx, h.From.Name); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+func slicesContains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
 // minOwnerNameUses: a display name counts as the owner's after this many
 // outgoing messages, so a one-off "on behalf of" name does not.
 const minOwnerNameUses = 3
