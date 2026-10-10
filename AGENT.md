@@ -404,6 +404,33 @@ they can be replaced or extended without touching call sites.
   full history, not the 30-day cache: the D28 index gains a conversation hash
   per message (and the header scan restarts once to fill it). The aim is the
   complete record needed to respond well, across all of the owner's mail.
+- **2026-10-10 — D34 (observing moves, Q2):** the D28 index records where each
+  message was last seen; a location-only pass reads Trash and Junk (Gmail
+  Trash and Spam): hashes and folder only, no profile counts, graph edges or
+  anomaly checks. Rule moves are recorded by the rule engine and never count
+  as the owner's. Discard = a message in Trash or Junk (special-use, else
+  common names) or a configured discard folder; rescue = a message from Junk
+  or a hold folder seen in any other non-discard folder. A rescue trusts the
+  sender and resolves their open anomalies.
+- **2026-10-10 — D35 (suggestion trigger, Q2):** ratio-based over all
+  history: the owner discarded at least `ratio` (0.8) of a sender's received
+  mail, with at least `min_discards` (3). A domain rule is suggested when
+  `domain_min_addresses` (2) or more addresses at the domain qualify;
+  otherwise one rule per address. The learned rule mirrors the owner's action:
+  mostly trashed means a trash rule, mostly junked means move to Junk.
+- **2026-10-10 — D36 (automatic rules, Q2):** configurable `rules.learn.mode`:
+  `suggest` (default; a rule exists only when accepted), `inactive`
+  (auto-create inactive rules) or `active` (auto-create active rules). Never
+  suggested or ruled: anyone the owner has written to or replied to, trusted
+  senders, the owner's own addresses and domains; a domain rule is skipped
+  when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
+  min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D46 (webhook payload setting; amends D16):** each webhook has
+  a payload setting: `metadata` (D16's identifiers and counts), `full` (the
+  whole event payload) or a list of fields. Existing webhooks stay
+  `metadata`; a new webhook subscribed to `rule.suggested` defaults to
+  `full`. `rule.suggested` carries full suggestion details (address or
+  domain, action, counts, ratio, match count, rule id).
 - **2026-10-10 — D45 (Q1 implementation review):** the 0.16.0 choices made
   without DIP were reviewed with the operator one at a time. Kept: storing
   subject, counterpart, Message-ID, folder and UID per conversation in

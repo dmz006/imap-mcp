@@ -207,6 +207,11 @@ Open decisions:
   Auto-create active rules. *Recommendation: (1) — the owner stays in charge;
   the digest makes accepting cheap.*
 
+Decided 2026-10-10: D34 (1), D35 ratio-based over all history, D36
+configurable, plus the exclusions, mirrored action, domain scope, move types,
+`rule.suggested` with full details via a per-webhook payload setting (D46,
+amends D16) and the `rules.learn` block — see AGENT.md.
+
 Validation: count discards/rescues observed after a scan; suggestions with
 match counts on production; accept one and confirm the preview matches.
 
@@ -358,9 +363,9 @@ not from the owner) is rejected and logged.
 |---|---|---|---|
 | D32 | Q1 | Reply-tracking data source | Decided: D28 index + conversation hash (full history) |
 | D33 | Q1 | Dismissing a reply item | Decided: explicit dismiss; a reply or `\Answered` clears |
-| D34 | Q2 | Observing moves | Open |
-| D35 | Q2 | Suggestion threshold | Open |
-| D36 | Q2 | Automatic rules | Open |
+| D34 | Q2 | Observing moves | Decided: location in the index + location-only Trash/Junk pass |
+| D35 | Q2 | Suggestion threshold | Decided: ratio ≥ 0.8, ≥ 3 discards, all history; domain at 2+ addresses |
+| D36 | Q2 | Automatic rules | Decided: configurable suggest (default) / inactive / active |
 | D37 | Q3 | What the model may decide | Open |
 | D38 | Q3 | Body access for verdicts | Open |
 | D39 | Q4 | Unsubscribe permission model | Open |
