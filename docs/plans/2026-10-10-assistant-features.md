@@ -17,9 +17,10 @@
 | Q0 | Parity catch-up for 0.15 (context doc, config exposure) | prerequisite | 0.15.5 |
 | Q1 | Reply tracking: mail you owe a reply, replies you are waiting for | 1 | 0.16.0 |
 | Q2 | Learn from moves: rule suggestions, trust from un-junking | 1 | 0.17.0 |
-| Q3 | Second opinion for borderline mail + payment/credential-request alerts | 2 | 0.18.0 |
-| Q4 | Safe one-click unsubscribe (RFC 8058) | 3 | 0.19.0 |
-| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.20.0 |
+| V1 | Validation follow-ups: your other addresses, needs_reply noise (D50, D51) | — | 0.18.0 |
+| Q3 | Second opinion for borderline mail + payment/credential-request alerts | 2 | 0.19.0 |
+| Q4 | Safe one-click unsubscribe (RFC 8058) | 3 | 0.20.0 |
+| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.21.0 |
 
 Each phase is a minor release, live-validated before the next one starts
 (D12). Q4 and Q5 are independent of each other; Q2 and Q3 both feed the
@@ -217,7 +218,7 @@ match counts on production; accept one and confirm the preview matches.
 
 ---
 
-## Q3 — second opinion for borderline mail, and payment-request alerts (0.18.0)
+## Q3 — second opinion for borderline mail, and payment-request alerts (0.19.0)
 
 Today a new sender's message with exactly one bulk/scam signal defers to the
 general classification hall. Replace that with a dedicated model check, and
@@ -268,7 +269,7 @@ operator has seen the preview.
 
 ---
 
-## Q4 — safe one-click unsubscribe (0.19.0)
+## Q4 — safe one-click unsubscribe (0.20.0)
 
 Unsubscribe from bulk senders the RFC 8058 way, then archive their mail.
 
@@ -315,7 +316,7 @@ confirm no further mail after a few days.
 
 ---
 
-## Q5 — screener (0.20.0)
+## Q5 — screener (0.21.0)
 
 Approve or block held senders from the daily digest, without opening any
 folder, and route approved senders the HEY way: inbox, feed (newsletters) or
