@@ -325,3 +325,14 @@ func TestParseFlags(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestValidRecipient(t *testing.T) {
+	for in, want := range map[string]bool{
+		"a@example.com": true, "Ann <a@example.com>": true,
+		"imap_mcp": false, "a@localhost": false, "": false, "a@": false,
+	} {
+		if validRecipient(in) != want {
+			t.Errorf("validRecipient(%q) != %v", in, want)
+		}
+	}
+}
