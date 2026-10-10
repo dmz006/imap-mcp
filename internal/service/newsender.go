@@ -394,14 +394,22 @@ func (g *newSenderGate) impersonation(name, domain string) string {
 			return "display name uses your own domain"
 		}
 	}
+	squashed := strings.NewReplacer(".", "", "-", "").Replace(domain)
 	for _, b := range brands {
-		if !b.re.MatchString(name) {
+		word := b.re.FindString(name)
+		if word == "" {
 			continue
 		}
 		for _, d := range b.domains {
 			if sameOrg(domain, d) {
 				return ""
 			}
+		}
+		// A domain that carries the brand itself (amazonaws.com for "Amazon",
+		// microsoftonline.com for "Microsoft") is the brand's own, or at
+		// least not borrowing a name it doesn't show.
+		if w := strings.NewReplacer(" ", "", "-", "", "'", "", "’", "").Replace(word); len(w) >= 4 && strings.Contains(squashed, w) {
+			return ""
 		}
 		return "display name borrows a brand or agency"
 	}

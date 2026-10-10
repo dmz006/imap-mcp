@@ -6,6 +6,15 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-10-10
+
+### Fixed
+- **Brand check flagged brands' own domains.** A display name such as
+  "Amazon Web Services" from `amazonaws.com` or "Microsoft" from
+  `microsoftonline.com` counted as impersonation because the domain was not on
+  the short allowed list. A domain that carries the brand name no longer
+  counts; lookalikes on unrelated domains still do.
+
 ## [0.15.1] - 2026-10-10
 
 ### Fixed

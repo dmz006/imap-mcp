@@ -215,3 +215,24 @@ func TestHallIgnoresPlaceholders(t *testing.T) {
 		}
 	}
 }
+
+func TestImpersonation(t *testing.T) {
+	g := &newSenderGate{ownDomains: map[string]bool{"example.com": true}, ownLabels: []string{"example"}}
+	for _, c := range []struct {
+		name, domain string
+		flagged      bool
+	}{
+		{"amazon web services", "amazonaws.com", false},
+		{"microsoft online services team", "microsoftonline.com", false},
+		{"quickbooks", "fakebooks.example", true},
+		{"netflix member", "gentleguideline.uk", true},
+		{"lowe’s surprise gift", "libertysafe.com", true},
+		{"example security team", "buyinfla.com", true},
+		{"no-reply@ssa.gov", "mfr-system36.com", true},
+		{"jane roe", "newco.example", false},
+	} {
+		if got := g.impersonation(c.name, c.domain) != ""; got != c.flagged {
+			t.Errorf("impersonation(%q, %s) = %v", c.name, c.domain, got)
+		}
+	}
+}
