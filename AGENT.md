@@ -404,6 +404,9 @@ they can be replaced or extended without touching call sites.
   full history, not the 30-day cache: the D28 index gains a conversation hash
   per message (and the header scan restarts once to fill it). The aim is the
   complete record needed to respond well, across all of the owner's mail.
+- **2026-10-10 — D44 (1.0.0 milestone):** when the current path is complete
+  (assistant features Q0–Q5), that release is the official 1.0.0. imap-mcp
+  versions independently of datawatch.
 - **2026-10-10 — D33 (dismissing reply items):** a reply item clears when the
   owner replies (an outgoing message in the index answers it, or the message
   carries `\Answered`) or is explicitly dismissed (`dismiss_reply` tool and

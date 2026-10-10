@@ -378,7 +378,14 @@ not from the owner) is rejected and logged.
 | Q2 | 0.17.0 | Planned | | |
 | Q3 | 0.18.0 | Planned | | |
 | Q4 | 0.19.0 | Planned | | |
-| Q5 | 0.20.0 | Planned | | |
+| Q5 | 0.20.0 → 1.0.0 | Planned | | |
+
+When Q5 is done and validated, the release is the official **1.0.0**
+(D44, operator, 2026-10-10).
+
+Q1 review (2026-10-10): the implementation choices in "Implementation notes"
+below were made without DIP. They are being reviewed with the operator one
+at a time; any change ships as 0.16.x.
 
 ## Risks
 
