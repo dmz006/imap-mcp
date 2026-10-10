@@ -41,6 +41,8 @@ All non-empty conditions are combined with AND into one IMAP `UID SEARCH`.
 | `subject` | `HEADER Subject <value>` | |
 | `text` | `BODY <value>` | |
 | `older_than_days` | `BEFORE <today − N days>` | |
+| `new_sender` | `SINCE <today − new_sender_days>`, then a per-message check | Mail from first-time senders that looks like bulk mail or a scam. See [The new-sender hold](#the-new-sender-hold). |
+| `new_sender_days` | Window for `new_sender` | Default 30. Needs `new_sender`. |
 | `folder` | Folder to search and act in | Default `INBOX`. Use the real mailbox name, for example `[Gmail]/Spam`. |
 | `account` | Account to use | Default: the default account |
 
@@ -81,8 +83,9 @@ The server rejects a rule with 400 (REST) or a tool error (MCP) when:
 - `actions` is empty.
 - An action `type` is not `trash`, `move`, `flag` or `seen`.
 - A `move` action has no `dest`, or a `flag` action has no `flags`.
-- None of `from`, `subject`, `text` or `older_than_days` is set. Without one of
-  them, the rule would match the whole folder.
+- None of `from`, `subject`, `text`, `older_than_days` or `new_sender` is
+  set. Without one of them, the rule would match the whole folder.
+- `new_sender_days` is set without `new_sender`, or is negative.
 - Another rule already has the same `name`.
 
 The server does not check that `account`, `folder` or `dest` exist. A wrong
@@ -92,7 +95,7 @@ value shows up as an `error` in the run results.
 
 | Tool | Scope | Arguments |
 |------|-------|-----------|
-| `create_rule` | `write` | `name`, `action` (required); `from`, `subject`, `text`, `older_than_days`, `dest`, `flags`, `account`, `folder`, `description`, `active` (default true) |
+| `create_rule` | `write` | `name`, `action` (required); `from`, `subject`, `text`, `older_than_days`, `new_sender`, `new_sender_days`, `dest`, `flags`, `account`, `folder`, `description`, `active` (default true) |
 | `list_rules` | `read` | none. Returns `{count, rules}`. |
 | `delete_rule` | `write` | `id` |
 | `run_rules` | `write` | `id` (optional), `dry_run` (default false) |
@@ -183,6 +186,93 @@ the schedule.
 
 The CLI can run while `imap-mcp serve` is running. Both use their own IMAP
 connections.
+
+## The new-sender hold
+
+Domain and display-name rules cannot keep up with spam that uses a new domain
+for nearly every message. What that mail has in common is a sender with no
+history. A `new_sender` rule moves it to a holding folder, but only when its
+headers also look like bulk mail or a scam. Real first contacts stay in the
+inbox (AGENT.md D30).
+
+```
+create_rule { name: "hold-new-senders", account: "work", new_sender: true,
+              action: "move", dest: "Held" }
+```
+
+**A sender is new** when none of these is true:
+
+- it is one of the account's own addresses;
+- you have sent mail to it, or replied to it;
+- it wrote to you before the window (`new_sender_days`, default 30);
+- you released one of its messages from the hold before;
+- it is at a domain you have written to (shared mail providers such as
+  gmail.com do not count).
+
+This comes from the intelligence scan's sender profiles
+([intelligence.md](intelligence.md)), across all accounts. Until the account's
+history scan is complete the rule matches nothing and reports why, because
+every sender would look new.
+
+**A new sender's message is held** when its header score is 2 or more:
+
+| Signal | Points |
+|---|---|
+| The display name borrows a brand, a government agency, an address or your own domain, and the mail comes from an unrelated domain ("QuickBooks" from `shop.example`) | 2 |
+| Not addressed to you: no recipients, only the sender, or only other people's freemail addresses | 1 |
+| Bulk headers: `List-Unsubscribe`, `List-Id` or `Precedence: bulk/list/junk` | 1 |
+| A throwaway-looking domain: digits mixed into the name, or a low-cost TLD such as `.shop` | 1 |
+| Your address in the subject | 1 |
+| `Reply-To` at a different domain | 1 |
+
+With exactly 1 point the classify model decides: the message's enrichment
+hall. `conversation` or `personal` stays; any other hall is held. A message
+not classified yet stays, and the next run judges it again.
+
+**These always stay**, whatever the score:
+
+- a reply to mail you sent (`In-Reply-To` or `References` matches a message in
+  your Sent history);
+- a message that copies someone you have written to, such as an
+  introduction.
+
+Only headers are read (with PEEK, so nothing is marked read). Authentication
+results are not used: spam from throwaway domains usually passes DKIM.
+
+**Previewing.** A dry run lists who would be held and why, without moving
+anything:
+
+```
+run_rules { id: 42, dry_run: true }
+→ {"results":[{"id":42,"matched":3,"preview":[{"sender":"info@shop5x.example",
+   "reasons":"bulk mail you never signed up for; throwaway-looking domain"}, …]}]}
+```
+
+**Releasing.** Held mail is moved, never deleted. To release a message, move
+it back to the inbox. On the next run the server sees it there, marks the
+sender as trusted, and never holds that sender again.
+
+### The daily digest
+
+So you do not have to keep checking the holding folder, the first full rule
+run (the hourly `run-rules` job) at or after `rules.hold_digest_hour` (local
+time, default 8) sends a digest of everything held since the last one
+(AGENT.md D31). Nothing is sent when nothing was held.
+
+- **A summary message in the account's INBOX.** It is APPENDed over IMAP, not
+  sent: from and to the account's own address, listing each held message's
+  sender, subject, time and reasons, and how to release one.
+- **A `hold.digest` event**, `{"held": 3}` with the event's `account`, for
+  webhooks and dashboards. It never carries addresses or subjects.
+
+```yaml
+rules:
+  hold_digest: true      # default true
+  hold_digest_hour: 8    # 0-23, local time; default 8
+```
+
+Environment: `IMAP_MCP_RULES_HOLD_DIGEST`, `IMAP_MCP_RULES_HOLD_DIGEST_HOUR`.
+Held-message records are kept for 90 days.
 
 ## The `rule.fired` event
 

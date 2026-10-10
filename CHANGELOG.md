@@ -6,6 +6,35 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-10
+
+### Added
+- **New-sender hold** (D30). A rule condition `new_sender` (window
+  `new_sender_days`, default 30) matches mail from senders with no history
+  (never written to, nothing from them before the window, not at a domain you
+  write to) only when header signals say bulk mail or a scam: a display name
+  borrowing a brand, an agency or your own domain; not addressed to you; bulk
+  headers; a throwaway-looking domain; your address in the subject; `Reply-To`
+  at another domain. One signal defers to the message's enrichment hall.
+  Replies to your own mail and messages copying someone you write to always
+  stay. The rule matches nothing until the account's history scan is complete.
+  Dry runs list who would be held and why (`preview`). Moving a held message
+  back to the inbox trusts its sender.
+- **Held-mail digest** (D31). Once a day, at the first full rule run after
+  `rules.hold_digest_hour` (default 8), a summary of newly held mail is
+  APPENDed to the account's INBOX (no mail is sent), and a `hold.digest`
+  event carries the count.
+
+### Fixed
+- **`send_message` accepted bare words as recipients.** A recipient such as
+  `ops` went to SMTP, where the server completed it with its own domain and
+  bounced it. Recipients must now be `name@domain.tld`, and each send logs the
+  account and recipient count.
+- **Classification placeholders in tags and the graph.** The classify model
+  sometimes copied its prompt's placeholder text into wing/room tags, which
+  became knowledge-graph entities. The prompt has no placeholders now, tags
+  are sanitised, and startup removes the stored ones.
+
 ## [0.14.3] - 2026-10-09
 
 ### Fixed

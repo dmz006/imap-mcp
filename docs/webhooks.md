@@ -25,12 +25,14 @@ with your receiver; you need it to verify signatures.
 - Deliverable events: `message.synced`, `message.updated`, `message.deleted`,
   `folder.synced`, `sync.complete`, `sync.error`, `cache.cleaned`,
   `enrichment.done`, `enrichment.error`, `anomaly.detected`, `rule.fired`,
-  `account.connected`, `account.error`, `account.disconnected`.
+  `hold.digest`, `account.connected`, `account.error`, `account.disconnected`.
   `webhook.*` and `inbound.*` are never delivered.
 - You can subscribe to all of these, but `account.disconnected` is never
   published today (defined but not emitted). `anomaly.detected` carries
   `{id, type, severity}`; fetch the finding with `GET /api/anomalies`. See
-  [intelligence.md](intelligence.md#anomalies).
+  [intelligence.md](intelligence.md#anomalies). `hold.digest` carries
+  `{held}` (a count) with the event's `account`; see
+  [rules.md](rules.md#the-daily-digest).
 
 Other routes:
 

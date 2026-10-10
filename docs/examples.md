@@ -877,3 +877,36 @@ curl -sS -X POST "$IMAP_MCP/api/webhooks" \
 The push message names the finding and where the message is, so you can open
 it in your mail client. The sender's address travels only from imap-mcp to
 the receiver on your machine, not in the webhook itself.
+
+---
+
+## 14. Hold first-time senders that look like spam
+
+Some spam uses a new domain for almost every message, so no `from` rule keeps
+up. A `new_sender` rule holds mail from senders with no history, but only
+when its headers also look like bulk mail or a scam: a borrowed brand name,
+not addressed to you, bulk headers, a throwaway domain. Real first contacts,
+replies to your own mail and introductions from people you know stay in the
+inbox ([rules.md](rules.md#the-new-sender-hold)).
+
+```bash
+curl -sS -X POST "$IMAP_MCP/api/rules" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"hold-new-senders","active":false,
+       "conditions":{"account":"work","new_sender":true},
+       "actions":[{"type":"move","dest":"Held"}]}'
+# → 201 {"id": 42, "name": "hold-new-senders"}
+
+# Preview who would be held and why, before turning it on.
+curl -sS -X POST "$IMAP_MCP/api/rules/42/test" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{}'
+# → {"id":42,"matched":2,"action":"move","preview":[
+#     {"sender":"info@shop5x.example","reasons":"display name borrows a brand or agency; throwaway-looking domain"},
+#     {"sender":"deals@promo.example","reasons":"bulk mail you never signed up for; classified as newsletter"}]}
+```
+
+Turn it on by recreating it with `"active": true` (or `PUT /api/rules/42`).
+After that you never need to open the holding folder: once a day a
+"Held for review" summary appears in the inbox, and a `hold.digest` webhook
+carries the count for a dashboard. Move anything you want back to the inbox
+and that sender is never held again.

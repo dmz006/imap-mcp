@@ -1,6 +1,6 @@
 # New-sender hold and held-mail digest (0.15.0)
 
-Decisions: AGENT.md D30 (hold) and D31 (digest). Status: in progress.
+Decisions: AGENT.md D30 (hold) and D31 (digest). Status: done in 0.15.0 (live validation below).
 
 ## Problem
 
@@ -64,11 +64,11 @@ marked trusted and never held again.
 
 | Phase | Content | Status |
 |---|---|---|
-| H1 | `new_sender` history condition, scan-complete guard, validation | Built |
-| H2 | Header signals, real-contact overrides, hall fallback | |
-| H3 | `held_messages`, release detection, `senders.trusted` | |
-| H4 | Daily digest: INBOX summary + `hold.digest` event; config | |
-| H5 | Tests, docs (rules, webhooks, examples, skill), live validation with the rule inactive first | |
+| H1 | `new_sender` history condition, scan-complete guard, validation | Done |
+| H2 | Header signals, real-contact overrides, hall fallback | Done |
+| H3 | `held_messages`, release detection, `senders.trusted` | Done |
+| H4 | Daily digest: INBOX summary + `hold.digest` event; config | Done |
+| H5 | Tests, docs (rules, webhooks, examples, skill), live validation with the rule inactive first | Tests and docs done; live validation in progress |
 
 Also in 0.15.0: classification placeholders. The classify model sometimes
 copied its prompt's placeholder text into the wing/room tags, and those became
