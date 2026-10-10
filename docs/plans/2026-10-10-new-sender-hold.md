@@ -36,6 +36,7 @@ paired with `action: move` to a holding folder. A message matches when:
    | Throwaway-looking domain (digits mixed into the name, or a low-cost TLD) | 1 |
    | The owner's address in the subject | 1 |
    | Reply-To at a different domain | 1 |
+   | Fake reply: `Re:`/`Fwd:` subject answering nothing (0.17.2, D49) | 2 |
 
    Signs of a real contact keep the message in the inbox whatever the score:
    it replies to mail the owner sent (In-Reply-To/References match an

@@ -203,6 +203,9 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 	for _, r := range all {
 		it := r.it
 		if !r.known {
+			if !replyFirstContacts {
+				continue
+			}
 			ok, err := s.cleanFirstContact(ctx, account, it.Counterpart, it.MessageRef)
 			if err != nil {
 				return nil, err
@@ -225,6 +228,11 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 	}
 	return items, nil
 }
+
+// replyFirstContacts lets first-time senders into needs_reply when they pass
+// the D48 checks. Off until Q3's model second opinion can judge content
+// (D49): header checks and the classify label alone let look-alike spam in.
+var replyFirstContacts = false
 
 // replyClearingFolders are the folders whose mail never needs a reply:
 // Trash, Junk, configured discard folders and hold folders (D48).

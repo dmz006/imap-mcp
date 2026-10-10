@@ -221,6 +221,7 @@ every sender would look new.
 | Signal | Points |
 |---|---|
 | The display name borrows a brand, a government agency, an address or your own domain, and the mail comes from an unrelated domain ("QuickBooks" from `shop.example`) | 2 |
+| A fake reply: the subject starts with `Re:` or `Fwd:` but the message answers nothing (no `In-Reply-To` or `References`) | 2 |
 | Not addressed to you: no recipients, only the sender, or only other people's freemail addresses | 1 |
 | Bulk headers: `List-Unsubscribe`, `List-Id` or `Precedence: bulk/list/junk` | 1 |
 | A throwaway-looking domain: digits mixed into the name, or a low-cost TLD such as `.shop` | 1 |

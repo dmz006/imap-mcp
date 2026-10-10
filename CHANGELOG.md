@@ -6,6 +6,19 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-10-10
+
+### Changed
+- **`needs_reply` lists only people you have written to or replied to**
+  (AGENT.md D49). After 0.17.1, spam that looks exactly like a person still
+  passed every header check and the model's label. First-time senders return
+  once the planned model second opinion (Q3) can vet them.
+
+### Added
+- **New-sender hold: fake replies.** A first-time sender's `Re:` or `Fwd:`
+  subject that answers nothing (no In-Reply-To or References) scores 2 and
+  is held on its own, like brand impersonation.
+
 ## [0.17.1] - 2026-10-10
 
 ### Fixed

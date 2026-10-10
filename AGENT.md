@@ -425,6 +425,13 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D49 (first contacts and fake replies):** live validation
+  after D48 still showed spam that passes every header check and the model
+  label. (1) `needs_reply` lists only correspondents (people written to or
+  replied to) until Q3's model second opinion can vet first contacts; the
+  D48 first-contact path stays in the code, switched off. (2) The new-sender
+  hold gains a signal, weight 2: a first-time sender's `Re:`/`Fwd:` subject
+  that answers nothing (no In-Reply-To or References).
 - **2026-10-10 — D48 (needs_reply quality; amends D33 and the D45 sender
   filter):** found in live validation, where most items on one account were spam.
   (1) Mail whose latest message is in Trash, Junk, a configured discard

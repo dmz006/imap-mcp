@@ -259,11 +259,10 @@ incoming mail without list, bulk or auto-submitted headers count.
 - **`needs_reply`**: the latest message is someone else's, addressed to you
   (To or Cc), and you have not answered it. Newsletters, bots, mail a
   `new_sender` rule held, and mail now in Trash, Junk or a hold folder are
-  left out. People you have written to or replied to always count. A first
-  contact counts only when all three agree it is a real person (D48): the
-  classify model called the message a conversation or personal mail, its
-  headers show none of the new-sender hold's bulk or scam signals (checked
-  live), and the sender has no open anomaly other than `new_sender`.
+  left out. Only people you have written to or replied to count for now
+  (D49): spam that looks exactly like a person got past every header check
+  and the model's label, so first-time senders return once the planned
+  model second opinion (Q3) can vet them.
 - **`awaiting_reply`**: you wrote last and nobody has answered.
 
 Both take `account`, `older_than_days` (default 2), `within_days` (default

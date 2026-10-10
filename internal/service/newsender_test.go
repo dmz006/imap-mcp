@@ -76,6 +76,8 @@ func TestNewSenderHold(t *testing.T) {
 		raw("k3@x", "Kim <kim@intro.example>", "friend@example.org", "Intro", "Cc: "+me),                       // copies a contact: stays
 		raw("k4@x", "QuickBooks <friend@example.org>", me, "lunch?"),                                           // known sender: stays
 		raw("k5@x", "Undisclosed <x@nobody.example>", "", "hi"),                                                // one signal, no hall: stays for now
+		raw("h4@x", "Chris Wang <chris@registrar.example>", me, "Re: your brand registration"),                 // fake reply: held (D49)
+		raw("k6@x", "Ann <ann@thread.example>", me, "Re: lunch", "In-Reply-To: <other@elsewhere.example>"),     // a reply to something: stays
 	} {
 		f.srv.Append(t, "INBOX", m, now)
 	}
@@ -101,21 +103,21 @@ func TestNewSenderHold(t *testing.T) {
 	}
 	exec(`UPDATE intel_scan SET completed_at = ?`, now.Unix())
 
-	if res, _ := f.s.TestRule(ctx, id); res.Matched != 2 || res.Error != "" || len(res.Preview) != 2 || res.Preview[0].Reasons == "" {
-		t.Fatalf("dry run = %+v, want 2 (h1, h2) with reasons", res)
+	if res, _ := f.s.TestRule(ctx, id); res.Matched != 3 || res.Error != "" || len(res.Preview) != 3 || res.Preview[0].Reasons == "" {
+		t.Fatalf("dry run = %+v, want 3 (h1, h2, h4) with reasons", res)
 	}
 	// The model classifies h3 as a newsletter: one signal plus a bulk hall holds it.
 	if _, err := f.d.SQL().Exec(`INSERT INTO messages(account, folder, uid, from_addr, date, message_id, hall) VALUES('test','INBOX',99,'promo@single.example',1,'h3@x','newsletter')`); err != nil {
 		t.Fatal(err)
 	}
-	if res, _ := f.s.TestRule(ctx, id); res.Matched != 3 {
-		t.Fatalf("after hall = %+v, want 3", res)
+	if res, _ := f.s.TestRule(ctx, id); res.Matched != 4 {
+		t.Fatalf("after hall = %+v, want 4", res)
 	}
 	if _, err := f.s.RunActiveRules(id, false); err != nil {
 		t.Fatal(err)
 	}
-	if n := f.count(t, "Held"); n != 3 {
-		t.Fatalf("Held = %d, want 3", n)
+	if n := f.count(t, "Held"); n != 4 {
+		t.Fatalf("Held = %d, want 4", n)
 	}
 	var reasons string
 	st.QueryRow(`SELECT reasons FROM held_messages WHERE message_ref = 'h1@x'`).Scan(&reasons) //nolint:errcheck

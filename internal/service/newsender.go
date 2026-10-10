@@ -363,6 +363,11 @@ func (g *newSenderGate) signals(env *imaplib.Envelope, h mail.Header, from strin
 	if why := g.impersonation(name, domain); why != "" {
 		add(2, why)
 	}
+	// A stranger's "Re:" or "Fwd:" that answers nothing is a staged
+	// conversation (D49). Weight 2, like impersonation: it holds on its own.
+	if fakeReply(env.Subject) && len(env.InReplyTo) == 0 && h.Get("References") == "" {
+		add(2, "pretends to reply to a conversation that never happened")
+	}
 	if notToOwner(recipients, from, g.own) {
 		add(1, "not addressed to you")
 	}
@@ -385,6 +390,17 @@ func (g *newSenderGate) signals(env *imaplib.Envelope, h mail.Header, from strin
 		}
 	}
 	return false, score, reasons, nil
+}
+
+// fakeReply reports a subject that claims to be a reply or a forward.
+func fakeReply(subject string) bool {
+	s := strings.ToLower(strings.TrimSpace(subject))
+	for _, p := range []string{"re:", "re :", "fwd:", "fw:"} {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // impersonation explains a display name that borrows a brand, an agency, an

@@ -65,6 +65,13 @@ func TestReplyLists(t *testing.T) {
 	exec(`INSERT INTO held_messages(account, msg_hash, held_at) VALUES('test', ?, ?)`, intel.MsgHash("t7@x"), now.Unix())
 	exec(`INSERT INTO intel_scan(account, folder, last_uid, completed_at, rescan_until) VALUES('test','INBOX',10,1,20)`)
 
+	// D49: correspondents only until Q3; the vetted first-contact path is
+	// still checked with the switch on.
+	if n, err := f.s.NeedsReply(ctx, ReplyParams{OlderThanDays: 2}); err != nil || n.Count != 1 || n.Items[0].MessageRef != "t1@x" {
+		t.Fatalf("needs_reply with first contacts off = %+v, %v", n, err)
+	}
+	replyFirstContacts = true
+	defer func() { replyFirstContacts = false }()
 	needs, err := f.s.NeedsReply(ctx, ReplyParams{OlderThanDays: 2})
 	if err != nil {
 		t.Fatal(err)
