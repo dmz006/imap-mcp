@@ -6,6 +6,12 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-10-10
+
+### Fixed
+- **`hold.digest` never reached webhooks from `run-rules`.** The CLI queued
+  only `rule.fired` into the webhook outbox; it now queues `hold.digest` too.
+
 ## [0.15.3] - 2026-10-10
 
 ### Fixed

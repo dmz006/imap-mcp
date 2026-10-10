@@ -130,10 +130,12 @@ func runRules(args []string) error {
 	defer database.Close()
 	logMigration(log)
 
-	// rule.fired goes into the webhook outbox; serve delivers it. Only that
-	// event: connection events from this short-lived process are noise.
+	// rule.fired and hold.digest go into the webhook outbox; serve delivers
+	// them. Only those: connection events from this short-lived process are noise.
 	b := bus.New()
-	b.Subscribe(bus.EventRuleFired, webhook.NewEnqueuer(database.Webhooks, log, nil).Handle)
+	enq := webhook.NewEnqueuer(database.Webhooks, log, nil)
+	b.Subscribe(bus.EventRuleFired, enq.Handle)
+	b.Subscribe(bus.EventHoldDigest, enq.Handle)
 	pool := imap.NewPool(cfg, b, log)
 	if err := pool.Connect(ctx); err != nil {
 		return fmt.Errorf("connect accounts: %w", err)
