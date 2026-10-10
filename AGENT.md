@@ -377,6 +377,21 @@ they can be replaced or extended without touching call sites.
   progress by position only (account 1, 2, … in config order). The same
   breakdown with account names is at `GET /api/intelligence/status` (read
   scope).
+- **2026-10-10 — D30 (new-sender hold):** a rule condition `new_sender`
+  (window `new_sender_days`, default 30) matches mail from senders with no
+  history only when header signals say bulk or scam: brand or own-domain
+  impersonation in the display name, not addressed to the owner, bulk headers,
+  throwaway domain, owner's address in the subject, Reply-To at another domain.
+  A reply to the owner's own mail, or copying someone the owner has written
+  to, always stays. Score 1 defers to the message's enrichment hall. It
+  refuses to match until the account's history scan is complete. Held mail is
+  moved, never deleted, and moving it back trusts the sender. Authentication
+  alone was rejected: sampled spam passed DKIM or had no result.
+- **2026-10-10 — D31 (held-mail digest):** once a day a full rule run sends a
+  digest of newly held mail two ways: a summary message APPENDed to the
+  account's INBOX (no mail is sent) and a `hold.digest` event carrying only the
+  account and count. A datawatch dashboard can consume the event once its
+  plugin mode exists.
 - **2026-10-09 — D19 (intelligence store):** `senders`, `kg_*` and
   `anomalies` move to the durable state store `imap.db`, through a state
   migration with a backup first. History comes from two sources:

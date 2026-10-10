@@ -4,6 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
+| 2026-10-10 | [New-sender hold and held-mail digest](2026-10-10-new-sender-hold.md) | In progress (0.15.0) |
 | 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | Done — P1–P4 shipped in 0.11.0–0.14.0 |
 | 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P5 built (0.5.3–0.10.0) |
 
@@ -20,6 +21,7 @@
 | 2026-10-09 | datawatch schedule `Update()` changes only the display command, not what the spawn fires (reported by the datawatch agent; datawatch-side) | Open (datawatch) |
 | 2026-10-09 | Reads set `\Seen`: `get_message`, `get_headers`, `detect_subscriptions` and the inbound watcher fetched without PEEK (the watcher marked all unread mail in its folder as read) | Fixed in v0.10.4 |
 | 2026-10-09 | Thread export used cached locations: a message a rule had just moved made the whole `thread_id` export 404 | Fixed in v0.14.1 |
+| 2026-10-10 | Classify model copied prompt placeholders ("<project or context, …>") into wing/room tags, which became knowledge-graph entities | Fixed in v0.15.0 |
 | 2026-10-08 | Unauthenticated HTTP server reachable from browsers: `text/plain` CSRF to the send endpoint could send mail, and DNS rebinding could reach `/mcp` | Fixed in v0.5.2 (`browserGuard`) and v0.5.3 (scoped token auth, D13a) |
 
 ## Backlog
