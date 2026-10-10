@@ -391,3 +391,32 @@ func TestCrossAccountSearchLive(t *testing.T) {
 		t.Errorf("cache search without a cache: %v", err)
 	}
 }
+
+// TestExportThreadStaleCache: the cache lists a thread message at a UID that
+// no longer exists (a rule moved it since the last sync). The export uses the
+// live location, skips what is really gone, and reports it.
+func TestExportThreadStaleCache(t *testing.T) {
+	s, _ := threadSvc(t)
+	ctx := context.Background()
+	now := time.Now()
+	cacheMsg(t, s, "INBOX", 999, "root@example.com", "root@example.com", now.Add(-3*time.Hour)) // stale: real UID is 1
+	cacheMsg(t, s, "Sent", 777, "gone@example.com", "root@example.com", now.Add(-time.Hour))    // deleted on the server
+	res, err := s.Export(ctx, ExportParams{ThreadID: "root@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Live (INBOX scope on the test server) finds root and r2; the stale root
+	// copy is replaced by the live one; the deleted message is skipped.
+	if res.Count != 2 || res.Missing != 1 {
+		t.Fatalf("count=%d missing=%d refs=%+v", res.Count, res.Missing, res.Messages)
+	}
+	for _, r := range res.Messages {
+		if r.UID == 999 || r.UID == 777 {
+			t.Errorf("stale ref exported: %+v", r)
+		}
+	}
+	// A uids export stays strict: you named the messages.
+	if _, err := s.Export(ctx, ExportParams{Folder: "INBOX", UIDs: []uint32{1, 999}}); KindOf(err) != KindNotFound {
+		t.Errorf("strict uids export: %v", err)
+	}
+}

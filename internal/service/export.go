@@ -33,8 +33,11 @@ type ExportRef struct {
 // ExportResult is the exported content. Data is never rendered to clients
 // directly by the MCP layer; it is written to the working-dir sandbox.
 type ExportResult struct {
-	Format   string      `json:"format"` // eml | mbox
-	Count    int         `json:"count"`
+	Format string `json:"format"` // eml | mbox
+	Count  int    `json:"count"`
+	// Missing counts thread messages that no longer exist where the thread
+	// lookup found them (moved or deleted since); they are skipped.
+	Missing  int         `json:"missing,omitempty"`
 	Bytes    int         `json:"bytes"`
 	Messages []ExportRef `json:"messages"`
 	Data     []byte      `json:"-"`
@@ -74,7 +77,9 @@ func (s *Service) Export(ctx context.Context, p ExportParams) (ExportResult, err
 		if p.MaxMessages > 0 && p.MaxMessages < limit {
 			limit = p.MaxMessages + 1 // one over, so an oversize thread is detected
 		}
-		th, err := s.GetThread(ctx, ThreadParams{Account: p.Account, ThreadID: p.ThreadID, Limit: limit})
+		// Live and preferred: the cache can still list a message at a UID a
+		// rule has since moved; the server's location is the one to fetch.
+		th, err := s.GetThread(ctx, ThreadParams{Account: p.Account, ThreadID: p.ThreadID, Limit: limit, Live: true, PreferLive: true})
 		if err != nil {
 			return ExportResult{}, err
 		}
@@ -111,11 +116,15 @@ func (s *Service) Export(ctx context.Context, p ExportParams) (ExportResult, err
 		return ExportResult{}, overCap(len(refs), p.MaxMessages)
 	}
 
-	raws, err := s.fetchRaw(refs, p.MaxBytes)
+	tolerant := p.ThreadID != "" // a thread may include messages moved since it was looked up
+	raws, found, err := s.fetchRaw(refs, p.MaxBytes, tolerant)
 	if err != nil {
 		return ExportResult{}, err
 	}
-	res := ExportResult{Format: format, Messages: refs, Count: len(raws)}
+	if len(raws) == 0 {
+		return ExportResult{}, notFound("none of the thread's messages exist where they were found; try again after the next sync")
+	}
+	res := ExportResult{Format: format, Messages: found, Count: len(raws), Missing: len(refs) - len(found)}
 	if format == "eml" {
 		res.Data = raws[0].data
 	} else {
@@ -141,8 +150,10 @@ type rawMessage struct {
 }
 
 // fetchRaw downloads refs, grouped by account and folder, in ref order. The
-// total RFC822.SIZE is checked against maxBytes before downloading.
-func (s *Service) fetchRaw(refs []ExportRef, maxBytes int64) ([]rawMessage, error) {
+// total RFC822.SIZE is checked against maxBytes before downloading. With
+// tolerant, refs that no longer exist are skipped (and left out of found);
+// otherwise any missing ref is NotFound.
+func (s *Service) fetchRaw(refs []ExportRef, maxBytes int64, tolerant bool) ([]rawMessage, []ExportRef, error) {
 	type key struct{ account, folder string }
 	var order []key
 	groups := map[key][]imaplib.UID{}
@@ -162,27 +173,33 @@ func (s *Service) fetchRaw(refs []ExportRef, maxBytes int64) ([]rawMessage, erro
 			if err != nil {
 				return 0, upstream("fetch sizes", err)
 			}
-			if len(msgs) != len(groups[k]) {
+			if len(msgs) != len(groups[k]) && !tolerant {
 				return 0, notFound("%d of %d messages not found in %s", len(groups[k])-len(msgs), len(groups[k]), k.folder)
 			}
 			var sum int64
+			present := make([]imaplib.UID, 0, len(msgs))
 			for _, m := range msgs {
 				sum += m.RFC822Size
+				present = append(present, m.UID)
 			}
+			groups[k] = present
 			return sum, nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		total += n
 	}
 	if maxBytes > 0 && total > maxBytes {
-		return nil, &Error{Kind: KindUnprocessable, Msg: fmt.Sprintf(
+		return nil, nil, &Error{Kind: KindUnprocessable, Msg: fmt.Sprintf(
 			"selection is %d bytes, over the tools.export_max_mb cap; narrow the selection or raise the cap", total)}
 	}
 
 	byRef := map[ExportRef]rawMessage{}
 	for _, k := range order {
+		if len(groups[k]) == 0 {
+			continue // every message of this folder has gone (tolerant mode)
+		}
 		_, err := s.withFolder(k.account, k.folder, func(client *imapclient.Client) (int64, error) {
 			msgs, err := client.Fetch(imaplib.UIDSetNum(groups[k]...), &imaplib.FetchOptions{
 				UID: true, Envelope: true, InternalDate: true,
@@ -206,16 +223,18 @@ func (s *Service) fetchRaw(refs []ExportRef, maxBytes int64) ([]rawMessage, erro
 			return 0, nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	out := make([]rawMessage, 0, len(refs))
+	var found []ExportRef
 	for _, r := range refs {
 		if m, ok := byRef[r]; ok {
 			out = append(out, m)
+			found = append(found, r)
 		}
 	}
-	return out, nil
+	return out, found, nil
 }
 
 // withFolder runs fn with the account's connection locked and folder selected

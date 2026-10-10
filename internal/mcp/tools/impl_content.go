@@ -96,7 +96,11 @@ func (h *Handlers) ExportMessage(ctx context.Context, req mcp.CallToolRequest) (
 	if _, err := h.out.Write(name, string(res.Data)); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("export_message: %v", err)), nil
 	}
-	return result(map[string]any{"saved_to": name, "format": res.Format, "count": res.Count, "bytes": res.Bytes}, nil)
+	out := map[string]any{"saved_to": name, "format": res.Format, "count": res.Count, "bytes": res.Bytes}
+	if res.Missing > 0 {
+		out["missing"] = res.Missing // thread messages moved or deleted since they were found
+	}
+	return result(out, nil)
 }
 
 // exportName is the default export file name, built only from safe parts.

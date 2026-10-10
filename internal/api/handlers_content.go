@@ -100,6 +100,9 @@ func (s *Server) handleExportMbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("X-Export-Count", strconv.Itoa(res.Count))
+	if res.Missing > 0 {
+		w.Header().Set("X-Export-Missing", strconv.Itoa(res.Missing)) // thread messages moved or deleted since lookup
+	}
 	download(w, "export.mbox", res.Data)
 }
 

@@ -19,6 +19,9 @@ type ThreadParams struct {
 	Live     bool     // force the live IMAP search even when the cache looks complete
 	Folders  []string // live search folders; default: \All if present, else INBOX + \Sent + \Archive
 	Limit    int      // max messages (default 100, max 500)
+	// PreferLive keeps the server's location when a message is found both in
+	// the cache and live (the cache can lag a move by one sync interval).
+	PreferLive bool
 }
 
 // ThreadMessage is one message of a thread.
@@ -79,7 +82,11 @@ func (s *Service) GetThread(ctx context.Context, p ThreadParams) (ThreadResult, 
 		accounts := s.threadAccounts(p.Account, cached)
 		live, errs := s.liveThread(ctx, accounts, p)
 		res.Errors = errs
-		res.Messages = mergeThread(res.Messages, live)
+		if p.PreferLive {
+			res.Messages = mergeThread(live, res.Messages)
+		} else {
+			res.Messages = mergeThread(res.Messages, live)
+		}
 	}
 
 	sort.SliceStable(res.Messages, func(i, j int) bool { return res.Messages[i].Date < res.Messages[j].Date })
