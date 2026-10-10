@@ -447,7 +447,7 @@ func throwawayDomain(domain string) bool {
 // hall is the enrichment classification of the cached message, if any.
 func (g *newSenderGate) hall(messageID string) (string, error) {
 	id := strings.Trim(messageID, "<>")
-	if id == "" {
+	if id == "" || g.cache == nil { // run-rules without the cache: not classified
 		return "", nil
 	}
 	var hall sql.NullString

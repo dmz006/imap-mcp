@@ -6,6 +6,15 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-10-10
+
+### Fixed
+- **`run-rules` crashed on a `new_sender` rule.** The CLI opened only the
+  state database, and the hold's one-signal fallback read classification halls
+  from the cache (nil pointer). `run-rules` now opens the cache too when its
+  key resolves (falling back to rules only), and the hold treats a missing
+  cache as "not classified yet". The crash also stopped the daily digest.
+
 ## [0.15.2] - 2026-10-10
 
 ### Fixed

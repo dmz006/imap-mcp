@@ -209,6 +209,10 @@ func TestHallIgnoresPlaceholders(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// run-rules without the cache: everything counts as not classified.
+	if got, err := (&newSenderGate{}).hall("p3@x"); err != nil || got != "" {
+		t.Errorf("hall without cache = %q, %v", got, err)
+	}
 	for id, want := range map[string]string{"p1@x": "", "p2@x": "newsletter", "p3@x": "alert", "none@x": ""} {
 		if got, err := g.hall(id); err != nil || got != want {
 			t.Errorf("hall(%s) = %q, %v; want %q", id, got, err, want)

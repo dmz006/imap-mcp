@@ -106,14 +106,26 @@ func runRules(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	// run-rules only needs the state DB (rules); it never opens the cache.
-	keys, err := cfg.ResolveDBKeys(true, false)
-	if err != nil {
-		return err
+	// Rules live in the state DB. The cache is opened too when it can be:
+	// new_sender rules read its classification halls (D30). Without it they
+	// treat every message as not classified yet.
+	var database *db.DB
+	if keys, kerr := cfg.ResolveDBKeys(true, true); kerr == nil {
+		database, err = db.Open(db.Options{Path: cfg.DB.Path, Key: keys.State},
+			db.Options{Path: cfg.DB.Cache.Path, Key: keys.Cache})
+		if err != nil {
+			log.Warn("run-rules: cache unavailable, continuing with rules only", "err", err)
+			database = nil
+		}
 	}
-	database, err := db.OpenState(db.Options{Path: cfg.DB.Path, Key: keys.State})
-	if err != nil {
-		return fmt.Errorf("open db: %w", err)
+	if database == nil {
+		keys, err := cfg.ResolveDBKeys(true, false)
+		if err != nil {
+			return err
+		}
+		if database, err = db.OpenState(db.Options{Path: cfg.DB.Path, Key: keys.State}); err != nil {
+			return fmt.Errorf("open db: %w", err)
+		}
 	}
 	defer database.Close()
 	logMigration(log)
