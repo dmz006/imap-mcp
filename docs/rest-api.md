@@ -126,7 +126,7 @@ No token needed.
 | `enrichment.embed_provider`, `classify_provider`, `pending`, `done_last_hour`, `errors`, `oldest_pending_seconds` | Live queue state. These appear only when the pipeline is running and its stats query succeeds. |
 | `enrichment.backfill_paused` | Present only while a gate pauses backfill. Gives the reason. |
 | `enrichment.backoff_seconds` | Present only during a provider backoff |
-| `intelligence.*` | Header-scan progress and the role breakdown (counts only). `backfill_complete` is true once every folder has been scanned once. See [intelligence.md](intelligence.md#watching-progress). |
+| `intelligence.*` | Header-scan progress and the role breakdown (counts only). `backfill_complete` is true once every folder has been scanned once. `accounts` gives per-account progress by position (`index`, config order) without names; `GET /api/intelligence/status` has the names. See [intelligence.md](intelligence.md#watching-progress). |
 | `tools.*` | Limits for attachment downloads and exports (the `tools:` config block) |
 | `storage.*` | Whether each database has an encryption key configured. See [encryption.md](encryption.md). |
 
@@ -487,6 +487,7 @@ Anomalies come from the same scanner (see [intelligence.md](intelligence.md#anom
 |-------|-------|-------|----------|
 | `GET /api/senders` | `read` | `role`, `domain`, `limit` (default 50, max 500) | `{count, senders: [...]}`, most messages first |
 | `GET /api/senders/{address}` | `read` | | Profile fields ([intelligence.md](intelligence.md#what-a-profile-holds)) plus `cached_messages`, `scan_complete`, `relationships`, `anomalies`. 404 when there is neither a profile nor cached mail. |
+| `GET /api/intelligence/status` | `read` | | The `/api/health` `intelligence` block with account names in `accounts[].account` |
 | `GET /api/kg` | `read` | `entity` (exact name, either end), `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence, weight, last_seen, current, properties}]}`, strongest (`weight`) first. See [intelligence.md](intelligence.md#knowledge-graph) |
 | `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `type`, `sender`, `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [{id, account, sender, type, description, severity, detected_at, resolved, resolved_at, folder, uid, message_ref, details}]}`, newest first |
 | `POST /api/anomalies/{id}/resolve` | `write` | | The anomaly, now `resolved: true`. 404 for an unknown id. |

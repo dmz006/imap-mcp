@@ -143,6 +143,7 @@ unknown ones, needs a valid token.
 | GET | `/api/senders` | read |
 | GET | `/api/senders/{address}` | read |
 | GET | `/api/kg` | read |
+| GET | `/api/intelligence/status` | read |
 | GET | `/api/anomalies` | read |
 | POST | `/api/anomalies/{id}/resolve` | write |
 | GET | `/api/enrichment/status` | read |

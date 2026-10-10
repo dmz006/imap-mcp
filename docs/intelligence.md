@@ -307,6 +307,18 @@ for long.
                  "last_scan": "2026-10-09T22:49:45Z"}
 ```
 
+`intelligence.accounts` breaks the scan down per account, in config order. Health
+needs no token, so it shows positions (`index`), never account names. The same
+breakdown with names is at `GET /api/intelligence/status` (read scope):
+
+```bash
+curl -sS "$IMAP_MCP/api/intelligence/status" -H "Authorization: Bearer $READ_TOKEN" \
+  | jq '.accounts[] | {account, folders_complete, folders, scanned, backfill_complete}'
+```
+
+`scanned` counts headers read in the current pass, including messages already
+indexed (an upgrade rescan reads everything again).
+
 The logs record one `intel: scan tick` line per tick that found something.
 
 ## Storage and privacy

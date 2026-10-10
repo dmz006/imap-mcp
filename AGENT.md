@@ -372,6 +372,11 @@ they can be replaced or extended without touching call sites.
 
   Downloads stream the bytes back as `application/octet-stream` with a safe
   filename and write nothing on the server.
+- **2026-10-09 — D29 (scan progress per account):** `/api/health` is
+  unauthenticated, so it never names accounts. It shows per-account scan
+  progress by position only (account 1, 2, … in config order). The same
+  breakdown with account names is at `GET /api/intelligence/status` (read
+  scope).
 - **2026-10-09 — D19 (intelligence store):** `senders`, `kg_*` and
   `anomalies` move to the durable state store `imap.db`, through a state
   migration with a backup first. History comes from two sources:

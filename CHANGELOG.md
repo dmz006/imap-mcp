@@ -6,6 +6,16 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-09
+
+### Added
+- **Per-account scan progress** (D29). The `intelligence` block in
+  `/api/health` gains `accounts`: per account, folders and folders complete,
+  headers scanned in the current pass, `backfill_complete` and last scan.
+  Health is unauthenticated, so accounts are identified by position (`index`,
+  config order), never by name. New `GET /api/intelligence/status` (read
+  scope) returns the same with account names.
+
 ## [0.14.1] - 2026-10-09
 
 ### Fixed

@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.14.0 |
+| Current version | 0.14.2 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -371,6 +371,7 @@ GET    /api/search/cross                                               read
 GET    /api/search                                                     read
 POST   /api/search/semantic                                            read
 GET    /api/senders, /api/senders/{address}                            read
+GET    /api/intelligence/status                                        read  (scan progress with account names; health shows it unnamed)
 GET    /api/kg, /api/anomalies                                         read
 POST   /api/anomalies/{id}/resolve                                     write
 GET    /api/enrichment/status                                          read
