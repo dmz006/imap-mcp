@@ -936,3 +936,33 @@ curl -sS -X POST "$IMAP_MCP/api/replies/dismiss" \
 From an agent: "What do I owe people a reply on?" → `needs_reply`, then
 `get_thread` on an item's `thread_id` to draft an answer. The daily digest
 in your inbox carries the same list under "Waiting on you".
+
+## 16. Rules from what you already do
+
+If you keep moving a sender's mail to Trash or Junk yourself, imap-mcp
+notices and suggests a rule ([rules.md](rules.md#learning-from-your-moves)).
+
+```bash
+curl -sS "$IMAP_MCP/api/rules/suggestions?account=work" -H "Authorization: Bearer $READ_TOKEN"
+# → {"mode":"suggest","count":1,"history_complete":true,"suggestions":[
+#     {"account":"work","target":"@deals.example","kind":"domain",
+#      "addresses":["offers@deals.example","promo@deals.example"],
+#      "received":12,"discarded":11,"ratio":0.91,"action":"trash","matches":2,"status":"suggested",
+#      "rule":{"name":"learned: @deals.example","active":false,
+#              "conditions":{"account":"work","from":"@deals.example"},"actions":[{"type":"trash"}]}}]}
+
+# Accept: create the suggested rule (inactive), test it, then turn it on.
+curl -sS -X POST "$IMAP_MCP/api/rules" -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"learned: @deals.example","active":false,
+       "conditions":{"account":"work","from":"@deals.example"},"actions":[{"type":"trash"}]}'
+
+# Or say no for good.
+curl -sS -X POST "$IMAP_MCP/api/rules/suggestions/dismiss" -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" -d '{"account":"work","target":"@deals.example"}'
+```
+
+The daily digest lists open suggestions under "Suggested rules". A webhook
+on `rule.suggested` gets each new one with full details; register it with
+`"payload": "suggested,created"` if you only want the counts
+([webhooks.md](webhooks.md#payload)).

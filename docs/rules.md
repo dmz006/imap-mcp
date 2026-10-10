@@ -99,6 +99,8 @@ value shows up as an `error` in the run results.
 | `list_rules` | `read` | none. Returns `{count, rules}`. |
 | `delete_rule` | `write` | `id` |
 | `run_rules` | `write` | `id` (optional), `dry_run` (default false) |
+| `suggest_rules` | `read` | `account`, `limit` (default 50). Rules learned from your moves. |
+| `dismiss_suggestion` | `write` | `account`, `target` (address or `@domain`) |
 
 `create_rule` takes one action. To create a rule with several actions, or to
 set a priority, use the REST API. The MCP side has no update or test tool.
@@ -257,7 +259,8 @@ sender as trusted, and never holds that sender again.
 So you do not have to keep checking the holding folder, the first full rule
 run (the hourly `run-rules` job) at or after `rules.hold_digest_hour` (local
 time, default 8) sends a digest of everything held since the last one
-(AGENT.md D31). Since 0.16 it also lists conversations waiting on you
+(AGENT.md D31). Since 0.17 it also lists suggested rules
+([below](#learning-from-your-moves)). Since 0.16 it also lists conversations waiting on you
 ("Waiting on you": someone wrote to you two or more days ago, within the last
 90 days, and you have not replied; see
 [intelligence.md](intelligence.md#reply-tracking)). Nothing is sent when
@@ -281,6 +284,66 @@ rules:
 Environment: `IMAP_MCP_RULES_HOLD_DIGEST`, `IMAP_MCP_RULES_HOLD_DIGEST_HOUR`.
 Held-message records are kept for 90 days. `GET /api/health` shows the
 settings and the counts in its `rules` block.
+
+## Learning from your moves
+
+When you keep moving a sender's mail to Trash or Junk yourself, imap-mcp
+suggests a rule that does it for you (AGENT.md D34–D36, D47).
+
+**What it watches.** The history scan records where each message was last
+seen, and reads Trash and Junk (Gmail's Trash and Spam) once more for
+locations only, never for profiles or the graph. Messages a rule moved are
+remembered and never count as yours. Mail sitting in Trash or Junk when 0.17
+first scanned it counts too, since the scan can't tell older moves apart.
+
+**When a sender qualifies.** You discarded at least 80% of the mail they ever
+sent you, and at least 3 messages. When 2 or more addresses at one domain
+qualify, the suggestion is one rule for `@domain`. The rule repeats what you
+did: mostly Trash gives a `trash` rule, mostly Junk gives a move to Junk.
+
+**Never suggested:**
+- anyone you have written to or replied to;
+- trusted senders (released from a hold, or rescued from Junk);
+- your own addresses and domains;
+- senders a rule already covers, and senders the new-sender hold holds;
+- a domain with any of the above at it, and webmail domains (gmail.com,
+  outlook.com and the like), which only ever get per-address rules.
+
+**Rescues.** Moving a message out of Junk or a hold folder, to anywhere else,
+marks its sender trusted and resolves their open anomalies.
+
+**Using suggestions.** `suggest_rules` (or `GET /api/rules/suggestions`) lists
+each one with the evidence, the exact rule and how many INBOX messages it
+would match now. Pass the rule to `create_rule` (it starts inactive; test it,
+then turn it on). Say no with `dismiss_suggestion` (or
+`POST /api/rules/suggestions/dismiss`): that address or domain is never
+suggested again. Deleting a learned rule does the same.
+
+**Modes.** The hourly `run-rules` job checks for new suggestions:
+
+```yaml
+rules:
+  learn:
+    mode: suggest              # suggest | inactive | active
+    ratio: 0.8                 # share of their mail you discarded
+    min_discards: 3
+    domain_min_addresses: 2
+    discard_folders: []        # extra folders that count as discards
+```
+
+- `suggest` (default): suggestions only, listed in the daily digest.
+- `inactive`: each new suggestion becomes an inactive rule
+  (`learned: <target>`), listed in the digest.
+- `active`: each becomes an active rule straight away.
+
+Environment: `IMAP_MCP_RULES_LEARN_MODE`, `IMAP_MCP_RULES_LEARN_RATIO`,
+`IMAP_MCP_RULES_LEARN_MIN_DISCARDS`, `IMAP_MCP_RULES_LEARN_DOMAIN_MIN_ADDRESSES`,
+`IMAP_MCP_RULES_LEARN_DISCARD_FOLDERS` (comma-separated).
+
+New suggestions and created rules are published once as `rule.suggested`,
+with full details by default ([webhooks.md](webhooks.md#payload)). The daily
+digest lists open suggestions ("Suggested rules") and rules created since
+the last digest.
 
 ## The `rule.fired` event
 

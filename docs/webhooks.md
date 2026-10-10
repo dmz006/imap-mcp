@@ -12,7 +12,7 @@ All webhook routes need a token with the `admin` scope.
 curl -sS -X POST https://imap-mcp.example.com/api/webhooks \
   -H "Authorization: Bearer $IMAP_MCP_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://hooks.example.com/imap","events":["rule.fired","message.synced"]}'
+  -d '{"url":"https://hooks.example.com/imap","events":["rule.fired","message.synced"],"payload":"metadata"}'
 ```
 
 The response includes `secret`. **This is the only time it is shown.** Store it
@@ -22,18 +22,24 @@ with your receiver; you need it to verify signatures.
   `localhost`).
 - `events` lists event types, or `["*"]` for every deliverable event. `GET
   /api/webhooks` returns the deliverable list.
+- `payload` picks what each delivery carries (see [Payload](#payload)):
+  `metadata`, `full`, or a comma-separated list of payload fields. If you
+  leave it out, a webhook subscribed to `rule.suggested` or `*` gets `full`;
+  any other webhook gets `metadata`.
 - Deliverable events: `message.synced`, `message.updated`, `message.deleted`,
   `folder.synced`, `sync.complete`, `sync.error`, `cache.cleaned`,
   `enrichment.done`, `enrichment.error`, `anomaly.detected`, `rule.fired`,
-  `hold.digest`, `account.connected`, `account.error`, `account.disconnected`.
+  `hold.digest`, `rule.suggested`, `account.connected`, `account.error`, `account.disconnected`.
   `webhook.*` and `inbound.*` are never delivered.
 - You can subscribe to all of these, but `account.disconnected` is never
   published today (defined but not emitted). `anomaly.detected` carries
   `{id, type, severity}`; fetch the finding with `GET /api/anomalies`. See
   [intelligence.md](intelligence.md#anomalies). `hold.digest` carries
-  `{held, waiting}` (counts: held mail, conversations waiting on you) with
-  the event's `account`; see
-  [rules.md](rules.md#the-daily-digest).
+  `{held, waiting, suggested}` (counts) with the event's `account`; see
+  [rules.md](rules.md#the-daily-digest). `rule.suggested` carries
+  `{mode, suggested, created, suggestions: [...]}`: each suggestion's target
+  address or domain, action, counts, ratio, INBOX match count and rule; see
+  [rules.md](rules.md#learning-from-your-moves).
 
 Other routes:
 
@@ -47,9 +53,17 @@ Other routes:
 
 ## Payload
 
-Payloads are **metadata only**: identifiers, counts and flags. They never
-include subject, sender, recipients, body or error text. Fetch details over
-the REST API with the receiver's own scoped token.
+Each webhook has a `payload` setting (AGENT.md D46, which amends D16):
+
+- **`metadata`**: identifiers, counts and flags only. Never subject, sender,
+  recipients, body or error text. Fetch details over the REST API with the
+  receiver's own scoped token. Webhooks registered before 0.17 use this.
+- **`full`**: the whole event payload. For `rule.suggested` that includes
+  sender addresses and domains; for `account.error` and `enrichment.error`
+  it includes the error text.
+- **A field list**, e.g. `"suggested,created"`: only those payload fields.
+
+The `metadata` form looks like this:
 
 ```json
 {
@@ -61,8 +75,9 @@ the REST API with the receiver's own scoped token.
 }
 ```
 
-Errors (`sync.error`, `account.error`, or a folder sync that failed) arrive as
-`"failed": true` without the error text; check `GET /api/health` or the logs.
+In the `metadata` form, errors (`sync.error`, `account.error`, or a folder
+sync that failed) arrive as `"failed": true` without the error text; check
+`GET /api/health` or the logs.
 
 Headers:
 

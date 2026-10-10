@@ -6,6 +6,46 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-10
+
+### Added
+- **Learning from your moves (Q2; AGENT.md D34–D36, D47).** A sender whose
+  mail you mostly move to Trash or Junk yourself (≥ 80% of everything they
+  sent, at least 3) becomes a suggested rule that repeats what you did:
+  trash, or move to Junk. When 2 or more addresses at a domain qualify, one
+  `@domain` rule (never for webmail domains, never over someone you write
+  to). People you have written to, trusted senders, your own addresses,
+  senders a rule already covers and held senders are never suggested.
+  `suggest_rules` (read) and `GET /api/rules/suggestions` list them with
+  the evidence, the exact rule and an INBOX match count; `dismiss_suggestion`
+  (write) and `POST /api/rules/suggestions/dismiss` say no for good, as does
+  deleting a learned rule.
+- **`rules.learn` settings.** `mode: suggest` (default), `inactive` or
+  `active` (create the rules automatically), `ratio`, `min_discards`,
+  `domain_min_addresses`, `discard_folders`, with env overrides.
+- **Rescues.** Moving a message out of Junk or a hold folder marks its
+  sender trusted and resolves their open anomalies.
+- **`rule.suggested` event**, once per new suggestion or created rule, with
+  full details. The daily digest gains "Suggested rules" and "Rules
+  created" sections; `hold.digest` gains a `suggested` count.
+- **Webhook payload setting (D46, amends D16).** Each webhook has
+  `payload`: `metadata` (the D16 form), `full`, or a list of fields. New
+  webhooks subscribed to `rule.suggested` or `*` default to `full`; others,
+  and every webhook registered before 0.17, stay `metadata`.
+
+### Changed
+- The header scan records where each message was last seen, and a
+  location-only pass reads Trash and Junk (Gmail Trash and Spam): Message-ID
+  hashes and folder only, no profiles, graph edges or anomaly checks.
+- Rules remember the messages they move (`rule_moves`), so those never count
+  as yours.
+
+### Upgrade
+- **Back up `imap.db` first.** On first start the header scan reads all
+  history once more to record locations; an unfinished 0.16 rescan is folded
+  into it. Everything keeps working meanwhile; `suggest_rules` reports
+  `history_complete: false` until it finishes.
+
 ## [0.16.1] - 2026-10-10
 
 ### Changed

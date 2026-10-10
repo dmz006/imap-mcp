@@ -41,8 +41,8 @@ shown; `tools/list` only shows tools the caller's token can use.
 | | `dismiss_reply` | write |
 | | `trigger_enrichment` | admin |
 | Cache | `cache_sweep` | admin |
-| Rules | `list_rules` | read |
-| | `create_rule`, `delete_rule`, `run_rules` | write |
+| Rules | `list_rules`, `suggest_rules` | read |
+| | `create_rule`, `delete_rule`, `run_rules`, `dismiss_suggestion` | write |
 | File sandbox (`working_dir`) | `read_file`, `list_files` | read |
 | | `write_file`, `delete_file` | write |
 
@@ -73,6 +73,11 @@ Notes:
   bots and held mail. A reply, the `\Answered` flag or `dismiss_reply` clears
   an item. The daily digest gains a "Waiting on you" section. See
   [docs/intelligence.md](docs/intelligence.md#reply-tracking).
+- `suggest_rules` learns from your own moves: a sender whose mail you mostly
+  move to Trash or Junk gets a suggested rule that does it for you, with the
+  evidence and a match count. People you write to are never suggested.
+  `rules.learn.mode` can also create the rules (inactive or active). See
+  [docs/rules.md](docs/rules.md#learning-from-your-moves).
 
 See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 

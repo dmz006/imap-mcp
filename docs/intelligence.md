@@ -375,7 +375,9 @@ cache. Back up `imap.db` before upgrading, as for any release that changes
 it.
 
 What is stored per sender: their address, display name, domain, and the
-counts and dates above. The graph stores entity names (addresses, domains,
+counts and dates above. Since 0.17 the index also records the folder where
+each message was last seen, and which messages a rule moved, for learning
+from moves ([rules.md](rules.md#learning-from-your-moves)). The graph stores entity names (addresses, domains,
 thread root Message-IDs, tags, and names the model read in a body) and the
 relationships between them, with counts and dates. Message bodies are never
 stored here. Subjects are stored for two things only: the latest message of

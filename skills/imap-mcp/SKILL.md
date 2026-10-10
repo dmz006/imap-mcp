@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.14.1"
+version: "0.15.0"
 tags:
   - email
   - imap
@@ -179,6 +179,19 @@ activating. Held mail is moved, never deleted; moving a message back to the
 inbox trusts its sender for good. A daily "Held for review" summary appears in
 the inbox, so nobody has to watch the folder. Until the account's history scan
 is complete the rule matches nothing and says why.
+
+Rules learned from the user's own moves:
+
+```
+suggest_rules { }                         → senders/domains the user mostly trashes or junks: evidence, exact rule, INBOX matches
+create_rule { ...suggestion.rule, active: false } → then run_rules { id, dry_run: true } before activating
+dismiss_suggestion { account, target }    → the user said no: never suggested again
+```
+
+Present suggestions with their evidence ("you discarded 9 of 10") and let the
+user pick. Never accept one on your own. People the user writes to are never
+suggested. If the server runs `rules.learn.mode: inactive|active`, rules named
+`learned: <target>` are created automatically; deleting one means "no" for good.
 
 ### 7. Search
 
@@ -430,6 +443,8 @@ When you run on a schedule with nobody watching:
 | | `list_rules` | none | read |
 | | `delete_rule` | **`id`** | write |
 | | `run_rules` | `id` (all active), `dry_run` (false) | write |
+| | `suggest_rules` | `account` (all), `limit` (50); `{mode, suggestions: [{target, kind, received, discarded, ratio, action, dest, matches, status, rule}], history_complete}` | read |
+| | `dismiss_suggestion` | **`account`**, **`target`** (address or `@domain`) | write |
 | Search | `search_messages` | `folder` (INBOX), `from`, `subject`, `text`, `since`, `before`, `flags`, `limit` (50), `account` | read |
 | | `semantic_search` | `query` or `reference_uid`, `folder`, `limit` (10), `threshold` (0.7), `account` (omit for all) | read |
 | | `cross_account_search` | `from`, `subject`, `text`, `since`, `before`, `limit` (20 per account), `live`, `folder` (live; INBOX) | read |

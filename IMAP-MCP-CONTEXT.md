@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.16.1 |
+| Current version | 0.17.0 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -96,7 +96,8 @@ Defaults that matter: server `127.0.0.1:8765`; state DB
 600 messages/min, batch 200, model roles 20 per tick; KG on, stale after 365
 days, model extraction 10 bodies per tick; anomalies on (lookback 7 days, auth 3 passes,
 silence 20 messages / 30 days, spike 10 / 5x); `rules:` held-mail digest on, at
-the first full rule run from 08:00 local (`hold_digest`, `hold_digest_hour`).
+the first full rule run from 08:00 local (`hold_digest`, `hold_digest_hour`);
+`rules.learn`: mode `suggest`, ratio 0.8, min 3 discards, domain at 2 addresses.
 
 Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
 `IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
@@ -234,7 +235,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Write | `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender` | write |
 | Send | `send_message` | send |
 | Analytics | `top_senders`, `summarize_folder`, `detect_subscriptions`, `get_sender_history` | read |
-| Rules | `list_rules`; `create_rule` (incl. `new_sender`, `new_sender_days`), `delete_rule`, `run_rules` (dry runs of `new_sender` rules return a `preview`) | read; write |
+| Rules | `list_rules`, `suggest_rules`; `create_rule` (incl. `new_sender`, `new_sender_days`), `delete_rule` (a learned rule's deletion = never again), `run_rules` (dry runs of `new_sender` rules return a `preview`), `dismiss_suggestion` | read; write |
 | Search | `search_messages`, `semantic_search` | read |
 | Enrichment | `enrichment_status`; `trigger_enrichment` | read; admin |
 | Cache | `cache_sweep` (cache only, `dry_run` defaults to true) | admin |
@@ -276,6 +277,15 @@ Behaviour notes:
   Clears on an indexed reply (thread root or In-Reply-To), `\Answered`
   (checked live on the listed messages and recorded), or `dismiss_reply`
   (keyed to the latest message; a newer one re-opens). Folder never clears.
+- `suggest_rules` (Q2, D34–D36, D47): from `intel_messages.folder`, a sender
+  whose received mail the owner discarded ≥ ratio (0.8, ≥ 3) over all history
+  (Trash/Junk/configured; minus `rule_moves`) → a rule mirroring the folder
+  (Trash → trash, else move). Domain rule at ≥ 2 qualifying addresses unless
+  freemail or a correspondent/trusted sender is at the domain. Excluded:
+  correspondents, trusted, own addresses/domains, rule-covered (From
+  substring), held senders, dismissed targets. Hourly `learnRun` records new
+  ones (`learn_state`) and in `inactive`/`active` mode creates `learned:`
+  rules; publishes `rule.suggested` once per new target.
 - Deferred: IMAP IDLE / `watch_folder`.
 
 ---
@@ -290,11 +300,14 @@ key derivation). `imap-mcp db encrypt` converts an existing plaintext file
 
 ```sql
 rules              -- automation rules (conditions + actions JSON, run_count)
-webhooks           -- registered endpoints (signing secret, active, fail_count)
+webhooks           -- registered endpoints (signing secret, active, fail_count, payload: metadata | full | field list, D46)
 webhook_deliveries -- durable outbox (metadata-only payloads, retries)
 inbound_nonces     -- replay protection for inbound commands (account, nonce)
 senders            -- sender profiles: counts each way, dates, reply stats, list/bulk/auto, DKIM/DMARC, role (D19, D20); trusted (released from a hold, D30)
-intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash, kg_done/kg_tags_done/kg_llm_done (no addresses/content)
+intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash, kg_done/kg_tags_done/kg_llm_done, folder last seen (D34) (no addresses/content)
+intel_locscan      -- location-only pass progress over Trash/Junk folders the normal scan skips (D34)
+rule_moves         -- messages a rule moved/trashed (account, msg hash, rule id, dest); pruned after a year (D34)
+learn_state        -- learned-rule targets: suggested | created (rule_id) | dismissed (D36, D47)
 intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at, rescan_until: the 0.16 one-time rescan keeps completed_at and runs until last_uid reaches it)
 reply_threads      -- Q1/D32: latest message per person-to-person conversation: thread hash + thread_id (root), last hash/date, outgoing, direct (owner in To/Cc), counterpart, subject, Message-ID, folder/uid, answered, dismissed_hash/at
 digest_log         -- last daily digest per account (D31; digests also go out when only replies are waiting)
@@ -349,7 +362,8 @@ enqueuer subscribe to every event.
 | `cache.cleaned` | sync (cleaning, `cache_sweep`) |
 | `enrichment.done`, `enrichment.error` | enrichment pipeline |
 | `rule.fired` | rules (`run_rules`, `run-rules`, REST) |
-| `hold.digest` | daily digest (D31): `{held, waiting}` counts; the account is on the event |
+| `hold.digest` | daily digest (D31): `{held, waiting, suggested}` counts; the account is on the event |
+| `rule.suggested` | learning from moves (D36): `{mode, suggested, created, suggestions: [...]}` full details; webhook payload per D46 |
 | `account.connected`, `account.error` | IMAP pool |
 | `account.disconnected` | declared, not published |
 | `anomaly.detected` | intel scanner: `{id, type, severity}` (webhooks keep the same three fields) |
@@ -394,7 +408,8 @@ POST   /api/replies/dismiss                                            write
 GET    /api/enrichment/status                                          read
 POST   /api/enrichment/trigger                                         admin
 POST   /api/cache/sweep                                                admin
-GET    /api/rules                                                      read
+GET    /api/rules, /api/rules/suggestions                              read
+POST   /api/rules/suggestions/dismiss                                  write
 POST   /api/rules, PUT|DELETE /api/rules/{id}, POST /api/rules/{id}/test   write
 GET|POST /api/webhooks, DELETE /api/webhooks/{id}                     admin
 POST   /api/webhooks/{id}/enable, /api/webhooks/{id}/test             admin
@@ -412,7 +427,7 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 | Item | Notes |
 |------|-------|
 | Intelligence | Content cleaning before models (`Cleaner`) |
-| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2), model second opinion + payment/credential-request anomaly (Q3), one-click unsubscribe (Q4), screener (Q5) |
+| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2, done in 0.17.0), model second opinion + payment/credential-request anomaly (Q3), one-click unsubscribe (Q4), screener (Q5) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

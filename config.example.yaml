@@ -342,6 +342,12 @@ intelligence:
 rules:
   hold_digest: true            # IMAP_MCP_RULES_HOLD_DIGEST
   hold_digest_hour: 8          # first full run at or after this local hour (0-23); IMAP_MCP_RULES_HOLD_DIGEST_HOUR
+  learn:                       # rules learned from your own moves to Trash/Junk (docs/rules.md)
+    mode: suggest              # suggest | inactive | active; IMAP_MCP_RULES_LEARN_MODE
+    ratio: 0.8                 # share of a sender's mail you discarded; IMAP_MCP_RULES_LEARN_RATIO
+    min_discards: 3            # IMAP_MCP_RULES_LEARN_MIN_DISCARDS
+    domain_min_addresses: 2    # IMAP_MCP_RULES_LEARN_DOMAIN_MIN_ADDRESSES
+    discard_folders: []        # extra discard folders; IMAP_MCP_RULES_LEARN_DISCARD_FOLDERS
 
 log:
   level: info

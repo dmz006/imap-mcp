@@ -564,8 +564,8 @@ payloads, signatures and delivery.
 
 | Route | Body / query | Response |
 |-------|--------------|----------|
-| `GET /api/webhooks` | | `{count, webhooks: [{id, url, events, active, created_at, last_fired?, fail_count, pending}], events: [deliverable types]}` |
-| `POST /api/webhooks` | `{url, events}` | **201** with the webhook and `secret`. This is the only time the secret is shown. 400 for a bad URL or bad events. |
+| `GET /api/webhooks` | | `{count, webhooks: [{id, url, events, active, created_at, last_fired?, fail_count, pending, payload}], events: [deliverable types]}` |
+| `POST /api/webhooks` | `{url, events, payload?}` (`metadata`, `full` or a field list; see [webhooks.md](webhooks.md#payload)) | **201** with the webhook and `secret`. This is the only time the secret is shown. 400 for a bad URL or bad events. |
 | `DELETE /api/webhooks/{id}` | | `{id, status: "deleted"}` |
 | `POST /api/webhooks/{id}/enable` | | The webhook, re-enabled with its failure count reset |
 | `POST /api/webhooks/{id}/test` | | **202** `{id, status: "queued", event: "webhook.test"}`. 422 if the webhook is disabled. |
@@ -582,6 +582,8 @@ payloads, signatures and delivery.
 | `PUT /api/rules/{id}` | `write` | rule body (full replacement) | The updated rule |
 | `DELETE /api/rules/{id}` | `write` | | `{id, status: "deleted"}` |
 | `POST /api/rules/{id}/test` | `write` | | Dry run: `{id, name, matched, action, error?}` |
+| `GET /api/rules/suggestions` | `read` | Query `account`, `limit` (default 50) | `{mode, count, suggestions: [{account, target, kind, addresses?, received, discarded, ratio, action, dest?, matches, status, rule_id?, rule}], history_complete}`: rules learned from your moves. `rule` is the exact rule body to `POST /api/rules`. See [rules.md](rules.md#learning-from-your-moves) |
+| `POST /api/rules/suggestions/dismiss` | `write` | `{account, target}` | `{account, target, dismissed: true}`: never suggest this address or `@domain` again |
 
 The rule body:
 
