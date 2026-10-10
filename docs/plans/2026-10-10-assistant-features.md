@@ -128,8 +128,9 @@ Design:
 Open decisions:
 - **D32 — data source.** (1) The sync cache (30-day window; no migration;
   older threads drop off). (2) A conversation hash column in the D28 index
-  (full history; needs a header rescan like 0.13). *Recommendation: (1) —
-  reply tracking is about recent mail, and it ships with no migration.*
+  (full history; needs a header rescan like 0.13). *Recommendation was (1).*
+  **Decided 2026-10-10: (2)** — the operator has a lot of mail, and the goal
+  is the complete data needed to respond properly.
 - **D33 — dismissing.** (1) Moving the message out of INBOX or flagging it
   `\Answered`/a keyword dismisses it. (2) A `dismiss_reply` tool storing
   dismissals in `imap.db`. *Recommendation: (1) — uses mail-client actions the
@@ -335,7 +336,7 @@ not from the owner) is rejected and logged.
 
 | ID | Phase | Topic | Status |
 |---|---|---|---|
-| D32 | Q1 | Reply-tracking data source | Open |
+| D32 | Q1 | Reply-tracking data source | Decided: D28 index + conversation hash (full history) |
 | D33 | Q1 | Dismissing a reply item | Open |
 | D34 | Q2 | Observing moves | Open |
 | D35 | Q2 | Suggestion threshold | Open |

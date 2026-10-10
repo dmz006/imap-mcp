@@ -400,6 +400,10 @@ they can be replaced or extended without touching call sites.
   account's INBOX (no mail is sent) and a `hold.digest` event carrying only the
   account and count. A datawatch dashboard can consume the event once its
   plugin mode exists.
+- **2026-10-10 — D32 (reply-tracking data):** reply tracking (Q1) uses the
+  full history, not the 30-day cache: the D28 index gains a conversation hash
+  per message (and the header scan restarts once to fill it). The aim is the
+  complete record needed to respond well, across all of the owner's mail.
 - **2026-10-09 — D19 (intelligence store):** `senders`, `kg_*` and
   `anomalies` move to the durable state store `imap.db`, through a state
   migration with a backup first. History comes from two sources:
