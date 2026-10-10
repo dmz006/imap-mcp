@@ -6,6 +6,25 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-09
+
+### Fixed
+- **Thread export failed when part of the thread had just moved.**
+  `export_message` / `POST /api/export` with `thread_id` used the cache's
+  locations. A message a rule moved since the last sync (up to 15 minutes)
+  made the whole export fail with 404. Thread exports now search the server,
+  prefer its locations, skip messages that no longer exist, and report them
+  (`missing` in the tool result, `X-Export-Missing` over REST). `uids` and
+  `from` exports stay strict. Found while checking the new examples against
+  a live instance.
+
+### Added
+- `docs/examples.md` sections 11–13: threads, attachments, export and
+  cross-account search over REST; profiles, the knowledge graph and
+  `/api/query` on the intelligence views; anomaly listing, resolving, and a
+  webhook receiver that pushes high-severity findings. The intro and token
+  setup (`WRITE_TOKEN`) are updated.
+
 ## [0.14.0] - 2026-10-09
 
 This completes the intelligence plan: every tool now does real work.

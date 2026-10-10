@@ -1,9 +1,12 @@
 # Examples: what you can do with imap-mcp
 
-Short, runnable recipes for the features added in 0.5–0.10: scoped tokens, the
-sync cache, `/api/query`, rules, webhooks, semantic search and the event stream.
-Each one links to the reference page with the details. [Section 10](#10-agent-workflows)
-puts them together: multi-step workflows an agent runs for you.
+Short, runnable recipes for imap-mcp's features: scoped tokens, the sync
+cache, `/api/query`, rules, webhooks, semantic search and the event stream
+(sections 2–9); threads, attachments, export and cross-account search
+(section 11); sender profiles, the knowledge graph and anomalies (sections 12
+and 13). Each one links to the reference page with the details.
+[Section 10](#10-agent-workflows) puts them together: multi-step workflows an
+agent runs for you.
 
 All addresses are `example.com` placeholders and every output is illustrative.
 The recipes assume `serve` is running on `127.0.0.1:8765` and that these
@@ -13,6 +16,7 @@ environment variables hold tokens with the scopes named
 ```bash
 export IMAP_MCP=http://127.0.0.1:8765
 export READ_TOKEN=...    # scopes: read
+export WRITE_TOKEN=...   # scopes: read, write  (downloads, exports, resolving anomalies)
 export ADMIN_TOKEN=...   # scopes: read, write, admin
 ```
 
@@ -685,3 +689,191 @@ everything and report, and it can't resolve or move anything. To get the
 alert pushed instead, subscribe a webhook to `anomaly.detected` (section 5).
 The payload is just `{id, type, severity}`, so the receiver fetches the
 details with its own token.
+
+
+---
+
+## 11. Threads, attachments and export from a script
+
+The same features the agent uses in 10.12, over REST
+([rest-api.md](rest-api.md#get-apithreadsthread_id-read)). Reads need `read`.
+Downloads need `write`, return the raw bytes as `application/octet-stream`,
+and write nothing on the server.
+
+**Search every account at once**, then follow a hit into its conversation.
+Without `live=true` the search covers the cache (the sync window); with it,
+each account's INBOX over full history:
+
+```bash
+curl -sS -G "$IMAP_MCP/api/search/cross" -H "Authorization: Bearer $READ_TOKEN" \
+  --data-urlencode "from=example.net" --data-urlencode "subject=renewal" | jq '.hits[] | {account, folder, uid, date, thread_id}'
+
+TID=$(curl -sS -G "$IMAP_MCP/api/search/cross" -H "Authorization: Bearer $READ_TOKEN" \
+  --data-urlencode "from=example.net" --data-urlencode "subject=renewal" | jq -r '.hits[0].thread_id')
+curl -sS "$IMAP_MCP/api/threads/$(jq -rn --arg t "$TID" '$t|@uri')" -H "Authorization: Bearer $READ_TOKEN" \
+  | jq '{count, live_search, messages: [.messages[] | {date, from, folder, uid, source}]}'
+```
+
+`live_search: true` means part of the thread was older than the cache, so the
+server was searched for it.
+
+**List a message's attachments, then download one:**
+
+```bash
+MSG="$IMAP_MCP/api/accounts/work/folders/INBOX/messages/4211"
+curl -sS "$MSG/attachments" -H "Authorization: Bearer $READ_TOKEN" | jq '.attachments[] | {part, filename, mime, size_bytes}'
+curl -sS -OJ "$MSG/attachments/2" -H "Authorization: Bearer $WRITE_TOKEN"   # saves under the sanitised filename
+```
+
+Folder names with `/` (such as `[Gmail]/All Mail`) go in the path
+URL-encoded: `%5BGmail%5D%2FAll%20Mail`.
+
+**Export one message, or a whole thread, as files any mail client opens:**
+
+```bash
+curl -sS -o 4211.eml "$MSG/export.eml" -H "Authorization: Bearer $WRITE_TOKEN"
+curl -sS -D - -o thread.mbox -X POST "$IMAP_MCP/api/export" \
+  -H "Authorization: Bearer $WRITE_TOKEN" -H "Content-Type: application/json" \
+  -d "$(jq -n --arg t "$TID" '{thread_id: $t}')" | grep -i x-export-count
+```
+
+A thread export searches the server, so it still works when a rule has just
+moved part of the thread. Messages that are gone are skipped and counted in
+`X-Export-Missing`. `POST /api/export` also takes
+`{"folder": "INBOX", "uids": [4211, 4212]}` or
+`{"from": "billing@example.com"}`. A selection over the `tools.export_max_*`
+caps gets 422 before anything is downloaded.
+
+---
+
+## 12. Profiles and the knowledge graph from a script
+
+Sender profiles and the graph cover all of your history, not just the cache
+([intelligence.md](intelligence.md)).
+
+**Is the first history scan done?** Profiles and the graph are partial until
+it is, and anomaly detection waits for it:
+
+```bash
+curl -sS "$IMAP_MCP/api/health" | jq '.intelligence | {backfill_complete, folders_complete, folders, messages_indexed, senders, kg_relationships}'
+```
+
+**One sender's profile**, including their graph edges and open anomalies:
+
+```bash
+curl -sS "$IMAP_MCP/api/senders/$(jq -rn '"ann@example.com"|@uri')" -H "Authorization: Bearer $READ_TOKEN" \
+  | jq '{role, role_source, message_count, sent_count, avg_reply_seconds, dmarc_pass, dmarc_fail,
+         scan_complete, top_links: [.relationships[:5][] | "\(.predicate) \(.object) x\(.weight)"]}'
+```
+
+**The graph around a person, a domain or a project**, strongest first:
+
+```bash
+curl -sS -G "$IMAP_MCP/api/kg" -H "Authorization: Bearer $READ_TOKEN" --data-urlencode "entity=example.com" \
+  | jq '.relationships[] | "\(.subject) \(.predicate) \(.object) (x\(.weight), current: \(.current))"'
+curl -sS -G "$IMAP_MCP/api/kg" -H "Authorization: Bearer $READ_TOKEN" --data-urlencode "predicate=deadline" \
+  | jq '.relationships[] | {thread: .subject, what: .object, due: .properties.due, confidence}'
+```
+
+`confidence` is 1 for edges read from headers and tags, 0.6 for edges the
+model read from a message body.
+
+**Questions across all senders** use `/api/query` (admin), as in section 2:
+
+```bash
+q() { curl -sS -X POST "$IMAP_MCP/api/query" -H "Authorization: Bearer $ADMIN_TOKEN" \
+        -H "Content-Type: application/json" -d "$1"; }
+
+# How your senders break down by role, and how each role was decided.
+q '{"view":"senders","group_by":["role","role_source"],"aggregate":[{"fn":"count","as":"n"}],
+    "order_by":[{"field":"n","desc":true}]}'
+
+# People who write a lot and whom you answer slowest.
+q '{"view":"senders","fields":["address","message_count","reply_count","avg_reply_time"],
+    "where":[{"field":"reply_count","op":"gte","value":3}],
+    "order_by":[{"field":"avg_reply_time","desc":true}],"limit":10}'
+
+# Your strongest correspondents, and whether the relationship is current.
+q '{"view":"kg","fields":["subject","weight","last_seen","current"],
+    "where":[{"field":"predicate","op":"eq","value":"corresponds_with"}],
+    "order_by":[{"field":"weight","desc":true}],"limit":20}'
+```
+
+---
+
+## 13. Anomaly alerts
+
+Anomaly detection runs once the history scan is complete and checks new mail
+([intelligence.md](intelligence.md#anomalies)).
+
+**What's open, worst first:**
+
+```bash
+curl -sS -G "$IMAP_MCP/api/anomalies" -H "Authorization: Bearer $READ_TOKEN" --data-urlencode "severity=high" \
+  | jq '.anomalies[] | {id, type, sender, description, folder, uid, message_ref}'
+
+# Counts by type and severity, including resolved ones (q is defined in section 12).
+q '{"view":"anomalies","group_by":["type","severity","resolved"],"aggregate":[{"fn":"count","as":"n"}]}'
+```
+
+**Mark one reviewed** (it stays in the log with `resolved: true`):
+
+```bash
+curl -sS -X POST "$IMAP_MCP/api/anomalies/17/resolve" \
+  -H "Authorization: Bearer $WRITE_TOKEN" -H "Content-Type: application/json" -d '{}'
+```
+
+**Push high-severity findings to your phone.** `anomaly.detected` webhooks
+carry `{id, type, severity}` only, never the sender. This receiver extends the
+one in section 5: it verifies the signature, fetches the finding with its own
+read token, and pushes `high` ones.
+
+```python
+# anomaly_receiver.py: python3 anomaly_receiver.py  (listens on 127.0.0.1:9001)
+import hashlib, hmac, json, os, time, urllib.parse, urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+SECRET = os.environ["WEBHOOK_SECRET"]
+PUSH_URL = os.environ["PUSH_URL"]
+API, TOKEN = os.environ["IMAP_MCP"], os.environ["READ_TOKEN"]
+
+def verify(header, body, max_age=300):
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    if abs(time.time() - int(parts["t"])) > max_age:
+        return False
+    mac = hmac.new(SECRET.encode(), f'{parts["t"]}.'.encode() + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(mac, parts["v1"])
+
+def finding(account, typ, fid):
+    q = urllib.parse.urlencode({"account": account, "type": typ, "limit": 50})
+    req = urllib.request.Request(f"{API}/api/anomalies?{q}", headers={"Authorization": f"Bearer {TOKEN}"})
+    for a in json.load(urllib.request.urlopen(req))["anomalies"]:
+        if a["id"] == fid:
+            return a
+
+class Hook(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        if not verify(self.headers.get("X-Imap-Mcp-Signature", ""), body):
+            self.send_response(401); self.end_headers(); return
+        ev = json.loads(body)
+        d = ev["data"]
+        if ev["event"] == "anomaly.detected" and d["severity"] == "high":
+            a = finding(ev["account"], d["type"], d["id"])
+            if a:
+                msg = f'{a["type"]}: {a["description"]} ({a.get("folder", "")} uid {a.get("uid", "")})'
+                urllib.request.urlopen(urllib.request.Request(PUSH_URL, data=msg.encode()))
+        self.send_response(204); self.end_headers()
+
+HTTPServer(("127.0.0.1", 9001), Hook).serve_forever()
+```
+
+```bash
+curl -sS -X POST "$IMAP_MCP/api/webhooks" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"url":"http://127.0.0.1:9001/hook","events":["anomaly.detected"]}'
+```
+
+The push message names the finding and where the message is, so you can open
+it in your mail client. The sender's address travels only from imap-mcp to
+the receiver on your machine, not in the webhook itself.

@@ -471,6 +471,12 @@ A selection over `tools.export_max_messages` messages or `tools.export_max_mb`
 in total is refused with 422 before any content is downloaded. It is never
 truncated. Messages are fetched with `BODY.PEEK[]`.
 
+A `thread_id` export always searches the server for the thread and uses the
+server's locations. The cache can lag a move (by a rule, say) by one sync
+interval. Messages that no longer exist are skipped, and the
+`X-Export-Missing` header gives their number. A `uids` or `from` export is
+strict: a UID that doesn't exist gets 404.
+
 ## Intelligence
 
 These routes read `imap.db`. Sender profiles and the knowledge graph come from
