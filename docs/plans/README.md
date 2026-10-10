@@ -4,6 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
+| 2026-10-10 | [Assistant features: reply tracking, learning, smarter spam, unsubscribe, screener](2026-10-10-assistant-features.md) | Planned — Q0–Q5 (0.15.5–0.20.0); decisions D32–D43 open |
 | 2026-10-10 | [New-sender hold and held-mail digest](2026-10-10-new-sender-hold.md) | Done — shipped in 0.15.0 |
 | 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | Done — P1–P4 shipped in 0.11.0–0.14.0 |
 | 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P5 built (0.5.3–0.10.0) |
@@ -52,4 +53,4 @@
 | Stdio + webhooks | stdio mode never starts the webhook enqueuer/dispatcher, so `rule.fired` from `run_rules` there is never delivered. |
 
 | `run-rules --json` summary | Machine-readable run summary (rules evaluated, per-rule matched/action/error, duration; no message content) so the scheduled wrapper can post it to datawatch once dmz006/datawatch#204 (result panel) exists. |
-| "Asks for payment" anomaly | LLM check for a first-time or unusual sender asking for payment, credentials or gift cards. Deferred from D22 (2026-10-09); builds on the P4 detector. |
+| "Asks for payment" anomaly | LLM check for a first-time or unusual sender asking for payment, credentials or gift cards. Deferred from D22 (2026-10-09); planned as Q3 of [2026-10-10-assistant-features.md](2026-10-10-assistant-features.md). |
