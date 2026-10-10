@@ -32,9 +32,9 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.14.2 |
+| Current version | 0.15.5 |
 | Location | the repo root |
-| Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine; durable webhooks; query DSL; trust-gated inbound commands |
+| Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
 ---
 
@@ -45,7 +45,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | `imap-mcp` | MCP over stdio. Takes no flags (see config path below) |
 | `imap-mcp serve [--config PATH]` | HTTP server: MCP at `/mcp`, REST at `/api`. Starts the webhook dispatcher |
 | `imap-mcp auth-setup [--account NAME] [--config PATH]` | OAuth2 browser flow for an `xoauth2` account (defaults to the default account). Callback on loopback only; verifies a random `state` |
-| `imap-mcp run-rules [--dry-run] [--config PATH]` | Apply active rules once and exit. Opens only `imap.db`; queues `rule.fired` webhooks for `serve` to deliver |
+| `imap-mcp run-rules [--dry-run] [--config PATH]` | Apply active rules once and exit (the hourly job). Opens `imap.db`, and `cache.db` when its key resolves (`new_sender` reads classification halls; without it they count as unclassified). A full run sends the daily held-mail digest when due. Queues `rule.fired` and `hold.digest` webhooks for `serve` to deliver |
 | `imap-mcp db encrypt [--only state\|cache] [--config PATH]` | Encrypt existing plaintext DBs in place with the configured keys. Stop the service first |
 | `imap-mcp version` / `help` | Print version / usage |
 
@@ -95,12 +95,14 @@ Defaults that matter: server `127.0.0.1:8765`; state DB
 500 messages / 100 MB; `intelligence:` on, scan every 15 min, backfill
 600 messages/min, batch 200, model roles 20 per tick; KG on, stale after 365
 days, model extraction 10 bodies per tick; anomalies on (lookback 7 days, auth 3 passes,
-silence 20 messages / 30 days, spike 10 / 5x).
+silence 20 messages / 30 days, spike 10 / 5x); `rules:` held-mail digest on, at
+the first full rule run from 08:00 local (`hold_digest`, `hold_digest_hour`).
 
 Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
 `IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
 `IMAP_MCP_DB_ENCRYPTION_KEY`, `IMAP_MCP_DB_CACHE_ENCRYPTION_KEY`,
 `IMAP_MCP_SYNC_*`, `IMAP_MCP_OLLAMA_URL`, `IMAP_MCP_ENRICHMENT_*`,
+`IMAP_MCP_RULES_HOLD_DIGEST`, `IMAP_MCP_RULES_HOLD_DIGEST_HOUR`,
 `IMAP_MCP_LOG_LEVEL`. Full list: `applyEnvOverrides` in `internal/config/config.go`.
 
 Credentials always via references:
@@ -201,6 +203,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | `internal/mcp/tools/impl_*.go` | Tool handlers; `impl_content.go` holds threads, attachments, export, cross-account search |
 | `internal/intel/` | Header scanner (D19, D20, D21, D28): resumable, rate-limited, PEEK-only scan of all folders; sender profiles, hashed per-message index, reply pairing, roles (signals → cached hall tags → classify model via `Pipeline.ClassifyWhenIdle`); knowledge graph (`kg.go`: header edges once per message via `kg_done`, wing/room edges, gated model extraction, staleness); anomalies (`anomaly.go`: per-message checks inline after the history scan completes, periodic silence/volume checks, scores, `anomaly.detected`) |
 | `internal/service/intelstats.go` | Scan progress for `/api/health` |
+| `internal/service/rules.go`, `newsender.go`, `digest.go` | Rule engine; `new_sender` hold (D30: history check, header signals, real-contact overrides, hall fallback, release → trusted, dry-run preview); daily digest (D31: INBOX summary + `hold.digest`) and `HoldStatus` for health |
 | `internal/service/thread.go`, `attachments.go`, `export.go`, `xsearch.go` | Thread lookup (cache + live fallback), attachment list/fetch, .eml/.mbox export, cross-account search (D23–D27) |
 | `internal/api/server.go` | REST router with per-route scopes; SSE `/api/events` |
 | `internal/server/server.go` | Combined HTTP server: `browserGuard` → auth → `/mcp` + `/api` |
@@ -231,7 +234,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Write | `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender` | write |
 | Send | `send_message` | send |
 | Analytics | `top_senders`, `summarize_folder`, `detect_subscriptions`, `get_sender_history` | read |
-| Rules | `list_rules`; `create_rule`, `delete_rule`, `run_rules` | read; write |
+| Rules | `list_rules`; `create_rule` (incl. `new_sender`, `new_sender_days`), `delete_rule`, `run_rules` (dry runs of `new_sender` rules return a `preview`) | read; write |
 | Search | `search_messages`, `semantic_search` | read |
 | Enrichment | `enrichment_status`; `trigger_enrichment` | read; admin |
 | Cache | `cache_sweep` (cache only, `dry_run` defaults to true) | admin |
@@ -282,12 +285,13 @@ rules              -- automation rules (conditions + actions JSON, run_count)
 webhooks           -- registered endpoints (signing secret, active, fail_count)
 webhook_deliveries -- durable outbox (metadata-only payloads, retries)
 inbound_nonces     -- replay protection for inbound commands (account, nonce)
-senders            -- sender profiles: counts each way, dates, reply stats, list/bulk/auto, DKIM/DMARC, role (D19, D20)
+senders            -- sender profiles: counts each way, dates, reply stats, list/bulk/auto, DKIM/DMARC, role (D19, D20); trusted (released from a hold, D30)
 intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash, kg_done/kg_tags_done/kg_llm_done (no addresses/content)
 intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at)
 kg_entities        -- KG nodes: person, organization, thread, project, topic (P3, D21)
 kg_relationships   -- KG edges: weight, valid_from, last_seen, valid_to (stale), confidence; unique (subject, predicate, object)
 anomalies          -- findings (D22): type, severity, description, details JSON; folder/uid/message_ref for per-message ones; resolved
+held_messages      -- mail a new_sender rule held (D30): account, Message-ID hash and ref, sender, subject (200 B), reasons, folder, held/released/digested times; pruned after 90 days
 ```
 
 **`cache.db`** (disposable; rebuilt from IMAP; dropped and recreated when its
@@ -335,6 +339,7 @@ enqueuer subscribe to every event.
 | `cache.cleaned` | sync (cleaning, `cache_sweep`) |
 | `enrichment.done`, `enrichment.error` | enrichment pipeline |
 | `rule.fired` | rules (`run_rules`, `run-rules`, REST) |
+| `hold.digest` | daily held-mail digest (D31): `{held}` count; the account is on the event |
 | `account.connected`, `account.error` | IMAP pool |
 | `account.disconnected` | declared, not published |
 | `anomaly.detected` | intel scanner: `{id, type, severity}` (webhooks keep the same three fields) |
@@ -350,7 +355,7 @@ with the listed scope (`internal/api/server.go` `Router`). Full reference:
 `docs/rest-api.md`.
 
 ```
-GET    /api/health                                                     open
+GET    /api/health                                                     open  (sync, enrichment, intelligence progress unnamed, rules: digest settings + held counts, tools, storage)
 GET    /api/events                                                     read (SSE)
 GET    /api/accounts                                                   read
 POST   /api/accounts/{account}/sync                                    admin
@@ -394,7 +399,8 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 
 | Item | Notes |
 |------|-------|
-| Intelligence | Content cleaning before models (`Cleaner`); LLM "asks for payment" anomaly (backlog) |
+| Intelligence | Content cleaning before models (`Cleaner`) |
+| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1), learning from moves (Q2), model second opinion + payment/credential-request anomaly (Q3), one-click unsubscribe (Q4), screener (Q5) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

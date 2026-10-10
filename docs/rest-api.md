@@ -112,6 +112,7 @@ No token needed.
   "intelligence": {"enabled": true, "folders": 14, "folders_complete": 14, "backfill_complete": true,
                    "messages_indexed": 48210, "senders": 3120, "replies_paired": 912,
                    "roles": {"newsletter": 1210, "bot": 640, "personal": 380, "unknown": 890}, "last_scan": "2026-10-09T22:49:45Z"},
+  "rules": {"hold_digest": true, "hold_digest_hour": 8, "held": 37, "awaiting_digest": 0, "last_digest": "2026-10-10T14:24:01Z"},
   "tools": {"attachment_inline_kb": 64, "attachment_max_mb": 25, "export_max_messages": 500, "export_max_mb": 100},
   "storage": {"state_encrypted": false, "cache_encrypted": false}
 }
@@ -127,6 +128,7 @@ No token needed.
 | `enrichment.backfill_paused` | Present only while a gate pauses backfill. Gives the reason. |
 | `enrichment.backoff_seconds` | Present only during a provider backoff |
 | `intelligence.*` | Header-scan progress and the role breakdown (counts only). `backfill_complete` is true once every folder has been scanned once. `accounts` gives per-account progress by position (`index`, config order) without names; `GET /api/intelligence/status` has the names. See [intelligence.md](intelligence.md#watching-progress). |
+| `rules.*` | The held-mail digest settings (`rules:` config block) and counts: messages held by `new_sender` rules and not released (last 90 days), how many are waiting for the next digest, and when the last digest was sent. Counts only. See [rules.md](rules.md#the-daily-digest). |
 | `tools.*` | Limits for attachment downloads and exports (the `tools:` config block) |
 | `storage.*` | Whether each database has an encryption key configured. See [encryption.md](encryption.md). |
 

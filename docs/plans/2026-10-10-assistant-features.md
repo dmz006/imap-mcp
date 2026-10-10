@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-10
 - **Starting version:** 0.15.4
-- **Status:** Planned. No phase started. Each phase's open decisions are put to
+- **Status:** In progress. Q0 done (0.15.5). Each phase's open decisions are put to
   the operator (DIP, one at a time) when that phase starts, and recorded in
   AGENT.md § Recorded Decisions and in the table below.
 - **Source:** a survey of open-source email assistants and spam tools (Inbox
@@ -352,7 +352,7 @@ not from the owner) is rejected and logged.
 
 | Phase | Version | Status | Tested | Validated |
 |---|---|---|---|---|
-| Q0 | 0.15.5 | Planned | | |
+| Q0 | 0.15.5 | Done | Yes | Yes |
 | Q1 | 0.16.0 | Planned | | |
 | Q2 | 0.17.0 | Planned | | |
 | Q3 | 0.18.0 | Planned | | |

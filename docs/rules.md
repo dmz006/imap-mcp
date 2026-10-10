@@ -272,7 +272,8 @@ rules:
 ```
 
 Environment: `IMAP_MCP_RULES_HOLD_DIGEST`, `IMAP_MCP_RULES_HOLD_DIGEST_HOUR`.
-Held-message records are kept for 90 days.
+Held-message records are kept for 90 days. `GET /api/health` shows the
+settings and the counts in its `rules` block.
 
 ## The `rule.fired` event
 

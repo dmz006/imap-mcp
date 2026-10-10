@@ -6,6 +6,19 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-10-10
+
+### Added
+- **Held-mail digest in `/api/health`.** A `rules` block shows the digest
+  settings (`hold_digest`, `hold_digest_hour`) and counts: messages held and
+  not released, awaiting the next digest, and the last digest time. Counts
+  only; no senders, subjects or account names.
+
+### Documentation
+- `IMAP-MCP-CONTEXT.md` brought up to date for 0.15: the `new_sender` hold,
+  `held_messages`, `senders.trusted`, `hold.digest`, the `rules:` block and
+  `run-rules` opening the cache.
+
 ## [0.15.4] - 2026-10-10
 
 ### Fixed

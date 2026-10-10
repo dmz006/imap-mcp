@@ -4,7 +4,7 @@
 
 | Date | Plan | Status |
 |------|------|--------|
-| 2026-10-10 | [Assistant features: reply tracking, learning, smarter spam, unsubscribe, screener](2026-10-10-assistant-features.md) | Planned — Q0–Q5 (0.15.5–0.20.0); decisions D32–D43 open |
+| 2026-10-10 | [Assistant features: reply tracking, learning, smarter spam, unsubscribe, screener](2026-10-10-assistant-features.md) | In progress — Q0 done (0.15.5); Q1–Q5 planned (0.16.0–0.20.0); decisions D32–D43 open |
 | 2026-10-10 | [New-sender hold and held-mail digest](2026-10-10-new-sender-hold.md) | Done — shipped in 0.15.0 |
 | 2026-10-09 | [Intelligence builders and stub tools](2026-10-09-intelligence-and-stubs.md) | Done — P1–P4 shipped in 0.11.0–0.14.0 |
 | 2026-10-08 | [Iteration 2 — sync cache](2026-10-08-sync-cache.md) | In progress — P0–P5 built (0.5.3–0.10.0) |
