@@ -134,143 +134,226 @@ func (s *Service) replyAccounts(account string) []string {
 }
 
 // replyItems reads one account's open items, oldest first. Incoming items
-// are filtered by sender role and then checked live for \Answered.
+// skip mail in Trash, Junk or a hold folder (D48), then keep known contacts
+// and only clean first contacts, checked live along with \Answered.
 func (s *Service) replyItems(ctx context.Context, account string, outgoing bool, olderThan, within int64, limit int, now time.Time) ([]ReplyItem, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
+	args := []any{account}
 	q := `SELECT t.thread_hash, COALESCE(t.thread_id,''), t.last_hash, COALESCE(t.counterpart,''), COALESCE(s.name,''), COALESCE(t.subject,''),
 			COALESCE(t.message_ref,''), COALESCE(t.folder,''), COALESCE(t.uid,0), t.last_date,
-			COALESCE(s.role,'unknown'), COALESCE(s.sent_count,0)
+			COALESCE(s.role,'unknown'), COALESCE(s.role_source,''), COALESCE(s.sent_count,0) + COALESCE(s.reply_count,0)
 		FROM reply_threads t LEFT JOIN senders s ON s.address = t.counterpart
+		LEFT JOIN intel_messages im ON im.account = t.account AND im.msg_hash = t.last_hash
 		WHERE t.account = ? AND t.outgoing = ? AND t.last_date <= ? AND t.last_date >= ?
 			AND COALESCE(t.dismissed_hash, 0) <> t.last_hash
 			AND COALESCE(s.role,'unknown') NOT IN ('newsletter','bot')`
-	if !outgoing {
-		q += ` AND t.direct = 1 AND t.answered = 0
-			AND NOT EXISTS (SELECT 1 FROM intel_messages o WHERE o.account = t.account AND o.outgoing = 1 AND o.reply_hash = t.last_hash)
-			AND NOT EXISTS (SELECT 1 FROM held_messages h WHERE h.account = t.account AND h.msg_hash = t.last_hash AND h.released_at IS NULL)`
-	}
-	q += ` ORDER BY t.last_date`
 	out := 0
 	if outgoing {
 		out = 1
 	}
-	rows, err := s.db.StateSQL().QueryContext(ctx, q, account, out, olderThan, within)
+	args = append(args, out, olderThan, within)
+	if !outgoing {
+		q += ` AND t.direct = 1 AND t.answered = 0
+			AND NOT EXISTS (SELECT 1 FROM intel_messages o WHERE o.account = t.account AND o.outgoing = 1 AND o.reply_hash = t.last_hash)
+			AND NOT EXISTS (SELECT 1 FROM held_messages h WHERE h.account = t.account AND h.msg_hash = t.last_hash AND h.released_at IS NULL)`
+		gone, err := s.replyClearingFolders(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		if len(gone) > 0 {
+			q += ` AND COALESCE(im.folder, t.folder, '') NOT IN (` + strings.TrimSuffix(strings.Repeat("?,", len(gone)), ",") + `)`
+			for _, f := range gone {
+				args = append(args, f)
+			}
+		}
+	}
+	q += ` ORDER BY t.last_date`
+	rows, err := s.db.StateSQL().QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
-	var items []ReplyItem
+	// Read every row before any further query: the state database allows
+	// one connection, so a query inside the loop would wait forever.
+	type row struct {
+		it        ReplyItem
+		known     bool
+		uid, last int64
+	}
+	var all []row
 	for rows.Next() {
-		var it ReplyItem
-		var uid, last, sent int64
-		var role string
-		if err := rows.Scan(&it.threadHash, &it.ThreadID, &it.lastHash, &it.Counterpart, &it.Name, &it.Subject,
-			&it.MessageRef, &it.Folder, &uid, &last, &role, &sent); err != nil {
+		var r row
+		var written int64
+		var role, roleSource string
+		if err := rows.Scan(&r.it.threadHash, &r.it.ThreadID, &r.it.lastHash, &r.it.Counterpart, &r.it.Name, &r.it.Subject,
+			&r.it.MessageRef, &r.it.Folder, &r.uid, &r.last, &role, &roleSource, &written); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if !outgoing && !s.repliable(account, role, sent, it.MessageRef) {
-			continue
-		}
-		it.Account, it.UID = account, uint32(uid)
-		it.LastDate = time.Unix(last, 0).UTC().Format(time.RFC3339)
-		it.DaysWaiting = int(now.Sub(time.Unix(last, 0)) / (24 * time.Hour))
-		items = append(items, it)
-		if len(items) >= limit {
-			break
-		}
+		r.known = outgoing || written > 0 || ((role == "personal" || role == "colleague") && strings.HasPrefix(roleSource, "signal:"))
+		all = append(all, r)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	var items []ReplyItem
+	firstContact := map[int64]bool{} // thread hash → needs the live header check
+	for _, r := range all {
+		it := r.it
+		if !r.known {
+			ok, err := s.cleanFirstContact(ctx, account, it.Counterpart, it.MessageRef)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			firstContact[it.threadHash] = true
+		}
+		it.Account, it.UID = account, uint32(r.uid)
+		it.LastDate = time.Unix(r.last, 0).UTC().Format(time.RFC3339)
+		it.DaysWaiting = int(now.Sub(time.Unix(r.last, 0)) / (24 * time.Hour))
+		items = append(items, it)
+		if len(items) >= limit {
+			break
+		}
+	}
 	if !outgoing {
-		items = s.dropAnswered(ctx, account, items)
+		items = s.liveCheck(ctx, account, items, firstContact)
 	}
 	return items, nil
 }
 
-// repliable reports whether an incoming conversation is one the owner would
-// answer: a personal contact or colleague, or a vendor or unknown sender the
-// owner has written to or whose message the model classified as a
-// conversation or personal mail.
-func (s *Service) repliable(account, role string, sent int64, messageRef string) bool {
-	switch role {
-	case "personal", "colleague":
-		return true
+// replyClearingFolders are the folders whose mail never needs a reply:
+// Trash, Junk, configured discard folders and hold folders (D48).
+func (s *Service) replyClearingFolders(ctx context.Context, account string) ([]string, error) {
+	var out []string
+	if s.pool != nil {
+		kinds, err := s.discardFolders(account)
+		if err != nil {
+			slog.Debug("replies: list discard folders", "account", account, "err", err)
+		}
+		for f := range kinds {
+			out = append(out, f)
+		}
 	}
-	if sent > 0 {
-		return true
+	rows, err := s.db.StateSQL().QueryContext(ctx, `SELECT DISTINCT folder FROM held_messages WHERE account = ? AND folder IS NOT NULL`, account)
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
+	for rows.Next() {
+		var f string
+		if rows.Scan(&f) == nil && !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out, rows.Err()
+}
+
+// cleanFirstContact is the database half of the first-contact check (D48):
+// the classify model called the message a conversation or personal mail,
+// and the sender has no open anomaly other than new_sender (which every first
+// contact has). The header half runs live in liveCheck.
+func (s *Service) cleanFirstContact(ctx context.Context, account, sender, messageRef string) (bool, error) {
 	cache := s.db.SQL()
 	id := strings.Trim(messageRef, "<>")
 	if cache == nil || id == "" {
-		return false
+		return false, nil
 	}
 	var hall sql.NullString
-	err := cache.QueryRow(`SELECT hall FROM messages WHERE account = ? AND message_id IN (?, ?) AND COALESCE(hall,'') <> '' LIMIT 1`,
-		account, id, "<"+id+">").Scan(&hall)
-	if err != nil {
-		return false
+	if err := cache.QueryRowContext(ctx, `SELECT hall FROM messages WHERE account = ? AND message_id IN (?, ?) AND COALESCE(hall,'') <> '' LIMIT 1`,
+		account, id, "<"+id+">").Scan(&hall); err != nil {
+		return false, nil //nolint:nilerr // not cached or not classified: not a clean first contact
 	}
-	h := strings.Trim(strings.ToLower(strings.TrimSpace(hall.String)), "<>")
-	return h == "conversation" || h == "personal"
+	if h := strings.Trim(strings.ToLower(strings.TrimSpace(hall.String)), "<>"); h != "conversation" && h != "personal" {
+		return false, nil
+	}
+	var open int
+	err := s.db.StateSQL().QueryRowContext(ctx, `SELECT count(*) FROM anomalies WHERE sender = ? AND resolved = 0 AND anomaly_type <> 'new_sender'`,
+		sender).Scan(&open)
+	return open == 0, err
 }
 
-// dropAnswered checks the listed messages' flags on the server and drops
-// those the owner has since answered (\Answered), recording it so they are
-// not checked again. It is best effort: if the server cannot be reached the
-// items are kept.
-func (s *Service) dropAnswered(ctx context.Context, account string, items []ReplyItem) []ReplyItem {
-	if s.pool == nil || len(items) == 0 {
+// liveCheck reads the listed messages on the server: it drops those the
+// owner has since answered (\Answered, recorded so they are not checked
+// again) and first contacts whose headers show any bulk or scam signal (the
+// new-sender hold's checks, D48). If the server cannot be reached, answered
+// checks are skipped and first contacts are dropped (they cannot be vetted).
+func (s *Service) liveCheck(ctx context.Context, account string, items []ReplyItem, firstContact map[int64]bool) []ReplyItem {
+	if len(items) == 0 {
 		return items
 	}
+	var gate *newSenderGate
+	if len(firstContact) > 0 {
+		g, err := s.newSenderGate(account, 0)
+		if err != nil {
+			slog.Debug("replies: first-contact check unavailable", "account", account, "err", err)
+		} else {
+			gate = g
+		}
+	}
+	key := func(folder string, uid uint32) string { return folder + "|" + strconv.FormatUint(uint64(uid), 10) }
 	byFolder := map[string][]imaplib.UID{}
 	for _, it := range items {
 		if it.Folder != "" && it.UID > 0 {
 			byFolder[it.Folder] = append(byFolder[it.Folder], imaplib.UID(it.UID))
 		}
 	}
-	answered := map[string]bool{} // folder|uid
-	c, err := s.pool.Resolve(account)
-	if err != nil {
-		return items
-	}
-	c.Lock()
-	for folder, uids := range byFolder {
-		if ctx.Err() != nil {
-			break
-		}
-		if _, err := c.Client().Select(folder, &imaplib.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-			slog.Debug("replies: flag check select", "account", account, "err", err)
-			continue
-		}
-		msgs, err := c.Client().Fetch(imaplib.UIDSetNum(uids...), &imaplib.FetchOptions{UID: true, Flags: true}).Collect()
-		if err != nil {
-			slog.Debug("replies: flag check fetch", "account", account, "err", err)
-			continue
-		}
-		for _, m := range msgs {
-			if slices.Contains(m.Flags, imaplib.FlagAnswered) {
-				answered[folder+"|"+strconv.FormatUint(uint64(m.UID), 10)] = true
+	answered, clean := map[string]bool{}, map[string]bool{}
+	if s.pool != nil {
+		if c, err := s.pool.Resolve(account); err == nil {
+			c.Lock()
+			for folder, uids := range byFolder {
+				if ctx.Err() != nil {
+					break
+				}
+				if _, err := c.Client().Select(folder, &imaplib.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+					slog.Debug("replies: live check select", "account", account, "err", err)
+					continue
+				}
+				opts := &imaplib.FetchOptions{UID: true, Flags: true}
+				if gate != nil {
+					opts.Envelope = true
+					opts.BodySection = []*imaplib.FetchItemBodySection{{Specifier: imaplib.PartSpecifierHeader, HeaderFields: holdHeaderFields, Peek: true}}
+				}
+				msgs, err := c.Client().Fetch(imaplib.UIDSetNum(uids...), opts).Collect()
+				if err != nil {
+					slog.Debug("replies: live check fetch", "account", account, "err", err)
+					continue
+				}
+				for _, m := range msgs {
+					k := key(folder, uint32(m.UID))
+					if slices.Contains(m.Flags, imaplib.FlagAnswered) {
+						answered[k] = true
+					}
+					if gate != nil && m.Envelope != nil && len(m.Envelope.From) > 0 {
+						real, score, _, err := gate.signals(m.Envelope, headerOf(m), bareAddr(m.Envelope.From[0].Addr()))
+						if err == nil && (real || score == 0) {
+							clean[k] = true
+						}
+					}
+				}
 			}
+			c.Unlock()
 		}
-	}
-	c.Unlock()
-	if len(answered) == 0 {
-		return items
 	}
 	kept := items[:0]
 	for _, it := range items {
-		if !answered[it.Folder+"|"+strconv.FormatUint(uint64(it.UID), 10)] {
-			kept = append(kept, it)
+		k := key(it.Folder, it.UID)
+		if answered[k] {
+			if _, err := s.db.StateSQL().ExecContext(ctx, `UPDATE reply_threads SET answered = 1 WHERE account = ? AND thread_hash = ? AND last_hash = ?`,
+				account, it.threadHash, it.lastHash); err != nil {
+				slog.Debug("replies: record answered", "account", account, "err", err)
+			}
 			continue
 		}
-		if _, err := s.db.StateSQL().ExecContext(ctx, `UPDATE reply_threads SET answered = 1 WHERE account = ? AND thread_hash = ? AND last_hash = ?`,
-			account, it.threadHash, it.lastHash); err != nil {
-			slog.Debug("replies: record answered", "account", account, "err", err)
+		if firstContact[it.threadHash] && !clean[k] {
+			continue
 		}
+		kept = append(kept, it)
 	}
 	return kept
 }

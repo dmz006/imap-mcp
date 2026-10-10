@@ -6,6 +6,22 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-10
+
+### Fixed
+- **`needs_reply` listed spam** (found validating on production; AGENT.md
+  D48). Mail in Trash, Junk or a hold folder no longer needs a reply. A
+  first-time sender now counts only when the classify model calls the
+  message a conversation or personal mail, its headers pass the new-sender
+  hold's checks with no bulk or scam signal (read live), and the sender has
+  no open anomaly besides `new_sender`. People you have written to always
+  count.
+- **Suggested rules for senders a display-name rule already covers.** A
+  rule's `from` now counts as covering a sender when it matches the display
+  name too, as IMAP SEARCH FROM does.
+- `needs_reply` could hang on the single state-database connection when
+  checking first contacts; rows are now read before any further query.
+
 ## [0.17.0] - 2026-10-10
 
 ### Added

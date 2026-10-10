@@ -289,6 +289,34 @@ func (g *newSenderGate) released(hash int64, from string, dryRun bool) (bool, er
 // judge scores a new sender's message from its headers. A reply to the
 // owner's own mail, or copying someone the owner writes to, always stays.
 func (g *newSenderGate) judge(env *imaplib.Envelope, h mail.Header, from string) ([]string, bool, error) {
+	real, score, reasons, err := g.signals(env, h, from)
+	if err != nil || real {
+		return nil, false, err
+	}
+	switch {
+	case score >= holdScore:
+		return reasons, true, nil
+	case score == 0:
+		return nil, false, nil
+	}
+	// One signal: let the classify model's hall decide. Not classified yet
+	// means the message stays; the next run judges it again.
+	hall, err := g.hall(env.MessageID)
+	if err != nil {
+		return nil, false, err
+	}
+	switch hall {
+	case "", "conversation", "personal":
+		return nil, false, nil
+	}
+	return append(reasons, "classified as "+hall), true, nil
+}
+
+// signals reads a message's headers for the hold (D30) and for reply
+// tracking's first contacts (D48): real reports a sign of a real contact (it
+// answers the owner's mail or copies someone the owner wrote to); otherwise
+// score and reasons are the bulk/scam signals found.
+func (g *newSenderGate) signals(env *imaplib.Envelope, h mail.Header, from string) (real bool, score int, reasons []string, err error) {
 	// Signs of a real first contact.
 	ids := []string{}
 	ids = append(ids, env.InReplyTo...)
@@ -299,11 +327,11 @@ func (g *newSenderGate) judge(env *imaplib.Envelope, h mail.Header, from string)
 		var out int
 		if hash := intel.MsgHash(id); hash != 0 {
 			if err := g.state.QueryRow(`SELECT EXISTS(SELECT 1 FROM intel_messages WHERE msg_hash = ? AND outgoing = 1)`, hash).Scan(&out); err != nil {
-				return nil, false, err
+				return false, 0, nil, err
 			}
 		}
 		if out == 1 {
-			return nil, false, nil
+			return true, 0, nil, nil
 		}
 	}
 	var recipients []string
@@ -318,16 +346,14 @@ func (g *newSenderGate) judge(env *imaplib.Envelope, h mail.Header, from string)
 		}
 		var known int
 		if err := g.state.QueryRow(`SELECT EXISTS(SELECT 1 FROM senders WHERE address = ? AND sent_count > 0)`, r).Scan(&known); err != nil {
-			return nil, false, err
+			return false, 0, nil, err
 		}
 		if known == 1 {
-			return nil, false, nil
+			return true, 0, nil, nil
 		}
 	}
 
 	// Signs of bulk mail or a scam.
-	score := 0
-	var reasons []string
 	add := func(n int, why string) { score += n; reasons = append(reasons, why) }
 	domain := domainOf(from)
 	name := ""
@@ -358,23 +384,7 @@ func (g *newSenderGate) judge(env *imaplib.Envelope, h mail.Header, from string)
 			add(1, "replies go to another domain")
 		}
 	}
-	switch {
-	case score >= holdScore:
-		return reasons, true, nil
-	case score == 0:
-		return nil, false, nil
-	}
-	// One signal: let the classify model's hall decide. Not classified yet
-	// means the message stays; the next run judges it again.
-	hall, err := g.hall(env.MessageID)
-	if err != nil {
-		return nil, false, err
-	}
-	switch hall {
-	case "", "conversation", "personal":
-		return nil, false, nil
-	}
-	return append(reasons, "classified as "+hall), true, nil
+	return false, score, reasons, nil
 }
 
 // impersonation explains a display name that borrows a brand, an agency, an

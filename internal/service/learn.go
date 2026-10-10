@@ -105,6 +105,7 @@ func (s *Service) discardFolders(account string) (map[string]string, error) {
 // senderTally is one sender's received and discarded counts.
 type senderTally struct {
 	address, domain string
+	name            string // display name; IMAP SEARCH FROM matches it too
 	received        int
 	discarded       int
 	byFolder        map[string]int
@@ -130,7 +131,7 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 
 	// Candidates: senders with at least min_discards of the owner's own
 	// discards, never written to or replied to, not trusted.
-	rows, err := st.QueryContext(ctx, `SELECT s.address, COALESCE(s.domain,''), m.folder, count(*)
+	rows, err := st.QueryContext(ctx, `SELECT s.address, COALESCE(s.domain,''), COALESCE(s.name,''), m.folder, count(*)
 		FROM intel_messages m JOIN senders s ON s.id = m.sender_id
 		LEFT JOIN rule_moves rm ON rm.account = m.account AND rm.msg_hash = m.msg_hash
 		WHERE m.account = ? AND m.outgoing = 0 AND m.folder IN (`+ph+`) AND rm.msg_hash IS NULL
@@ -141,15 +142,15 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 	}
 	tally := map[string]*senderTally{}
 	for rows.Next() {
-		var addr, domain, folder string
+		var addr, domain, name, folder string
 		var n int
-		if err := rows.Scan(&addr, &domain, &folder, &n); err != nil {
+		if err := rows.Scan(&addr, &domain, &name, &folder, &n); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		t := tally[addr]
 		if t == nil {
-			t = &senderTally{address: addr, domain: domain, byFolder: map[string]int{}}
+			t = &senderTally{address: addr, domain: domain, name: name, byFolder: map[string]int{}}
 			tally[addr] = t
 		}
 		t.discarded += n
@@ -183,7 +184,10 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 	}
 	byDomain := map[string][]*senderTally{}
 	for addr, t := range tally {
-		if ex.own[addr] || ex.ownDomains[t.domain] || ex.held[addr] || ex.covered(addr) || ex.state[addr] == learnStatusDismissed ||
+		// A rule covers a sender when its From matches the address or the
+		// display name, as IMAP SEARCH FROM does (e.g. a "Dr. Martin" rule).
+		if ex.own[addr] || ex.ownDomains[t.domain] || ex.held[addr] || ex.covered(addr) || (t.name != "" && ex.covered(t.name)) ||
+			ex.state[addr] == learnStatusDismissed ||
 			ex.state["@"+t.domain] == learnStatusDismissed { // a dismissed domain covers its addresses too
 			continue
 		}

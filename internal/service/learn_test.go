@@ -65,7 +65,13 @@ func TestLearnFromMoves(t *testing.T) {
 	sender("ruled@covered.example", 0, 0, tr...)                                   // a rule covers it
 	sender("held@held.example", 0, 0, tr...)                                       // held by new_sender
 	sender("trusted@t.example", 0, 1, tr...)
-	sender("moved@rm.example", 0, 0, tr...) // a rule moved these
+	sender("moved@rm.example", 0, 0, tr...)  // a rule moved these
+	sender("doc@named.example", 0, 0, tr...) // a display-name rule covers it
+	exec(`UPDATE senders SET name = 'Dr. Martin' WHERE address = 'doc@named.example'`)
+	if _, err := s.CreateRule(ctx, &db.Rule{Name: "by-name", Active: true, Conditions: db.RuleConditions{From: "Dr. Martin"},
+		Actions: []db.RuleAction{{Type: "trash"}}}); err != nil {
+		t.Fatal(err)
+	}
 	exec(`INSERT INTO rule_moves(account, msg_hash, rule_id, dest, moved_at) SELECT 'test', m.msg_hash, 1, 'Trash', ? FROM intel_messages m
 		JOIN senders s ON s.id = m.sender_id WHERE s.address = 'moved@rm.example'`, time.Now().Unix())
 	exec(`INSERT INTO held_messages(account, msg_hash, sender, held_at) VALUES('test', 1, 'held@held.example', 1)`)
@@ -137,7 +143,7 @@ func TestLearnFromMoves(t *testing.T) {
 	if err := s.learnRun(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if rules, _ := s.ListRules(ctx); len(rules) != 5 { // covered + 4 learned
+	if rules, _ := s.ListRules(ctx); len(rules) != 6 { // covered + by-name + 4 learned
 		t.Errorf("a deleted learned rule came back: %d rules", len(rules))
 	}
 }

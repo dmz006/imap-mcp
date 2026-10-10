@@ -425,6 +425,17 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D48 (needs_reply quality; amends D33 and the D45 sender
+  filter):** found in live validation, where most items on one account were spam.
+  (1) Mail whose latest message is in Trash, Junk, a configured discard
+  folder or a hold folder never needs a reply; other folders still never
+  clear an item. (2) Who counts: anyone the owner has written to or replied
+  to (or a colleague/personal role from header signals) always; a first
+  contact only if the classify model called the message a conversation or
+  personal mail, it passes the new-sender hold's header checks with no
+  signal at all (score 0, or a real-contact sign), and the sender has no
+  open anomaly other than `new_sender` (every first contact has that one).
+  A role of `personal` from the model alone no longer counts.
 - **2026-10-10 — D47 (Q2 history, rejecting, webmail):** 0.17 rescans all
   history once to record each message's location. Mail already in Trash or
   Junk counts as discarded, but senders matched by an existing rule or held

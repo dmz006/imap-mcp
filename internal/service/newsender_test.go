@@ -38,7 +38,7 @@ type holdFixture struct {
 
 func newHoldFixture(t *testing.T) *holdFixture {
 	t.Helper()
-	srv := imaptest.Start(t, []string{"Held"})
+	srv := imaptest.Start(t, []string{"Held", "Trash"})
 	cfg := &config.Config{Accounts: []config.AccountConfig{srv.Account("test")}}
 	b := bus.New()
 	pool := imaptest.Pool(t, cfg, b)

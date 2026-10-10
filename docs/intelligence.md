@@ -257,10 +257,13 @@ same key `get_thread` uses. Only your own messages to someone else and
 incoming mail without list, bulk or auto-submitted headers count.
 
 - **`needs_reply`**: the latest message is someone else's, addressed to you
-  (To or Cc), and you have not answered it. Newsletters, bots and mail a
-  `new_sender` rule held are left out. A vendor or unknown sender is
-  included only if you have written to them before, or the classify model
-  called the message a conversation or personal mail.
+  (To or Cc), and you have not answered it. Newsletters, bots, mail a
+  `new_sender` rule held, and mail now in Trash, Junk or a hold folder are
+  left out. People you have written to or replied to always count. A first
+  contact counts only when all three agree it is a real person (D48): the
+  classify model called the message a conversation or personal mail, its
+  headers show none of the new-sender hold's bulk or scam signals (checked
+  live), and the sender has no open anomaly other than `new_sender`.
 - **`awaiting_reply`**: you wrote last and nobody has answered.
 
 Both take `account`, `older_than_days` (default 2), `within_days` (default
@@ -279,8 +282,9 @@ An item clears when (D33):
   `POST /api/replies/dismiss`. A newer message in the conversation brings
   it back.
 
-Where a message is filed does not matter: rules move real conversations out
-of INBOX, so moving or archiving a message does not clear it.
+Other than Trash, Junk and hold folders, where a message is filed does not
+matter: rules move real conversations out of INBOX, so moving or archiving a
+message does not clear it.
 
 The 0.16 upgrade rescans all history once to fill this in. Until it
 finishes, results carry `history_complete: false` and may miss older

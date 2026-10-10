@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.17.0 |
+| Current version | 0.17.1 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -272,11 +272,13 @@ Behaviour notes:
   mail inside the sync window.
 - `needs_reply` / `awaiting_reply` (Q1, D32, D33) read `reply_threads` in
   `imap.db` (whole history, any folder): incoming person-to-person mail
-  addressed to the owner, minus newsletters/bots/held mail; vendor/unknown
-  senders only if written to before or classified conversation/personal.
+  addressed to the owner, minus newsletters/bots/held mail and mail now in
+  Trash/Junk/hold folders (D48). Known contacts (written to/replied to)
+  always; first contacts only if hall conversation/personal AND hold header
+  score 0 (checked live with the flags) AND no open non-new_sender anomaly.
   Clears on an indexed reply (thread root or In-Reply-To), `\Answered`
   (checked live on the listed messages and recorded), or `dismiss_reply`
-  (keyed to the latest message; a newer one re-opens). Folder never clears.
+  (keyed to the latest message; a newer one re-opens). Other folders never clear.
 - `suggest_rules` (Q2, D34–D36, D47): from `intel_messages.folder`, a sender
   whose received mail the owner discarded ≥ ratio (0.8, ≥ 3) over all history
   (Trash/Junk/configured; minus `rule_moves`) → a rule mirroring the folder

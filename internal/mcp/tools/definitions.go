@@ -329,7 +329,8 @@ func DismissSuggestionTool() mcp.Tool {
 func NeedsReplyTool() mcp.Tool {
 	return mcp.NewTool("needs_reply",
 		mcp.WithDescription("Conversations waiting on you: the latest message is someone else's, addressed to you, and you have not replied, "+
-			"flagged it answered or dismissed it. Covers your whole mail history (any folder), person-to-person mail only (no lists, bots or held mail). "+
+			"flagged it answered or dismissed it. Covers your whole mail history in any folder except Trash/Junk/hold; person-to-person mail only (no lists, bots or held mail); "+
+			"first-time senders only when the model and the spam header checks both say they're a real person. "+
 			"Each item has thread_id (for get_thread and dismiss_reply), counterpart, subject, folder, uid, message_ref and days_waiting. "+
 			"history_complete is false while the history scan is still filling in older conversations"),
 		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
