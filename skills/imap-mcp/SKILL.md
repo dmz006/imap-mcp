@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.12.1"
+version: "0.13.0"
 tags:
   - email
   - imap
@@ -156,10 +156,29 @@ delete_rule { id: <id> }
 ```
 
 A rule needs at least one condition (`from`, `subject`, `text`,
-`older_than_days`). Actions: `trash`, `move` (needs `dest`), `flag` (needs
-`flags`), `seen`. `folder` defaults to `INBOX`. Omitting `id` runs every
-active rule. The operator can schedule the same rules with
+`older_than_days`, `new_sender`). Actions: `trash`, `move` (needs `dest`),
+`flag` (needs `flags`), `seen`. `folder` defaults to `INBOX`. Omitting `id`
+runs every active rule. The operator can schedule the same rules with
 `imap-mcp run-rules`.
+
+**Spam that changes domain every message** (imap-mcp 0.15+): use a
+`new_sender` rule instead of chasing domains. It holds mail from senders with
+no history only when the headers also look like bulk mail or a scam (a
+borrowed brand name, not addressed to the owner, bulk headers, a throwaway
+domain). Replies to the owner's mail and introductions from known contacts
+always stay.
+
+```
+create_rule { name: "hold-new-senders", account: "<acct>", new_sender: true,
+              action: "move", dest: "<holding folder>", active: false }
+run_rules { id: <id>, dry_run: true }   → matched + preview: [{sender, reasons}]
+```
+
+Show the operator the preview and ask which senders to keep before
+activating. Held mail is moved, never deleted; moving a message back to the
+inbox trusts its sender for good. A daily "Held for review" summary appears in
+the inbox, so nobody has to watch the folder. Until the account's history scan
+is complete the rule matches nothing and says why.
 
 ### 7. Search
 
@@ -390,7 +409,7 @@ When you run on a schedule with nobody watching:
 | | `resolve_anomaly` | **`id`** | write |
 | | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |
 | | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
-| Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
+| Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `new_sender`, `new_sender_days` (30), `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
 | | `list_rules` | none | read |
 | | `delete_rule` | **`id`** | write |
 | | `run_rules` | `id` (all active), `dry_run` (false) | write |
