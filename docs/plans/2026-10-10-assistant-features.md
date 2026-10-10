@@ -142,6 +142,23 @@ Open decisions:
 Validation: on production, the lists' counts and a spot check of a few thread
 ids against Sent; the digest section appears.
 
+Implementation notes (0.16.0):
+- The D28 index stays hashes-only. A separate `reply_threads` table keeps
+  the latest message per conversation, with its subject, counterpart,
+  Message-ID, folder and UID, so items can be shown and opened. This is the
+  same trade-off as `held_messages` (D30), in the encrypted state file.
+- Items carry `thread_id` (the root, the key `get_thread` takes), which
+  `dismiss_reply` also takes. A dismissal is keyed to the latest message's
+  hash, so any newer message re-opens the conversation.
+- The one-time rescan resets `last_uid` but keeps `completed_at`
+  (`intel_scan.rescan_until` tracks it), so profiles, anomaly detection and
+  the D30 hold, which needs a complete scan, keep working. The lists report
+  `history_complete`.
+- `\Answered` is read during the scan and re-checked live on the listed
+  messages, because a flag set after the scan is not seen again.
+- The digest goes out when only replies are waiting (`digest_log` limits
+  it to once a day); `reply.overdue` was not added.
+
 ---
 
 ## Q2 — learn from moves (0.17.0)
@@ -357,7 +374,7 @@ not from the owner) is rejected and logged.
 | Phase | Version | Status | Tested | Validated |
 |---|---|---|---|---|
 | Q0 | 0.15.5 | Done | Yes | Yes |
-| Q1 | 0.16.0 | Planned | | |
+| Q1 | 0.16.0 | Built | Yes | Pending (production rescan) |
 | Q2 | 0.17.0 | Planned | | |
 | Q3 | 0.18.0 | Planned | | |
 | Q4 | 0.19.0 | Planned | | |

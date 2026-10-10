@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.15.5 |
+| Current version | 0.16.0 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -241,6 +241,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
 | Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies` (built by `internal/intel`); `resolve_anomaly` | read; write |
+| Reply tracking | `needs_reply`, `awaiting_reply` (`account`, `older_than_days` 2, `within_days` 30, `limit` 20; items carry `thread_id`, `history_complete` flag); `dismiss_reply` (`account`, `thread_id`) | read; write |
 
 Behaviour notes:
 
@@ -268,6 +269,13 @@ Behaviour notes:
 - `get_message` returns the raw `BODY[TEXT]` section (not MIME-decoded).
 - `semantic_search` and `get_sender_history` read the cache, so they see only
   mail inside the sync window.
+- `needs_reply` / `awaiting_reply` (Q1, D32, D33) read `reply_threads` in
+  `imap.db` (whole history, any folder): incoming person-to-person mail
+  addressed to the owner, minus newsletters/bots/held mail; vendor/unknown
+  senders only if written to before or classified conversation/personal.
+  Clears on an indexed reply (thread root or In-Reply-To), `\Answered`
+  (checked live on the listed messages and recorded), or `dismiss_reply`
+  (keyed to the latest message; a newer one re-opens). Folder never clears.
 - Deferred: IMAP IDLE / `watch_folder`.
 
 ---
@@ -287,7 +295,9 @@ webhook_deliveries -- durable outbox (metadata-only payloads, retries)
 inbound_nonces     -- replay protection for inbound commands (account, nonce)
 senders            -- sender profiles: counts each way, dates, reply stats, list/bulk/auto, DKIM/DMARC, role (D19, D20); trusted (released from a hold, D30)
 intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash, kg_done/kg_tags_done/kg_llm_done (no addresses/content)
-intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at)
+intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at, rescan_until: the 0.16 one-time rescan keeps completed_at and runs until last_uid reaches it)
+reply_threads      -- Q1/D32: latest message per person-to-person conversation: thread hash + thread_id (root), last hash/date, outgoing, direct (owner in To/Cc), counterpart, subject, Message-ID, folder/uid, answered, dismissed_hash/at
+digest_log         -- last daily digest per account (D31; digests also go out when only replies are waiting)
 kg_entities        -- KG nodes: person, organization, thread, project, topic (P3, D21)
 kg_relationships   -- KG edges: weight, valid_from, last_seen, valid_to (stale), confidence; unique (subject, predicate, object)
 anomalies          -- findings (D22): type, severity, description, details JSON; folder/uid/message_ref for per-message ones; resolved
@@ -339,7 +349,7 @@ enqueuer subscribe to every event.
 | `cache.cleaned` | sync (cleaning, `cache_sweep`) |
 | `enrichment.done`, `enrichment.error` | enrichment pipeline |
 | `rule.fired` | rules (`run_rules`, `run-rules`, REST) |
-| `hold.digest` | daily held-mail digest (D31): `{held}` count; the account is on the event |
+| `hold.digest` | daily digest (D31): `{held, waiting}` counts; the account is on the event |
 | `account.connected`, `account.error` | IMAP pool |
 | `account.disconnected` | declared, not published |
 | `anomaly.detected` | intel scanner: `{id, type, severity}` (webhooks keep the same three fields) |
@@ -379,6 +389,8 @@ GET    /api/senders, /api/senders/{address}                            read
 GET    /api/intelligence/status                                        read  (scan progress with account names; health shows it unnamed)
 GET    /api/kg, /api/anomalies                                         read
 POST   /api/anomalies/{id}/resolve                                     write
+GET    /api/replies/needed, /api/replies/awaiting                      read
+POST   /api/replies/dismiss                                            write
 GET    /api/enrichment/status                                          read
 POST   /api/enrichment/trigger                                         admin
 POST   /api/cache/sweep                                                admin
@@ -400,7 +412,7 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 | Item | Notes |
 |------|-------|
 | Intelligence | Content cleaning before models (`Cleaner`) |
-| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1), learning from moves (Q2), model second opinion + payment/credential-request anomaly (Q3), one-click unsubscribe (Q4), screener (Q5) |
+| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2), model second opinion + payment/credential-request anomaly (Q3), one-click unsubscribe (Q4), screener (Q5) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

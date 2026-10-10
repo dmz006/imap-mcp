@@ -37,6 +37,8 @@ shown; `tools/list` only shows tools the caller's token can use.
 | Analytics | `summarize_folder`, `detect_subscriptions`, `top_senders`, `get_sender_history` | read |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status` | read |
 | | `resolve_anomaly` | write |
+| Reply tracking | `needs_reply`, `awaiting_reply` | read |
+| | `dismiss_reply` | write |
 | | `trigger_enrichment` | admin |
 | Cache | `cache_sweep` | admin |
 | Rules | `list_rules` | read |
@@ -65,6 +67,12 @@ Notes:
   failures from senders who used to pass, look-alike domains, Reply-To
   mismatches, silences and volume spikes. Each one is also published as
   `anomaly.detected`. `resolve_anomaly` marks one reviewed.
+- `needs_reply` lists conversations waiting on you: someone wrote to you and
+  you have not replied. `awaiting_reply` lists the ones where you wrote last.
+  Both cover your whole history, wherever the mail is filed, and skip lists,
+  bots and held mail. A reply, the `\Answered` flag or `dismiss_reply` clears
+  an item. The daily digest gains a "Waiting on you" section. See
+  [docs/intelligence.md](docs/intelligence.md#reply-tracking).
 
 See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 

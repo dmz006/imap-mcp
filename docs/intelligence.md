@@ -15,6 +15,9 @@ arrives.
 - Anomalies: `get_anomalies`, `resolve_anomaly`, `GET /api/anomalies`, the
   `anomaly.detected` event (SSE and webhooks), and each profile's `anomalies`
   list.
+- Reply tracking: `needs_reply`, `awaiting_reply`, `dismiss_reply`,
+  `GET /api/replies/needed`, `GET /api/replies/awaiting`, and the daily
+  digest's "Waiting on you" section.
 
 ## What a profile holds
 
@@ -245,6 +248,44 @@ Only one finding per sender and type is open at a time.
   marks a finding reviewed. It stays in the log with `resolved: true` and
   drops out of the default listing and the score.
 
+## Reply tracking
+
+The same scan keeps, for every person-to-person conversation in your history,
+its latest message (AGENT.md D32). A conversation is mail grouped by thread
+root (the first References entry, else In-Reply-To, else the Message-ID), the
+same key `get_thread` uses. Only your own messages to someone else and
+incoming mail without list, bulk or auto-submitted headers count.
+
+- **`needs_reply`**: the latest message is someone else's, addressed to you
+  (To or Cc), and you have not answered it. Newsletters, bots and mail a
+  `new_sender` rule held are left out. A vendor or unknown sender is
+  included only if you have written to them before, or the classify model
+  called the message a conversation or personal mail.
+- **`awaiting_reply`**: you wrote last and nobody has answered.
+
+Both take `account`, `older_than_days` (default 2), `within_days` (default
+30; use a large number such as 3650 for all history) and `limit`. Each item
+has a `thread_id` (the same id `get_thread` takes), the `counterpart`, `subject`, `folder`, `uid`,
+`message_ref` (Message-ID) and `days_waiting`. Longest-waiting first.
+
+An item clears when (D33):
+
+- **you reply**: your reply joins the conversation (or answers the message
+  directly by In-Reply-To) once the scan sees it in Sent or All Mail;
+- **the message is flagged `\Answered`**: `needs_reply` checks the listed
+  messages' flags on the server each time, so a reply sent from a client
+  that does not save to Sent still counts;
+- **you dismiss it**: `dismiss_reply { account, thread_id }` (write scope) or
+  `POST /api/replies/dismiss`. A newer message in the conversation brings
+  it back.
+
+Where a message is filed does not matter: rules move real conversations out
+of INBOX, so moving or archiving a message does not clear it.
+
+The 0.16 upgrade rescans all history once to fill this in. Until it
+finishes, results carry `history_complete: false` and may miss older
+conversations; the rest of the intelligence keeps working meanwhile.
+
 ## Configuration
 
 ```yaml
@@ -334,6 +375,9 @@ it.
 What is stored per sender: their address, display name, domain, and the
 counts and dates above. The graph stores entity names (addresses, domains,
 thread root Message-IDs, tags, and names the model read in a body) and the
-relationships between them, with counts and dates. Message content and
-subjects are never stored here. Subjects appear only in transient role
-prompts, and bodies only in transient extraction prompts.
+relationships between them, with counts and dates. Message bodies are never
+stored here. Subjects are stored for two things only: the latest message of
+each person-to-person conversation (reply tracking: subject, counterpart,
+Message-ID, folder and UID) and mail a `new_sender` rule held. Otherwise
+subjects appear only in transient role prompts, and bodies only in transient
+extraction prompts.

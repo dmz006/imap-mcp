@@ -31,7 +31,8 @@ with your receiver; you need it to verify signatures.
   published today (defined but not emitted). `anomaly.detected` carries
   `{id, type, severity}`; fetch the finding with `GET /api/anomalies`. See
   [intelligence.md](intelligence.md#anomalies). `hold.digest` carries
-  `{held}` (a count) with the event's `account`; see
+  `{held, waiting}` (counts: held mail, conversations waiting on you) with
+  the event's `account`; see
   [rules.md](rules.md#the-daily-digest).
 
 Other routes:

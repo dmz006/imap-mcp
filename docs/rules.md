@@ -257,13 +257,20 @@ sender as trusted, and never holds that sender again.
 So you do not have to keep checking the holding folder, the first full rule
 run (the hourly `run-rules` job) at or after `rules.hold_digest_hour` (local
 time, default 8) sends a digest of everything held since the last one
-(AGENT.md D31). Nothing is sent when nothing was held.
+(AGENT.md D31). Since 0.16 it also lists conversations waiting on you
+("Waiting on you": someone wrote to you two or more days ago, within the last
+30 days, and you have not replied; see
+[intelligence.md](intelligence.md#reply-tracking)). Nothing is sent when
+nothing was held and nothing is waiting, and at most one digest a day per
+account.
 
 - **A summary message in the account's INBOX.** It is APPENDed over IMAP, not
   sent: from and to the account's own address, listing each held message's
-  sender, subject, time and reasons, and how to release one.
-- **A `hold.digest` event**, `{"held": 3}` with the event's `account`, for
-  webhooks and dashboards. It never carries addresses or subjects.
+  sender, subject, time and reasons, and how to release one, then each
+  waiting conversation's sender, subject and days waiting.
+- **A `hold.digest` event**, `{"held": 3, "waiting": 5}` with the event's
+  `account`, for webhooks and dashboards. It never carries addresses or
+  subjects.
 
 ```yaml
 rules:

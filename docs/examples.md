@@ -910,3 +910,29 @@ After that you never need to open the holding folder: once a day a
 "Held for review" summary appears in the inbox, and a `hold.digest` webhook
 carries the count for a dashboard. Move anything you want back to the inbox
 and that sender is never held again.
+
+## 15. What am I behind on?
+
+`needs_reply` lists conversations where someone wrote to you and you have
+not replied; `awaiting_reply` lists the ones where you wrote last. Both look
+at your whole history, wherever the mail is filed
+([intelligence.md](intelligence.md#reply-tracking)).
+
+```bash
+# Waiting on you for 3+ days, in the last two weeks.
+curl -sS "$IMAP_MCP/api/replies/needed?account=work&older_than_days=3&within_days=14" \
+  -H "Authorization: Bearer $READ_TOKEN"
+# → {"count":1,"history_complete":true,"items":[
+#     {"account":"work","thread_id":"contract-1@example.com","counterpart":"jane@example.com","name":"Jane Roe",
+#      "subject":"Contract review","folder":"Clients","uid":812,
+#      "message_ref":"abc@example.com","last_date":"2026-10-06T14:02:11Z","days_waiting":4}]}
+
+# Not going to answer that one: drop it until Jane writes again.
+curl -sS -X POST "$IMAP_MCP/api/replies/dismiss" \
+  -H "Authorization: Bearer $WRITE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"account":"work","thread_id":"contract-1@example.com"}'
+```
+
+From an agent: "What do I owe people a reply on?" → `needs_reply`, then
+`get_thread` on an item's `thread_id` to draft an answer. The daily digest
+in your inbox carries the same list under "Waiting on you".

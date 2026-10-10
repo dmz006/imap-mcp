@@ -6,6 +6,40 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-10
+
+### Added
+- **Reply tracking (Q1; AGENT.md D32, D33).** `needs_reply` lists
+  conversations waiting on you: the latest message is someone else's,
+  addressed to you, and you have not replied. `awaiting_reply` lists those
+  where you wrote last. Both cover your whole history in any folder
+  (person-to-person mail only; no newsletters, bots or held mail), take
+  `older_than_days` (2), `within_days` (30) and `limit`, and return each
+  conversation's `thread_id`, counterpart, subject, folder, UID and days
+  waiting. REST: `GET /api/replies/needed`, `GET /api/replies/awaiting`.
+- **Clearing an item.** A reply you send clears it once the scan sees it. So
+  does the `\Answered` flag, checked live on the listed messages. To clear one
+  without replying, use `dismiss_reply` (write scope;
+  `POST /api/replies/dismiss`); a newer message in that conversation brings
+  it back. Where the mail is filed never clears an item, because rules file
+  real conversations out of INBOX.
+- **"Waiting on you" in the daily digest.** The digest also lists
+  conversations waiting two or more days. It now goes out even on days
+  nothing was held, still at most once a day per account. `hold.digest`
+  gains a `waiting` count.
+
+### Changed
+- `imap.db` gains `reply_threads` (the latest message of each
+  person-to-person conversation, including its subject) and `digest_log`.
+  `docs/intelligence.md` § Storage and privacy says what is stored.
+
+### Upgrade
+- **Back up `imap.db` first.** On first start, the header scan reads all
+  history once more to fill reply tracking (`intel_scan.rescan_until`).
+  Profiles, anomaly detection and the new-sender hold keep working
+  meanwhile, and nothing is counted twice. Until the scan finishes, the reply
+  lists report `history_complete: false`.
+
 ## [0.15.5] - 2026-10-10
 
 ### Added

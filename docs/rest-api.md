@@ -493,6 +493,9 @@ Anomalies come from the same scanner (see [intelligence.md](intelligence.md#anom
 | `GET /api/kg` | `read` | `entity` (exact name, either end), `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence, weight, last_seen, current, properties}]}`, strongest (`weight`) first. See [intelligence.md](intelligence.md#knowledge-graph) |
 | `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `type`, `sender`, `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [{id, account, sender, type, description, severity, detected_at, resolved, resolved_at, folder, uid, message_ref, details}]}`, newest first |
 | `POST /api/anomalies/{id}/resolve` | `write` | | The anomaly, now `resolved: true`. 404 for an unknown id. |
+| `GET /api/replies/needed` | `read` | `account` (omit for all), `older_than_days` (default 2), `within_days` (default 30; e.g. 3650 for all history), `limit` (default 20, max 200) | `{count, items: [{account, thread_id, counterpart, name, subject, message_ref, folder, uid, last_date, days_waiting}], history_complete}`: conversations waiting on you, longest-waiting first. See [intelligence.md](intelligence.md#reply-tracking) |
+| `GET /api/replies/awaiting` | `read` | as above | The same shape: conversations where you wrote last; `counterpart` is your message's first recipient |
+| `POST /api/replies/dismiss` | `write` | Body `{"account", "thread_id"}` | `{account, thread_id, dismissed: true}`. The conversation leaves both lists until a newer message arrives in it. 404 for an unknown thread. |
 
 ## Enrichment
 

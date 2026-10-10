@@ -1,8 +1,8 @@
 ---
 # --- PAI-compatible base fields ---
 name: imap-mcp
-description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.13.0"
+description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
+version: "0.14.0"
 tags:
   - email
   - imap
@@ -350,6 +350,20 @@ Predicates: `belongs_to`, `corresponds_with`, `cc_with`, `is_subscription`,
 facts are read from mail rather than certain. Names from model extraction
 are written as they appeared, not addresses.
 
+### Replies
+
+```
+needs_reply { older_than_days: 2 }                  → conversations waiting on the user, longest first, whole history
+awaiting_reply { older_than_days: 5 }               → the user wrote last and nobody answered
+get_thread { thread_id }                            → read the conversation before drafting an answer
+dismiss_reply { account, thread_id }                → only when the user says they won't reply (write scope)
+```
+
+A reply the user sends, or `\Answered`, clears an item by itself; where the
+mail is filed does not. `history_complete: false` means the history scan is
+still running and older conversations may be missing. Never send a reply
+without the user's approval; draft it and let them send.
+
 ### Anomalies
 
 ```
@@ -407,6 +421,9 @@ When you run on a schedule with nobody watching:
 | | `kg_query` | `entity` (address, domain, thread id, project or topic; exact), `predicate`, `entity_type`, `limit` (50); strongest first, with `weight`, `last_seen`, `current`, `confidence` | read |
 | | `get_anomalies` | `severity`, `type`, `sender`, `account`, `unresolved_only` (true), `limit` (20) | read |
 | | `resolve_anomaly` | **`id`** | write |
+| Replies | `needs_reply` | `account` (all), `older_than_days` (2), `within_days` (30; 3650 = all history), `limit` (20); items: `thread_id`, `counterpart`, `name`, `subject`, `folder`, `uid`, `message_ref`, `days_waiting`; plus `history_complete` | read |
+| | `awaiting_reply` | same as `needs_reply`; you wrote last, `counterpart` = your first recipient | read |
+| | `dismiss_reply` | **`account`**, **`thread_id`**; back when a newer message arrives | write |
 | | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |
 | | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
 | Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `new_sender`, `new_sender_days` (30), `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |
