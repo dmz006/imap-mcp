@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/dmz006/imap-mcp/internal/enrichment"
 )
 
 // Knowledge-graph entity types and predicates (AGENT.md D21).
@@ -180,6 +182,9 @@ func cleanName(s string) string {
 	// A name needs a letter or digit: drops "...", "-" and other placeholders
 	// a model may copy from the prompt.
 	if !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+		return ""
+	}
+	if enrichment.CleanTag(s) == "" { // a copied template such as "<topic, ...>"
 		return ""
 	}
 	return strings.TrimSpace(s)

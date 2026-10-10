@@ -264,6 +264,13 @@ func ensureCacheSchema(conn *sql.DB) error {
 	if _, err := conn.Exec(cacheSchema); err != nil {
 		return fmt.Errorf("apply cache schema: %w", err)
 	}
+	// 0.15.0: clear placeholder wing/room tags the classify model copied
+	// from its prompt (enrichment.CleanTag now rejects them on the way in).
+	for _, col := range []string{"wing", "room"} {
+		if _, err := conn.Exec(`UPDATE messages SET ` + col + ` = '' WHERE ` + placeholderSQL(col)); err != nil {
+			return fmt.Errorf("clear placeholder %s tags: %w", col, err)
+		}
+	}
 	for _, t := range droppedCacheTables {
 		if _, err := conn.Exec(`DROP TABLE IF EXISTS ` + t); err != nil {
 			return fmt.Errorf("drop moved table %s: %w", t, err)
@@ -335,12 +342,22 @@ func migrateState(conn *sql.DB) error {
 		// One finding per message and type; one open periodic finding per sender and type.
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_message ON anomalies(anomaly_type, message_ref) WHERE message_ref IS NOT NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_open ON anomalies(account, sender, anomaly_type) WHERE message_ref IS NULL AND resolved = 0`,
+		// 0.15.0: drop graph entities made from classification placeholders the
+		// model copied from its prompt; their edges go with them (ON DELETE CASCADE).
+		`DELETE FROM kg_entities WHERE entity_type IN ('project','topic') AND (` + placeholderSQL("name") + `)`,
 	} {
 		if _, err := conn.Exec(q); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// placeholderSQL matches the classification placeholders enrichment.CleanTag
+// rejects, for cleaning rows stored before it existed.
+func placeholderSQL(col string) string {
+	return col + ` LIKE '%<%' OR ` + col + ` LIKE '%>%' OR lower(` + col + `) LIKE '%if unclear%' OR lower(trim(` + col + `)) IN ` +
+		`('project or context','project','context','topic','unclear','none','n/a','unknown','empty string')`
 }
 
 func hasColumn(conn *sql.DB, table, column string) (bool, error) {

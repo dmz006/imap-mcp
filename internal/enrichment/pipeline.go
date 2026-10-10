@@ -564,8 +564,11 @@ From: %s <%s>
 Subject: %s
 Body (snippet): %s
 
-Respond with this exact JSON structure:
-{"hall":"<transactional|conversation|newsletter|notification|alert|personal>","wing":"<project or context, empty string if unclear>","room":"<topic, empty string if unclear>"}`,
+Respond with JSON with three string fields:
+- hall: one of transactional, conversation, newsletter, notification, alert, personal
+- wing: the project or context this email belongs to, or "" if unclear
+- room: its topic in a few words, or "" if unclear
+Example: {"hall":"notification","wing":"","room":"password reset"}`,
 		fromName, fromAddr, subject, snip)
 }
 
@@ -584,9 +587,36 @@ func parseClassification(raw string, result *EnrichResult) {
 	if err := json.Unmarshal([]byte(raw[start:end+1]), &c); err != nil {
 		return
 	}
-	result.Hall = c.Hall
-	result.Wing = c.Wing
-	result.Room = c.Room
+	result.Hall = cleanHall(c.Hall)
+	result.Wing = CleanTag(c.Wing)
+	result.Room = CleanTag(c.Room)
+}
+
+// halls are the classification halls the prompt offers.
+var halls = map[string]bool{"transactional": true, "conversation": true, "newsletter": true,
+	"notification": true, "alert": true, "personal": true}
+
+func cleanHall(h string) string {
+	h = strings.ToLower(strings.TrimSpace(h))
+	if !halls[h] {
+		return ""
+	}
+	return h
+}
+
+// placeholderTags are template words a small model may copy instead of an
+// answer (it once echoed "<project or context, empty string if unclear>").
+var placeholderTags = map[string]bool{"project or context": true, "project": true, "context": true,
+	"topic": true, "unclear": true, "none": true, "n/a": true, "unknown": true, "empty string": true}
+
+// CleanTag returns a wing or room tag, or "" when it is a placeholder or a
+// copied template such as "<topic, empty string if unclear>".
+func CleanTag(t string) string {
+	t = strings.TrimSpace(t)
+	if strings.ContainsAny(t, "<>") || strings.Contains(strings.ToLower(t), "if unclear") || placeholderTags[strings.ToLower(t)] {
+		return ""
+	}
+	return t
 }
 
 // EmbedQuery embeds free text with the pipeline's embedder (for semantic

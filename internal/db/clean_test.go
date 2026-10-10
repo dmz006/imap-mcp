@@ -151,3 +151,31 @@ func TestPruneFoldersAndAccounts(t *testing.T) {
 		t.Error("sync_state of removed account not pruned")
 	}
 }
+
+// TestPlaceholderCleanup: startup removes graph entities and cached tags made
+// from classification placeholders, and keeps real ones.
+func TestPlaceholderCleanup(t *testing.T) {
+	dir := t.TempDir()
+	open := func() *DB {
+		d, err := Open(Options{Path: filepath.Join(dir, "imap.db")}, Options{Path: filepath.Join(dir, "cache.db")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	d := open()
+	mustExec(t, d.StateSQL(), `INSERT INTO kg_entities(entity_type, name) VALUES('project','<project or context, empty string if unclear>'),('topic','topic'),('project','Home renovation'),('person','project')`)
+	mustExec(t, d.SQL(), `INSERT INTO messages(account, folder, uid, from_addr, date, wing, room) VALUES('a','INBOX',1,'x@example.com',1,'<project or context>','<topic, empty string if unclear>'),('a','INBOX',2,'x@example.com',1,'Home renovation','permits')`)
+	d.Close()
+	d = open()
+	defer d.Close()
+	var n int
+	d.StateSQL().QueryRow(`SELECT count(*) FROM kg_entities`).Scan(&n) //nolint:errcheck
+	if n != 2 {
+		t.Errorf("entities left = %d, want 2 (real project and the person)", n)
+	}
+	d.SQL().QueryRow(`SELECT count(*) FROM messages WHERE wing <> '' OR room <> ''`).Scan(&n) //nolint:errcheck
+	if n != 1 {
+		t.Errorf("tagged messages = %d, want 1", n)
+	}
+}
