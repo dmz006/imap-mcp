@@ -6,6 +6,14 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-10-09
+
+### Fixed
+- **`list_folders` failed in MCP clients.** Tool results that are JSON
+  arrays were sent as `structuredContent`, which MCP requires to be an object,
+  so clients rejected the result. Array results are now text-only; object
+  results are unchanged.
+
 ## [0.14.2] - 2026-10-09
 
 ### Added
