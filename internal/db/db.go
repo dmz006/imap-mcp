@@ -317,6 +317,7 @@ var stateColumns = []struct{ table, column, decl string }{
 	{"anomalies", "message_ref", "TEXT"},
 	{"anomalies", "details", "TEXT"},
 	{"senders", "trusted", "INTEGER DEFAULT 0"},
+	{"intel_scan", "rescan_until", "INTEGER"},
 }
 
 // migrateState brings an existing imap.db up to the current schema: missing
@@ -326,7 +327,7 @@ var stateColumns = []struct{ table, column, decl string }{
 // message's graph edges are built once; the D28 index keeps profile counts
 // from changing.
 func migrateState(conn *sql.DB) error {
-	addedKG := false
+	addedKG, addedThreads := false, false
 	for _, c := range stateColumns {
 		has, err := hasColumn(conn, c.table, c.column)
 		if err != nil {
@@ -338,18 +339,30 @@ func migrateState(conn *sql.DB) error {
 		if _, err := conn.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.decl); err != nil {
 			return fmt.Errorf("add %s.%s: %w", c.table, c.column, err)
 		}
-		if c.column == "kg_done" {
+		switch c.column {
+		case "kg_done":
 			addedKG = true
+		case "rescan_until":
+			addedThreads = true
 		}
 	}
 	if addedKG {
 		if _, err := conn.Exec(`UPDATE intel_scan SET last_uid = 0, completed_at = NULL`); err != nil {
 			return fmt.Errorf("restart header scan for the knowledge graph: %w", err)
 		}
+	} else if addedThreads {
+		// 0.16 (D32): rescan every folder once to fill reply_threads from the
+		// whole history. completed_at is kept, so profiles and the new-sender
+		// hold stay usable while it runs; rescan_until marks how far it must go.
+		if _, err := conn.Exec(`UPDATE intel_scan SET rescan_until = last_uid, last_uid = 0 WHERE last_uid > 0`); err != nil {
+			return fmt.Errorf("restart header scan for reply threads: %w", err)
+		}
 	}
 	for _, q := range []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_rel_unique ON kg_relationships(subject_id, predicate, object_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_intel_messages_kg ON intel_messages(account, kg_done) WHERE kg_done = 0`,
+		// A reply the owner sent, by the message it answers (D33).
+		`CREATE INDEX IF NOT EXISTS idx_intel_messages_reply ON intel_messages(account, reply_hash) WHERE outgoing = 1`,
 		// One finding per message and type; one open periodic finding per sender and type.
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_message ON anomalies(anomaly_type, message_ref) WHERE message_ref IS NOT NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_open ON anomalies(account, sender, anomaly_type) WHERE message_ref IS NULL AND resolved = 0`,

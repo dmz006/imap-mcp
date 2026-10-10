@@ -307,6 +307,38 @@ func ResolveAnomalyTool() mcp.Tool {
 	)
 }
 
+func NeedsReplyTool() mcp.Tool {
+	return mcp.NewTool("needs_reply",
+		mcp.WithDescription("Conversations waiting on you: the latest message is someone else's, addressed to you, and you have not replied, "+
+			"flagged it answered or dismissed it. Covers your whole mail history (any folder), person-to-person mail only (no lists, bots or held mail). "+
+			"Each item has thread_id (for get_thread and dismiss_reply), counterpart, subject, folder, uid, message_ref and days_waiting. "+
+			"history_complete is false while the history scan is still filling in older conversations"),
+		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
+		mcp.WithNumber("older_than_days", mcp.Description("Only conversations waiting at least this many days (default: 2)")),
+		mcp.WithNumber("within_days", mcp.Description("Only conversations whose latest message is at most this many days old (default: 30; e.g. 3650 for all history)")),
+		mcp.WithNumber("limit", mcp.Description("Max results (default: 20, max 200)")),
+	)
+}
+
+func AwaitingReplyTool() mcp.Tool {
+	return mcp.NewTool("awaiting_reply",
+		mcp.WithDescription("Conversations where you wrote last and nobody has answered yet: your sent message, its first recipient (counterpart), "+
+			"subject and days_waiting. Same history and filters as needs_reply"),
+		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
+		mcp.WithNumber("older_than_days", mcp.Description("Only conversations waiting at least this many days (default: 2)")),
+		mcp.WithNumber("within_days", mcp.Description("Only conversations whose latest message is at most this many days old (default: 30; e.g. 3650 for all history)")),
+		mcp.WithNumber("limit", mcp.Description("Max results (default: 20, max 200)")),
+	)
+}
+
+func DismissReplyTool() mcp.Tool {
+	return mcp.NewTool("dismiss_reply",
+		mcp.WithDescription("Remove a conversation from needs_reply and awaiting_reply without replying. A newer message in the conversation brings it back"),
+		mcp.WithString("account", mcp.Required(), mcp.Description("Account name")),
+		mcp.WithString("thread_id", mcp.Required(), mcp.Description("thread_id from needs_reply or awaiting_reply")),
+	)
+}
+
 func EnrichmentStatusTool() mcp.Tool {
 	return mcp.NewTool("enrichment_status",
 		mcp.WithDescription("Get enrichment pipeline status: pending, processing, done, error counts per account"),

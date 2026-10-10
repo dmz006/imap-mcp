@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -85,6 +86,9 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 				return res, err
 			}
 		}
+		if err := st.thread(ctx, tx, account, folder, hash, h, outgoing, own); err != nil {
+			return res, err
+		}
 		if kg != nil {
 			// Claim the row (a write), so each message adds its edges once,
 			// including on the one-time rescan after an upgrade.
@@ -104,6 +108,52 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 		}
 	}
 	return st.finish(ctx, tx, res, account, folder, validity, b)
+}
+
+// thread records a message as its conversation's latest when it is newer
+// than the one stored (D32). It runs for every copy the scan sees, duplicates
+// included, so the one-time rescan fills reply_threads from the whole history
+// and a message moved to another folder is found where it now is. Only
+// person-to-person mail counts: the owner's own messages to someone else, and
+// incoming mail with no list, bulk or auto-submitted headers.
+func (st *store) thread(ctx context.Context, tx *sql.Tx, account, folder string, hash int64, h Header, outgoing bool, own map[string]bool) error {
+	if !outgoing && !h.Conversation() {
+		return nil
+	}
+	rootID := h.ThreadRoot()
+	root := msgHash(rootID)
+	if root == 0 {
+		return nil
+	}
+	var counterpart string
+	direct := false
+	for _, a := range append(append([]Address{}, h.To...), h.Cc...) {
+		if own[a.Addr] {
+			direct = true
+		} else if counterpart == "" && a.Addr != "" {
+			counterpart = a.Addr
+		}
+	}
+	if !outgoing {
+		counterpart = h.From.Addr
+	} else if counterpart == "" {
+		return nil // a note to self
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO reply_threads(account, thread_hash, thread_id, last_hash, last_date, outgoing, direct,
+			counterpart, subject, message_ref, folder, uid, answered)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(account, thread_hash) DO UPDATE SET
+			answered = CASE WHEN reply_threads.last_hash = excluded.last_hash
+				THEN MAX(reply_threads.answered, excluded.answered) ELSE excluded.answered END,
+			last_hash = excluded.last_hash, last_date = excluded.last_date, outgoing = excluded.outgoing,
+			direct = excluded.direct, counterpart = excluded.counterpart, subject = excluded.subject,
+			message_ref = excluded.message_ref, folder = excluded.folder, uid = excluded.uid
+		WHERE excluded.last_hash = reply_threads.last_hash
+			OR excluded.last_date > reply_threads.last_date
+			OR (excluded.last_date = reply_threads.last_date AND excluded.outgoing > reply_threads.outgoing)`,
+		account, root, rootID, hash, h.Date.Unix(), boolInt(outgoing), boolInt(direct && !outgoing),
+		counterpart, h.Subject, strings.Trim(strings.TrimSpace(h.MessageID), "<>"), folder, h.UID, boolInt(h.Answered))
+	return err
 }
 
 // kgTarget carries the knowledge-graph state for a batch: the mailbox
@@ -230,7 +280,7 @@ func (st *store) register(ctx context.Context, account string, folders []string)
 // resetFolder restarts a folder's scan after a UIDVALIDITY change. The D28
 // index keeps the rescan from counting any message twice.
 func (st *store) resetFolder(ctx context.Context, account, folder string, validity uint32) error {
-	_, err := st.db.ExecContext(ctx, `UPDATE intel_scan SET uidvalidity=?, last_uid=0, updated_at=unixepoch() WHERE account=? AND folder=?`,
+	_, err := st.db.ExecContext(ctx, `UPDATE intel_scan SET uidvalidity=?, last_uid=0, rescan_until=NULL, updated_at=unixepoch() WHERE account=? AND folder=?`,
 		validity, account, folder)
 	return err
 }

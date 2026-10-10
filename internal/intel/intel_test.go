@@ -407,3 +407,49 @@ func TestModelRolesPickCachedSenders(t *testing.T) {
 		t.Errorf("cached unknown sender was not sent to the model: %+v", m)
 	}
 }
+
+// TestReplyThreads (D32): the scan keeps each person-to-person conversation's
+// latest message; list mail and notes to self are left out, a newer message
+// takes over the thread and \Answered is recorded.
+func TestReplyThreads(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		outgoing, direct, answered int
+		counterpart, subject       string
+	}
+	get := func(root string) (row, bool) {
+		var r row
+		err := f.d.StateSQL().QueryRow(`SELECT outgoing, direct, answered, counterpart, subject FROM reply_threads
+			WHERE account='test' AND thread_hash=? AND thread_id=?`, msgHash(root), root).Scan(&r.outgoing, &r.direct, &r.answered, &r.counterpart, &r.subject)
+		return r, err == nil
+	}
+	var n int
+	f.d.StateSQL().QueryRow(`SELECT count(*) FROM reply_threads`).Scan(&n) //nolint:errcheck
+	if n != 5 {                                                            // a1 (with its reply), o1, v1, m1, m2; no list mail, nothing from Junk or Drafts
+		t.Errorf("threads = %d, want 5", n)
+	}
+	if r, ok := get("a1@example.com"); !ok || r.outgoing != 1 || r.counterpart != "alice@example.com" || r.subject != "s-r1@example.com" {
+		t.Errorf("a1 thread = %+v, %v: the owner's reply is the latest", r, ok)
+	}
+	if _, ok := get("n0@list.example.net"); ok {
+		t.Error("list mail made a thread")
+	}
+
+	// Alice answers (References the root); the owner flagged it answered.
+	f.srv.Append(t, "INBOX", msg("a2@example.com", "Alice <alice@example.com>", imaptest.Username, "References: <a1@example.com> <r1@example.com>\r\n"),
+		time.Now(), imaplib.FlagAnswered)
+	f.srv.Append(t, "Sent", msg("self@example.com", imaptest.Username, imaptest.Username, ""), time.Now())
+	if err := f.sc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := get("a1@example.com"); r.outgoing != 0 || r.direct != 1 || r.answered != 1 || r.subject != "s-a2@example.com" {
+		t.Errorf("a1 thread after Alice's answer = %+v", r)
+	}
+	if _, ok := get("self@example.com"); ok {
+		t.Error("a note to self made a thread")
+	}
+}

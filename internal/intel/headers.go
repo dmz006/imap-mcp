@@ -25,15 +25,18 @@ type Address struct {
 }
 
 // Header is what the scanner reads from one message: envelope fields plus a
-// few header fields. It never holds a subject or a body.
+// few header fields, never a body. The subject is stored only for
+// person-to-person conversations (reply_threads, D32).
 type Header struct {
 	UID       uint32
 	Date      time.Time // INTERNALDATE
 	MessageID string
 	InReplyTo string
+	Subject   string
 	From      Address
 	ReplyTo   Address
 	To, Cc    []Address
+	Answered  bool // \Answered flag
 
 	List  bool   // List-Id or List-Unsubscribe present
 	Bulk  bool   // Precedence: bulk, list or junk

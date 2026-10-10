@@ -70,3 +70,36 @@ func (s *Server) handleResolveAnomaly(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w)(s.svc.ResolveAnomaly(r.Context(), id))
 }
+
+// replyParams reads ?account=&older_than_days=&within_days=&limit=
+func replyParams(r *http.Request) service.ReplyParams {
+	return service.ReplyParams{
+		Account:       r.URL.Query().Get("account"),
+		OlderThanDays: queryInt(r, "older_than_days", 2),
+		WithinDays:    queryInt(r, "within_days", 30),
+		Limit:         queryInt(r, "limit", 20),
+	}
+}
+
+// GET /api/replies/needed?account=&older_than_days=&within_days=&limit=
+func (s *Server) handleNeedsReply(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.NeedsReply(r.Context(), replyParams(r)))
+}
+
+// GET /api/replies/awaiting?account=&older_than_days=&within_days=&limit=
+func (s *Server) handleAwaitingReply(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.AwaitingReply(r.Context(), replyParams(r)))
+}
+
+// POST /api/replies/dismiss
+// Body: {"account", "thread_id"}
+func (s *Server) handleDismissReply(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Account string `json:"account"`
+		Thread  string `json:"thread_id"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	respond(w)(s.svc.DismissReply(r.Context(), req.Account, req.Thread))
+}

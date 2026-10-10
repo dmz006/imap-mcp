@@ -166,7 +166,7 @@ func TestHoldDigest(t *testing.T) {
 	if n := f.count(t, "INBOX"); n != 1 {
 		t.Fatalf("INBOX = %d, want the digest", n)
 	}
-	if len(events) != 1 || len(events[0].Payload.(map[string]any)) != 2 || events[0].Payload.(map[string]any)["held"] != 2 {
+	if len(events) != 1 || len(events[0].Payload.(map[string]any)) != 3 || events[0].Payload.(map[string]any)["held"] != 2 {
 		t.Fatalf("events = %+v", events)
 	}
 	if st, err := f.s.HoldStatus(); err != nil || st.Held != 2 || st.AwaitingDigest != 0 || st.LastDigest == "" || st.HoldDigestHour != 8 {
@@ -176,7 +176,7 @@ func TestHoldDigest(t *testing.T) {
 	if err := f.s.sendHoldDigests(now.Add(time.Hour)); err != nil || f.count(t, "INBOX") != 1 {
 		t.Errorf("second digest the same day: %v", err)
 	}
-	msg := string(holdDigestMessage("user@example.com", "test", []heldRow{{sender: "spam@bad.example", subject: "Win\r\nbig", reasons: "bulk mail", folder: "Held", heldAt: now.Unix()}}, now))
+	msg := string(digestMessage("user@example.com", "test", []heldRow{{sender: "spam@bad.example", subject: "Win\r\nbig", reasons: "bulk mail", folder: "Held", heldAt: now.Unix()}}, ReplyList{}, now))
 	if !strings.Contains(msg, "spam@bad.example") || !strings.Contains(msg, "Move a message back") || strings.Contains(msg, "Win\r\nbig") {
 		t.Errorf("digest body:\n%s", msg)
 	}

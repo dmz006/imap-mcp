@@ -103,7 +103,7 @@ func (s *imapSource) Fetch(ctx context.Context, account, folder string, afterUID
 		uids, b.More = uids[:limit], true
 	}
 	msgs, err := client.Fetch(imaplib.UIDSetNum(uids...), &imaplib.FetchOptions{
-		UID: true, Envelope: true, InternalDate: true,
+		UID: true, Envelope: true, InternalDate: true, Flags: true,
 		BodySection: []*imaplib.FetchItemBodySection{{
 			Specifier: imaplib.PartSpecifierHeader, HeaderFields: scanFields, Peek: true,
 		}},
@@ -112,9 +112,10 @@ func (s *imapSource) Fetch(ctx context.Context, account, folder string, afterUID
 		return b, fmt.Errorf("fetch %s: %w", folder, err)
 	}
 	for _, m := range msgs {
-		h := Header{UID: uint32(m.UID), Date: m.InternalDate}
+		h := Header{UID: uint32(m.UID), Date: m.InternalDate, Answered: slices.Contains(m.Flags, imaplib.FlagAnswered)}
 		if env := m.Envelope; env != nil {
 			h.MessageID = env.MessageID
+			h.Subject = env.Subject
 			if len(env.InReplyTo) > 0 {
 				h.InReplyTo = env.InReplyTo[0]
 			}

@@ -55,3 +55,28 @@ func (h *Handlers) GetAnomalies(ctx context.Context, req mcp.CallToolRequest) (*
 func (h *Handlers) ResolveAnomaly(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.ResolveAnomaly(ctx, int64(req.GetFloat("id", 0))))
 }
+
+// replyParams reads the needs_reply / awaiting_reply parameters.
+func replyParams(req mcp.CallToolRequest) service.ReplyParams {
+	return service.ReplyParams{
+		Account:       req.GetString("account", ""),
+		OlderThanDays: int(req.GetFloat("older_than_days", 2)),
+		WithinDays:    int(req.GetFloat("within_days", 30)),
+		Limit:         int(req.GetFloat("limit", 20)),
+	}
+}
+
+// NeedsReply lists conversations waiting on the owner.
+func (h *Handlers) NeedsReply(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.NeedsReply(ctx, replyParams(req)))
+}
+
+// AwaitingReply lists conversations where the owner wrote last.
+func (h *Handlers) AwaitingReply(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.AwaitingReply(ctx, replyParams(req)))
+}
+
+// DismissReply removes a conversation from the reply lists.
+func (h *Handlers) DismissReply(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.DismissReply(ctx, req.GetString("account", ""), req.GetString("thread_id", "")))
+}

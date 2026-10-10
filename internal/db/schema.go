@@ -272,8 +272,40 @@ CREATE TABLE IF NOT EXISTS intel_scan (
     last_uid     INTEGER NOT NULL DEFAULT 0,
     scanned      INTEGER NOT NULL DEFAULT 0,  -- messages processed in this folder
     completed_at INTEGER,                     -- first time the folder was fully scanned
+    rescan_until INTEGER,                     -- one-time rescan in progress until last_uid reaches this (0.16)
     updated_at   INTEGER DEFAULT (unixepoch()),
     PRIMARY KEY (account, folder)
+);
+
+-- reply_threads: the latest message of each person-to-person conversation
+-- (D32), for needs_reply and awaiting_reply. Filled by the header scan from
+-- the whole history. A reply clears an item, as do \Answered and an explicit
+-- dismiss (D33); a later message in the thread re-opens a dismissed one.
+CREATE TABLE IF NOT EXISTS reply_threads (
+    account      TEXT NOT NULL,
+    thread_hash  INTEGER NOT NULL,           -- D28 key of the thread root
+    thread_id    TEXT,                       -- the thread root, as get_thread takes it
+    last_hash    INTEGER NOT NULL,           -- D28 key of the latest message
+    last_date    INTEGER NOT NULL,
+    outgoing     INTEGER NOT NULL DEFAULT 0, -- the owner sent the latest message
+    direct       INTEGER NOT NULL DEFAULT 0, -- incoming and addressed to the owner (To/Cc)
+    counterpart  TEXT,                       -- incoming: the sender; outgoing: the first recipient
+    subject      TEXT,
+    message_ref  TEXT,                       -- Message-ID of the latest message
+    folder       TEXT,                       -- where the scan last saw it
+    uid          INTEGER,
+    answered     INTEGER NOT NULL DEFAULT 0, -- the latest message carries \Answered
+    dismissed_hash INTEGER,                  -- dismiss_reply: last_hash when dismissed; a newer message re-opens it
+    dismissed_at   INTEGER,
+    PRIMARY KEY (account, thread_hash)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS idx_reply_threads_open ON reply_threads(account, outgoing, last_date);
+
+-- digest_log: when each account's daily digest was last sent (D31).
+CREATE TABLE IF NOT EXISTS digest_log (
+    account TEXT PRIMARY KEY,
+    sent_at INTEGER NOT NULL
 );
 
 -- held_messages: mail a new_sender rule held (D30), for release detection

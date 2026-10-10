@@ -194,3 +194,59 @@ func TestStateMigrationAddsKGColumns(t *testing.T) {
 		t.Errorf("second open reset the scan: last_uid=%d", last)
 	}
 }
+
+// TestStateMigrationRescansForReplyThreads: a 0.15 imap.db gains
+// intel_scan.rescan_until; the scan restarts to fill reply_threads but keeps
+// completed_at, so profiles and the new-sender hold stay usable meanwhile.
+func TestStateMigrationRescansForReplyThreads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "imap.db")
+	old, err := OpenState(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`DROP TABLE intel_scan`,
+		`CREATE TABLE intel_scan (account TEXT NOT NULL, folder TEXT NOT NULL, uidvalidity INTEGER NOT NULL DEFAULT 0,
+			last_uid INTEGER NOT NULL DEFAULT 0, scanned INTEGER NOT NULL DEFAULT 0, completed_at INTEGER,
+			updated_at INTEGER DEFAULT (unixepoch()), PRIMARY KEY (account, folder))`,
+		`INSERT INTO intel_scan(account, folder, uidvalidity, last_uid, scanned, completed_at) VALUES('a','INBOX',7,500,500,123)`,
+	} {
+		if _, err := old.StateSQL().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+
+	d, err := OpenState(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var last, until, completed int
+	if err := d.StateSQL().QueryRow(`SELECT last_uid, rescan_until, completed_at FROM intel_scan`).Scan(&last, &until, &completed); err != nil {
+		t.Fatal(err)
+	}
+	if last != 0 || until != 500 || completed != 123 {
+		t.Errorf("last_uid=%d rescan_until=%d completed_at=%d, want 0, 500, 123", last, until, completed)
+	}
+	d.Close()
+	// Opening again does not restart it a second time.
+	d2, err := OpenState(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d2.Close()
+	if _, err := d2.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 600`); err != nil {
+		t.Fatal(err)
+	}
+	d2.Close()
+	d3, err := OpenState(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d3.Close()
+	d3.StateSQL().QueryRow(`SELECT last_uid FROM intel_scan`).Scan(&last) //nolint:errcheck
+	if last != 600 {
+		t.Errorf("rescan restarted again: last_uid=%d", last)
+	}
+}

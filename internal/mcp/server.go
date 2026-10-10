@@ -91,6 +91,9 @@ func NewServer(
 	s.AddTool(tools.KGQueryTool(), h.KGQuery)
 	s.AddTool(tools.GetAnomaliesTool(), h.GetAnomalies)
 	s.AddTool(tools.ResolveAnomalyTool(), h.ResolveAnomaly)
+	s.AddTool(tools.NeedsReplyTool(), h.NeedsReply)
+	s.AddTool(tools.AwaitingReplyTool(), h.AwaitingReply)
+	s.AddTool(tools.DismissReplyTool(), h.DismissReply)
 	s.AddTool(tools.EnrichmentStatusTool(), h.EnrichmentStatus)
 	s.AddTool(tools.TriggerEnrichmentTool(), h.TriggerEnrichment)
 

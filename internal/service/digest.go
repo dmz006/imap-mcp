@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"mime"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,11 +22,15 @@ type heldRow struct {
 	heldAt                           int64
 }
 
-// sendHoldDigests sends each account's held-mail digest (AGENT.md D31) when
-// it is due: once a day, at the first full rule run at or after the
-// configured hour, and only when something was held since the last one. The
-// digest is a summary message APPENDed to the account's INBOX (no mail is
-// sent) and a hold.digest event with the account and count only.
+// digestReplyLimit is how many waiting conversations the digest lists.
+const digestReplyLimit = 25
+
+// sendHoldDigests sends each account's daily digest (AGENT.md D31) when it
+// is due: once a day, at the first full rule run at or after the configured
+// hour, and only when there is something to report — mail held since the
+// last digest, or conversations waiting on the owner (Q1). The digest is a
+// summary message APPENDed to the account's INBOX (no mail is sent) and a
+// hold.digest event with the account and counts only.
 func (s *Service) sendHoldDigests(now time.Time) error {
 	if !s.cfg.Rules.HoldDigestOn() || now.Hour() < s.cfg.Rules.HoldDigestHour {
 		return nil
@@ -47,11 +53,19 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 		accounts = append(accounts, a)
 	}
 	rows.Close()
+	if s.cfg.Intel.On() { // any account may have conversations waiting
+		for _, a := range s.cfg.Accounts {
+			if !slices.Contains(accounts, a.Name) {
+				accounts = append(accounts, a.Name)
+			}
+		}
+	}
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
 	var errs []string
 	for _, account := range accounts {
 		var last int64
-		if err := st.QueryRow(`SELECT COALESCE(max(digested_at), 0) FROM held_messages WHERE account = ?`, account).Scan(&last); err != nil {
+		if err := st.QueryRow(`SELECT max(COALESCE((SELECT max(digested_at) FROM held_messages WHERE account = ?), 0),
+				COALESCE((SELECT sent_at FROM digest_log WHERE account = ?), 0))`, account, account).Scan(&last); err != nil {
 			return err
 		}
 		if last >= dayStart {
@@ -62,7 +76,7 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("hold digest: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("digest: %s", strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -84,7 +98,14 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 		held = append(held, h)
 	}
 	rows.Close()
-	if len(held) == 0 {
+	var waiting ReplyList
+	if s.cfg.Intel.On() {
+		if waiting, err = s.replyList(context.Background(), ReplyParams{Account: account,
+			OlderThanDays: defaultReplyOlderDays, WithinDays: defaultReplyWithinDays, Limit: digestReplyLimit}, false, now); err != nil {
+			return err
+		}
+	}
+	if len(held) == 0 && waiting.Count == 0 {
 		return nil
 	}
 
@@ -98,7 +119,7 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 			owner = bareAddr(a.Auth.Username)
 		}
 	}
-	raw := holdDigestMessage(owner, account, held, now)
+	raw := digestMessage(owner, account, held, waiting, now)
 	conn.Lock()
 	cmd := conn.Client().Append("INBOX", int64(len(raw)), &imaplib.AppendOptions{Time: now})
 	_, werr := cmd.Write(raw)
@@ -114,27 +135,58 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 		now.Unix(), account); err != nil {
 		return err
 	}
+	if _, err := st.Exec(`INSERT INTO digest_log(account, sent_at) VALUES(?,?)
+		ON CONFLICT(account) DO UPDATE SET sent_at = excluded.sent_at`, account, now.Unix()); err != nil {
+		return err
+	}
 	if b := s.pool.Bus(); b != nil {
 		b.Publish(bus.Event{Type: bus.EventHoldDigest, Account: account,
-			Payload: map[string]any{"account": account, "held": len(held)}})
+			Payload: map[string]any{"account": account, "held": len(held), "waiting": waiting.Count}})
 	}
 	return nil
 }
 
-// holdDigestMessage renders the digest as a plain-text message from and to
-// the account owner.
-func holdDigestMessage(owner, account string, held []heldRow, now time.Time) []byte {
+// digestMessage renders the digest as a plain-text message from and to the
+// account owner: mail held from first-time senders, then conversations
+// waiting on the owner.
+func digestMessage(owner, account string, held []heldRow, waiting ReplyList, now time.Time) []byte {
+	oneLine := strings.NewReplacer("\r", " ", "\n", " ")
 	var body strings.Builder
-	fmt.Fprintf(&body, "imap-mcp held %d message(s) from first-time senders that looked like bulk mail or scams.\r\n", len(held))
-	body.WriteString("Nothing was deleted. Move a message back to your inbox and that sender is never held again.\r\n\r\n")
-	for _, h := range held {
-		fmt.Fprintf(&body, "- %s  %s\r\n  \"%s\"\r\n  why: %s -> %s\r\n\r\n",
-			time.Unix(h.heldAt, 0).In(now.Location()).Format("Jan 2 15:04"), h.sender,
-			strings.NewReplacer("\r", " ", "\n", " ").Replace(h.subject), h.reasons, h.folder)
+	if len(held) > 0 {
+		fmt.Fprintf(&body, "imap-mcp held %d message(s) from first-time senders that looked like bulk mail or scams.\r\n", len(held))
+		body.WriteString("Nothing was deleted. Move a message back to your inbox and that sender is never held again.\r\n\r\n")
+		for _, h := range held {
+			fmt.Fprintf(&body, "- %s  %s\r\n  \"%s\"\r\n  why: %s -> %s\r\n\r\n",
+				time.Unix(h.heldAt, 0).In(now.Location()).Format("Jan 2 15:04"), h.sender,
+				oneLine.Replace(h.subject), h.reasons, h.folder)
+		}
 	}
-	body.WriteString("-- \r\nimap-mcp new-sender hold (new_sender rule)\r\n")
+	if waiting.Count > 0 {
+		fmt.Fprintf(&body, "Waiting on you: %d conversation(s) where someone wrote to you %d or more days ago and you have not replied.\r\n",
+			waiting.Count, defaultReplyOlderDays)
+		body.WriteString("Reply, or dismiss one with dismiss_reply, and it leaves this list.\r\n")
+		if !waiting.HistoryComplete {
+			body.WriteString("(Your mail history is still being scanned; this list may be incomplete.)\r\n")
+		}
+		body.WriteString("\r\n")
+		for _, w := range waiting.Items {
+			who := w.Counterpart
+			if w.Name != "" {
+				who = w.Name + " <" + w.Counterpart + ">"
+			}
+			fmt.Fprintf(&body, "- %d day(s)  %s\r\n  \"%s\"\r\n\r\n", w.DaysWaiting, oneLine.Replace(who), oneLine.Replace(w.Subject))
+		}
+	}
+	body.WriteString("-- \r\nimap-mcp daily digest\r\n")
 
-	subject := fmt.Sprintf("Held for review: %d new-sender message(s)", len(held))
+	var parts []string
+	if len(held) > 0 {
+		parts = append(parts, fmt.Sprintf("Held for review: %d new-sender message(s)", len(held)))
+	}
+	if waiting.Count > 0 {
+		parts = append(parts, fmt.Sprintf("Waiting on you: %d", waiting.Count))
+	}
+	subject := strings.Join(parts, "; ")
 	var msg strings.Builder
 	if owner != "" {
 		fmt.Fprintf(&msg, "From: imap-mcp <%s>\r\nTo: <%s>\r\n", owner, owner)
