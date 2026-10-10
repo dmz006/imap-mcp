@@ -133,8 +133,11 @@ Open decisions:
   is the complete data needed to respond properly.
 - **D33 — dismissing.** (1) Moving the message out of INBOX or flagging it
   `\Answered`/a keyword dismisses it. (2) A `dismiss_reply` tool storing
-  dismissals in `imap.db`. *Recommendation: (1) — uses mail-client actions the
-  owner already takes.*
+  dismissals in `imap.db`. *Recommendation was (1).*
+  **Decided 2026-10-10: (2)** — an explicit dismiss (tool and API route,
+  stored in `imap.db`), and a reply always clears the item: one the owner
+  sends (found in the index) or the `\Answered` flag. Where a message is
+  filed never clears it, because rules file real mail out of INBOX.
 
 Validation: on production, the lists' counts and a spot check of a few thread
 ids against Sent; the digest section appears.
@@ -337,7 +340,7 @@ not from the owner) is rejected and logged.
 | ID | Phase | Topic | Status |
 |---|---|---|---|
 | D32 | Q1 | Reply-tracking data source | Decided: D28 index + conversation hash (full history) |
-| D33 | Q1 | Dismissing a reply item | Open |
+| D33 | Q1 | Dismissing a reply item | Decided: explicit dismiss; a reply or `\Answered` clears |
 | D34 | Q2 | Observing moves | Open |
 | D35 | Q2 | Suggestion threshold | Open |
 | D36 | Q2 | Automatic rules | Open |

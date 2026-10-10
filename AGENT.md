@@ -404,6 +404,11 @@ they can be replaced or extended without touching call sites.
   full history, not the 30-day cache: the D28 index gains a conversation hash
   per message (and the header scan restarts once to fill it). The aim is the
   complete record needed to respond well, across all of the owner's mail.
+- **2026-10-10 — D33 (dismissing reply items):** a reply item clears when the
+  owner replies (an outgoing message in the index answers it, or the message
+  carries `\Answered`) or is explicitly dismissed (`dismiss_reply` tool and
+  API route; dismissals stored in `imap.db`). Folder location never clears an
+  item, since rules file real conversations out of INBOX.
 - **2026-10-09 — D19 (intelligence store):** `senders`, `kg_*` and
   `anomalies` move to the durable state store `imap.db`, through a state
   migration with a backup first. History comes from two sources:
