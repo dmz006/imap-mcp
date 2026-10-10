@@ -145,6 +145,9 @@ unknown ones, needs a valid token.
 | GET | `/api/kg` | read |
 | GET | `/api/intelligence/status` | read |
 | GET | `/api/anomalies` | read |
+| GET | `/api/identities` | read |
+| POST | `/api/identities/confirm` | write |
+| POST | `/api/identities/reject` | write |
 | GET | `/api/replies/needed` | read |
 | GET | `/api/replies/awaiting` | read |
 | POST | `/api/replies/dismiss` | write |
@@ -175,8 +178,8 @@ See [rest-api.md](rest-api.md) for parameters and responses.
 
 | Scope | Tools |
 |-------|-------|
-| read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments` (listing), `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `needs_reply`, `awaiting_reply`, `enrichment_status`, `top_senders`, `list_rules`, `suggest_rules`, `read_file`, `list_files` |
-| write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `resolve_anomaly`, `dismiss_reply`, `dismiss_suggestion`, `export_message`, `get_attachments` with `part` (download), `write_file`, `delete_file` |
+| read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments` (listing), `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `needs_reply`, `awaiting_reply`, `enrichment_status`, `top_senders`, `list_rules`, `suggest_rules`, `suggest_identities`, `read_file`, `list_files` |
+| write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `resolve_anomaly`, `dismiss_reply`, `dismiss_suggestion`, `confirm_identity`, `reject_identity`, `export_message`, `get_attachments` with `part` (download), `write_file`, `delete_file` |
 | send | `send_message` |
 | admin | `sync_account`, `trigger_enrichment`, `cache_sweep` |
 

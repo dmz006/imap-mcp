@@ -339,6 +339,10 @@ intelligence:
 # Rule runs (docs/rules.md). The held-mail digest lists what new_sender rules
 # held since the last one: a summary APPENDed to the account's INBOX (no mail is
 # sent) plus a hold.digest event.
+identity:
+  also_me: []                  # your other addresses or @domains (work, Kindle, old ones); they count as you everywhere.
+                               # IMAP_MCP_IDENTITY_ALSO_ME (comma-separated). suggest_identities proposes more.
+
 rules:
   hold_digest: true            # IMAP_MCP_RULES_HOLD_DIGEST
   hold_digest_hour: 8          # first full run at or after this local hour (0-23); IMAP_MCP_RULES_HOLD_DIGEST_HOUR

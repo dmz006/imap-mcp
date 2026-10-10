@@ -262,7 +262,12 @@ incoming mail without list, bulk or auto-submitted headers count.
   left out. Only people you have written to or replied to count for now
   (D49): spam that looks exactly like a person got past every header check
   and the model's label, so first-time senders return once the planned
-  model second opinion (Q3) can vet them.
+  model second opinion (Q3) can vet them. Also never listed (D50, D51):
+  your own other addresses, calendar invitations, automated senders (vendor
+  role, no-reply addresses, mostly list/bulk/auto-submitted mail, or a
+  message the model called transactional, a notification or an alert), and
+  bare forwards: a `Fwd:` with no note of the sender's own above the
+  forwarded message. Forwards with a note stay.
 - **`awaiting_reply`**: you wrote last and nobody has answered.
 
 Both take `account`, `older_than_days` (default 2), `within_days` (default
@@ -290,6 +295,28 @@ finishes, results carry `history_complete: false` and may miss older
 conversations; the rest of the intelligence keeps working meanwhile.
 `/api/health` shows its progress: `intelligence.reply_history_complete`,
 and per account `rescan_complete` and `rescan_folders_remaining`.
+
+## Your other addresses
+
+Your account logins are "you". So are the addresses in `identity.also_me`
+(addresses or `@domains`, for every account) and any you confirm (AGENT.md
+D50). "You" everywhere means mail from those addresses is yours: it never
+needs a reply, never gets held as a new sender, never becomes a suggested
+rule, and isn't a contact in profiles.
+
+The scan proposes candidates: addresses that use your display name (counted
+from your sent mail, ignoring a single word and anything in parentheses), or
+whose local part is built from your name (`jane.roe`, `jroe`, ...).
+`suggest_identities` (or `GET /api/identities`) lists them with the
+evidence, and the daily digest lists them under "Is this you?". Answer with
+`confirm_identity` or `reject_identity` (`POST /api/identities/confirm`,
+`POST /api/identities/reject`, body `{"address"}`); a rejected address is
+never proposed again.
+
+When an address becomes yours, the stored history is rewritten once: past
+messages from it are marked as yours, its profile is hidden (role `self`),
+and conversations with it leave reply tracking. Recipients were never
+stored, so the counts of people it wrote to stay as they were.
 
 ## Configuration
 

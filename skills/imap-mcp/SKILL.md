@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.15.0"
+version: "0.16.0"
 tags:
   - email
   - imap
@@ -372,6 +372,12 @@ get_thread { thread_id }                            → read the conversation be
 dismiss_reply { account, thread_id }                → only when the user says they won't reply (write scope)
 ```
 
+needs_reply lists only people the user has written to (first-time senders
+come back once a model second opinion exists), and never invites,
+notifications, no-reply senders or bare forwards. If the user's other
+addresses (work, Kindle) show up as people, run `suggest_identities` and ask
+the user to confirm them (`confirm_identity`); never confirm one yourself.
+
 A reply the user sends, or `\Answered`, clears an item by itself; where the
 mail is filed does not. `history_complete: false` means the history scan is
 still running and older conversations may be missing. Never send a reply
@@ -437,6 +443,8 @@ When you run on a schedule with nobody watching:
 | Replies | `needs_reply` | `account` (all), `older_than_days` (2), `within_days` (90; 3650 = all history), `limit` (20); items: `thread_id`, `counterpart`, `name`, `subject`, `folder`, `uid`, `message_ref`, `days_waiting`; plus `history_complete` | read |
 | | `awaiting_reply` | same as `needs_reply`; you wrote last, `counterpart` = your first recipient | read |
 | | `dismiss_reply` | **`account`**, **`thread_id`**; back when a newer message arrives | write |
+| Identity | `suggest_identities` | none; `{candidates: [{address, evidence}], known}` | read |
+| | `confirm_identity` / `reject_identity` | **`address`** (address or `@domain`); only on the user's word | write |
 | | `get_sender_profile` | **`address`**; all history: `role`, `role_source`, `first_seen`/`last_seen`, `message_count`, `sent_count`, `reply_count`, `avg_reply_seconds`, list/bulk/auto and DKIM/DMARC counts, `scan_complete` | read |
 | | `get_sender_history` | **`address`**, `limit` (100), `account` (omit for all); cache only | read |
 | Rules | `create_rule` | **`name`**, **`action`** (`trash`/`move`/`flag`/`seen`), `from`, `subject`, `text`, `older_than_days`, `new_sender`, `new_sender_days` (30), `dest`, `flags`, `folder`, `account`, `description`, `active` (true) | write |

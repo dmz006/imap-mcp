@@ -6,6 +6,28 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-10
+
+### Added
+- **Your other addresses (AGENT.md D50).** `identity.also_me` lists your
+  other addresses or `@domains` (work, Kindle, old ones); they count as you
+  everywhere. The scan also proposes candidates that use your display name
+  or are built from your name: `suggest_identities` (read), the daily
+  digest's "Is this you?" section, `confirm_identity` / `reject_identity`
+  (write), and `GET /api/identities`, `POST /api/identities/confirm|reject`.
+  Confirming rewrites the stored history once: past mail from the address
+  becomes yours and its profile is hidden.
+
+### Changed
+- **`needs_reply` drops the noise found on production (D51):** calendar
+  invitations, automated senders even if you once wrote to them (vendor
+  role, no-reply addresses, mostly list/bulk/auto mail, or a message the
+  model called transactional, a notification or an alert), and bare
+  forwards with no note of their own. Forwards with a note stay.
+
+### Upgrade
+- **Back up `imap.db` first.** Two tables are added; no rescan.
+
 ## [0.17.2] - 2026-10-10
 
 ### Changed

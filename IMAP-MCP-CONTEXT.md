@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.17.2 |
+| Current version | 0.18.0 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -97,7 +97,8 @@ Defaults that matter: server `127.0.0.1:8765`; state DB
 days, model extraction 10 bodies per tick; anomalies on (lookback 7 days, auth 3 passes,
 silence 20 messages / 30 days, spike 10 / 5x); `rules:` held-mail digest on, at
 the first full rule run from 08:00 local (`hold_digest`, `hold_digest_hour`);
-`rules.learn`: mode `suggest`, ratio 0.8, min 3 discards, domain at 2 addresses.
+`rules.learn`: mode `suggest`, ratio 0.8, min 3 discards, domain at 2 addresses;
+`identity.also_me`: none.
 
 Selected env overrides: `IMAP_MCP_SERVER_PORT`, `IMAP_MCP_SERVER_HOST`,
 `IMAP_MCP_SERVER_AUTH_DISABLED`, `IMAP_MCP_DB_PATH`, `IMAP_MCP_DB_CACHE_PATH`,
@@ -242,6 +243,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
 | Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies` (built by `internal/intel`); `resolve_anomaly` | read; write |
+| Identities | `suggest_identities`; `confirm_identity`, `reject_identity` (D50) | read; write |
 | Reply tracking | `needs_reply`, `awaiting_reply` (`account`, `older_than_days` 2, `within_days` 90, `limit` 20; items carry `thread_id`, `history_complete` flag); `dismiss_reply` (`account`, `thread_id`) | read; write |
 
 Behaviour notes:
@@ -277,6 +279,16 @@ Behaviour notes:
   `replyFirstContacts` is off until Q3; when on, first contacts need hall
   conversation/personal AND hold header score 0 (live) AND no open
   non-new_sender anomaly. Hold signals gained fake reply (weight 2, D49).
+  D51 also drops: the owner's other addresses (D50), calendar invites
+  (subject, `calendar-` Message-ID, live text/calendar part), automated
+  senders (vendor role, no-reply local part, list+bulk+auto > half, cached
+  hall transactional/notification/alert) and bare forwards (no own note
+  above the forward marker; cached body or a live BODY.PEEK[]).
+- Identities (D50): own set = logins + `identity.also_me` + confirmed;
+  `intel.ownSet.has` matches @domain entries. Scanner refreshes it each
+  tick and `ApplyIdentity` rewrites history once (outgoing=1, role `self`,
+  reply_threads dropped). Detection: `owner_names` (≥3 uses, also from the
+  cache's sent mail) and name-built local parts → `identities` candidates.
   Clears on an indexed reply (thread root or In-Reply-To), `\Answered`
   (checked live on the listed messages and recorded), or `dismiss_reply`
   (keyed to the latest message; a newer one re-opens). Other folders never clear.
@@ -310,6 +322,8 @@ senders            -- sender profiles: counts each way, dates, reply stats, list
 intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash, kg_done/kg_tags_done/kg_llm_done, folder last seen (D34) (no addresses/content)
 intel_locscan      -- location-only pass progress over Trash/Junk folders the normal scan skips (D34)
 rule_moves         -- messages a rule moved/trashed (account, msg hash, rule id, dest); pruned after a year (D34)
+identities         -- the owner's other addresses (D50): candidate | confirmed | rejected | config, evidence, applied_at (history rewritten)
+owner_names        -- display names the owner sends under (normalised), for identity detection
 learn_state        -- learned-rule targets: suggested | created (rule_id) | dismissed (D36, D47)
 intel_scan         -- header-scan progress per account/folder (UIDVALIDITY, last UID, completed_at, rescan_until: the 0.16 one-time rescan keeps completed_at and runs until last_uid reaches it)
 reply_threads      -- Q1/D32: latest message per person-to-person conversation: thread hash + thread_id (root), last hash/date, outgoing, direct (owner in To/Cc), counterpart, subject, Message-ID, folder/uid, answered, dismissed_hash/at
@@ -406,6 +420,8 @@ GET    /api/senders, /api/senders/{address}                            read
 GET    /api/intelligence/status                                        read  (scan progress with account names; health shows it unnamed)
 GET    /api/kg, /api/anomalies                                         read
 POST   /api/anomalies/{id}/resolve                                     write
+GET    /api/identities                                                 read
+POST   /api/identities/confirm, /api/identities/reject                 write
 GET    /api/replies/needed, /api/replies/awaiting                      read
 POST   /api/replies/dismiss                                            write
 GET    /api/enrichment/status                                          read

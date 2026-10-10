@@ -39,6 +39,8 @@ shown; `tools/list` only shows tools the caller's token can use.
 | | `resolve_anomaly` | write |
 | Reply tracking | `needs_reply`, `awaiting_reply` | read |
 | | `dismiss_reply` | write |
+| Your addresses | `suggest_identities` | read |
+| | `confirm_identity`, `reject_identity` | write |
 | | `trigger_enrichment` | admin |
 | Cache | `cache_sweep` | admin |
 | Rules | `list_rules`, `suggest_rules` | read |
@@ -73,6 +75,8 @@ Notes:
   bots and held mail. A reply, the `\Answered` flag or `dismiss_reply` clears
   an item. The daily digest gains a "Waiting on you" section. See
   [docs/intelligence.md](docs/intelligence.md#reply-tracking).
+- `suggest_identities` finds your other addresses (work, Kindle, old ones)
+  so they count as you; confirm them or list them in `identity.also_me`.
 - `suggest_rules` learns from your own moves: a sender whose mail you mostly
   move to Trash or Junk gets a suggested rule that does it for you, with the
   evidence and a match count. People you write to are never suggested.
