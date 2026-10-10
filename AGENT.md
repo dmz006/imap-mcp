@@ -425,6 +425,21 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D50 (the owner's other addresses):** the owner's other
+  addresses (work, Kindle, old ones) are "you" everywhere: reply tracking,
+  profiles, the new-sender hold and learning. Two sources: a config list,
+  and auto-detection with confirmation. Detection looks for the owner's
+  display name on mail from another address, mail the owner forwards or
+  Bccs to an address, and similar evidence; `suggest_identities` lists
+  candidates with the evidence, `confirm_identity` / `reject_identity`
+  record the answer in `imap.db`, and the daily digest lists new candidates.
+- **2026-10-10 — D51 (needs_reply noise, from live validation):** never in
+  `needs_reply`: (1) calendar invitations and updates; (2) automated
+  senders, even ones the owner once wrote to: role bot or vendor, mostly
+  list/bulk/auto-submitted mail, no-reply style addresses, or a message the
+  model labelled transactional, notification or alert; (3) bare forwards: a
+  `Fwd:`/`FW:` with no note of the sender's own above the forwarded message.
+  Forwards with a note stay.
 - **2026-10-10 — D49 (first contacts and fake replies):** live validation
   after D48 still showed spam that passes every header check and the model
   label. (1) `needs_reply` lists only correspondents (people written to or
