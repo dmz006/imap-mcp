@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.12.0"
+version: "0.12.1"
 tags:
   - email
   - imap
@@ -200,6 +200,10 @@ cross_account_search { from, subject, text, since }       → every account at o
 - **Confirm before a batch export.** Show the count first (from `get_thread`
   or `search_messages`). Exports over the configured caps are refused with a
   message saying so: narrow the selection rather than retrying.
+- A `thread_id` export looks the thread up on the server, so it still works
+  right after a rule has moved part of it. Messages that no longer exist are
+  skipped, and the result's `missing` says how many. Mention it to the user.
+  A `uids` export fails if any UID is gone.
 - `cross_account_search` without `live` sees only cached mail (the note in
   the result says so). Use `live: true` for older mail; it searches one
   folder per account (default INBOX). A failing account appears in `errors`
