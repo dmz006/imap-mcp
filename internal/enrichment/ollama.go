@@ -43,7 +43,7 @@ func (c *OllamaClient) Embed(ctx context.Context, model, text string) ([]float32
 	if err != nil {
 		return nil, fmt.Errorf("ollama embed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Embedding []float32 `json:"embedding"`
@@ -74,7 +74,7 @@ func (c *OllamaClient) Generate(ctx context.Context, model, prompt string) (stri
 	if err != nil {
 		return "", fmt.Errorf("ollama generate: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Response string `json:"response"`
@@ -95,6 +95,6 @@ func (c *OllamaClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ollama unreachable at %s: %w", c.baseURL, err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return nil
 }

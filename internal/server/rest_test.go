@@ -36,7 +36,7 @@ func newRESTServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	authn, _ := httpauth.New([]httpauth.Token{
 		{Name: "claude", Value: e2eAll, Scopes: httpauth.AllScopes},
 		{Name: "datawatch", Value: e2eDW, Scopes: []httpauth.Scope{httpauth.ScopeRead, httpauth.ScopeSend}},

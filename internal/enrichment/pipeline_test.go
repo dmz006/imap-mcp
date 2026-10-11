@@ -24,9 +24,13 @@ func TestProcessBatchHandlesNullColumns(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/embeddings":
-			json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{0.1, 0.2, 0.3}})
+			if err := json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{0.1, 0.2, 0.3}}); err != nil {
+				t.Error(err)
+			}
 		case "/api/generate":
-			json.NewEncoder(w).Encode(map[string]any{"response": `{"hall":"notification","wing":"w","room":"r"}`})
+			if err := json.NewEncoder(w).Encode(map[string]any{"response": `{"hall":"notification","wing":"w","room":"r"}`}); err != nil {
+				t.Error(err)
+			}
 		}
 	}))
 	defer ollama.Close()
@@ -36,7 +40,7 @@ func TestProcessBatchHandlesNullColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	ctx := context.Background()
 	for i, m := range []*db.CachedMessage{
 		{Account: "a", Folder: "INBOX", UID: 1, FromAddr: "x@example.com", BodySkipped: true, InternalDate: time.Now()},
@@ -55,9 +59,15 @@ func TestProcessBatchHandlesNullColumns(t *testing.T) {
 		}
 	}
 	var pending, done, vectors int
-	d.SQL().QueryRow(`SELECT count(*) FROM enrichment_queue WHERE status='pending'`).Scan(&pending)
-	d.SQL().QueryRow(`SELECT count(*) FROM enrichment_queue WHERE status='done'`).Scan(&done)
-	d.SQL().QueryRow(`SELECT count(*) FROM message_vectors`).Scan(&vectors)
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM enrichment_queue WHERE status='pending'`).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM enrichment_queue WHERE status='done'`).Scan(&done); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM message_vectors`).Scan(&vectors); err != nil {
+		t.Fatal(err)
+	}
 	if pending != 0 || done != 2 || vectors != 2 {
 		t.Fatalf("pending=%d done=%d vectors=%d; NULL-column rows must be processed", pending, done, vectors)
 	}
@@ -74,13 +84,19 @@ func TestCleanerHookFeedsModelsNotCache(t *testing.T) {
 	var embedded string
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
 		if r.URL.Path == "/api/embeddings" {
 			embedded, _ = req["prompt"].(string)
-			json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{1}})
+			if err := json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{1}}); err != nil {
+				t.Error(err)
+			}
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"response": `{}`})
+		if err := json.NewEncoder(w).Encode(map[string]any{"response": `{}`}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer ollama.Close()
 	dir := t.TempDir()
@@ -88,7 +104,7 @@ func TestCleanerHookFeedsModelsNotCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	ctx := context.Background()
 	if _, err := d.Messages.Insert(ctx, &db.CachedMessage{Account: "a", Folder: "INBOX", UID: 1, FromAddr: "x@example.com",
 		Subject: "hi", BodyText: "raw body", InternalDate: time.Now()}); err != nil {
@@ -107,7 +123,9 @@ func TestCleanerHookFeedsModelsNotCache(t *testing.T) {
 		t.Errorf("embedder got %q, want cleaned text", embedded)
 	}
 	var stored string
-	d.SQL().QueryRow(`SELECT body_text FROM messages WHERE uid=1`).Scan(&stored)
+	if err := d.SQL().QueryRow(`SELECT body_text FROM messages WHERE uid=1`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
 	if stored != "raw body" {
 		t.Errorf("cache body changed to %q; cleaning must not touch the cache", stored)
 	}

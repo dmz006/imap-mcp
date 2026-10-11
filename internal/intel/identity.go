@@ -89,7 +89,7 @@ func ownIdentities(ctx context.Context, db *sql.DB) (all, pending []string, err 
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var a string
 		var todo bool
@@ -118,7 +118,7 @@ func ApplyIdentity(ctx context.Context, db *sql.DB, entry string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	for _, q := range []string{
 		`UPDATE intel_messages SET outgoing = 1 WHERE sender_id IN (SELECT id FROM senders WHERE ` + col + ` = ?)`,
 		`DELETE FROM reply_threads WHERE counterpart IN (SELECT address FROM senders WHERE ` + col + ` = ?)`,
@@ -182,7 +182,7 @@ func (sc *Scanner) seedOwnerNames(ctx context.Context, account string, all []Fol
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	for _, h := range b.Headers {
 		if own.has(h.From.Addr) && h.From.Name != "" {
 			if err := sc.st.ownerName(ctx, tx, h.From.Name); err != nil {
@@ -284,7 +284,7 @@ func (sc *Scanner) detectIdentities(ctx context.Context) error {
 			}
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	own := ownSet{}
 	for _, set := range sc.own {
 		for k := range set {
@@ -309,7 +309,7 @@ func (sc *Scanner) detectIdentities(ctx context.Context) error {
 					}
 				}
 			}
-			crows.Close()
+			_ = crows.Close()
 		}
 	}
 	if len(names) == 0 {
@@ -343,7 +343,7 @@ func (sc *Scanner) detectIdentities(ctx context.Context) error {
 			found = append(found, cand{addr, strings.Join(why, "; ")})
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}

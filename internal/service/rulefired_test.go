@@ -25,7 +25,7 @@ func TestRunRulesPublishesRuleFired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	s := New(cfg, pool, d, nil, nil)
 	id, err := s.CreateRule(context.Background(), &db.Rule{Name: "archive-alice", Active: true,
 		Conditions: db.RuleConditions{From: "alice"}, Actions: []db.RuleAction{{Type: "move", Dest: "Archive"}}})

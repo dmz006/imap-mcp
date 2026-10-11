@@ -65,7 +65,7 @@ func postJSON(ctx context.Context, client *http.Client, provider, url, token str
 	if err != nil {
 		return &ProviderError{Provider: provider, Transient: ctx.Err() == nil, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode/100 != 2 {
 		return &ProviderError{

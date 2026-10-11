@@ -73,7 +73,7 @@ func TestSyncAgainstIMAPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	s := New(cfg, pool, d, b, log)
 	if err := s.SyncAccount(ctx, "test"); err != nil {
@@ -120,7 +120,7 @@ func TestSyncAgainstIMAPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.Login(imaptest.Username, imaptest.Password).Wait(); err != nil {
 		t.Fatal(err)
 	}

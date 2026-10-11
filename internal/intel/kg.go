@@ -215,12 +215,12 @@ func (sc *Scanner) tagEdges(ctx context.Context) (int, error) {
 	for rows.Next() {
 		var t tagged
 		if err := rows.Scan(&t.account, &t.msgID, &t.from, &t.wing, &t.room, &t.date); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		list = append(list, t)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if len(list) == 0 {
 		return 0, rows.Err()
 	}
@@ -228,7 +228,7 @@ func (sc *Scanner) tagEdges(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	w := newKGWriter(ctx, tx)
 	n := 0
 	for _, t := range list {
@@ -401,12 +401,12 @@ func (sc *Scanner) modelEdges(ctx context.Context, perTick int) (int, error) {
 	for rows.Next() {
 		var c cand
 		if err := rows.Scan(&c.account, &c.msgID, &c.from, &c.subject, &c.body, &c.thread, &c.date); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		cands = append(cands, c)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	done := 0
 	for _, c := range cands {
@@ -449,7 +449,7 @@ func (sc *Scanner) storeExtracted(ctx context.Context, account string, hash int6
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	r, err := tx.ExecContext(ctx, `UPDATE intel_messages SET kg_llm_done = 1 WHERE account = ? AND msg_hash = ? AND kg_llm_done = 0`, account, hash)
 	if err != nil {
 		return err

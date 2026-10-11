@@ -215,7 +215,7 @@ func (o *ollama) generate(ctx context.Context, body map[string]any) (string, err
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("%s: HTTP %d: %s", o.Name(), resp.StatusCode, strings.TrimSpace(string(data)))

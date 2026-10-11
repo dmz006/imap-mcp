@@ -41,7 +41,7 @@ func intelSvc(t *testing.T) (*Service, *db.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	cfg := &config.Config{Accounts: []config.AccountConfig{{Name: "personal", Default: true}, {Name: "work"}}}
 	p := enrichment.NewPipeline(config.EnrichmentConfig{Concurrency: 1}, d, bus.New(), slog.New(slog.NewTextHandler(io.Discard, nil)),
 		enrichment.WithProviders(vecEmbed{[]float32{1, 0}}, noClass{}))
@@ -177,7 +177,9 @@ func TestIntelStats(t *testing.T) {
 	if st.Folders != 2 || st.FoldersComplete != 1 || st.BackfillComplete || st.MessagesIndexed != 2 || st.RepliesPaired != 1 || st.LastScan == "" {
 		t.Fatalf("partial scan = %+v", st)
 	}
-	d.StateSQL().Exec(`UPDATE intel_scan SET completed_at = unixepoch()`) //nolint:errcheck
+	if _, err := d.StateSQL().Exec(`UPDATE intel_scan SET completed_at = unixepoch()`); err != nil {
+		t.Fatal(err)
+	}
 	if st, _ = s.IntelStats(ctx); !st.BackfillComplete {
 		t.Error("all folders complete must report backfill_complete")
 	}
@@ -193,7 +195,9 @@ func TestResolveAnomaly(t *testing.T) {
 		VALUES('personal','eve@example.com','auth_failure','high','INBOX',7,'m7@example.com','{"method":"dmarc"}')`); err != nil {
 		t.Fatal(err)
 	}
-	d.StateSQL().Exec(`INSERT INTO senders(address, anomaly_score) VALUES('eve@example.com', 1.0)`) //nolint:errcheck
+	if _, err := d.StateSQL().Exec(`INSERT INTO senders(address, anomaly_score) VALUES('eve@example.com', 1.0)`); err != nil {
+		t.Fatal(err)
+	}
 	list, err := s.Anomalies(ctx, AnomalyParams{Type: "auth_failure"})
 	if err != nil || len(list) != 1 || list[0].MessageRef != "m7@example.com" || list[0].UID != 7 || string(list[0].Details) != `{"method":"dmarc"}` {
 		t.Fatalf("filtered = %+v %v", list, err)
@@ -203,7 +207,9 @@ func TestResolveAnomaly(t *testing.T) {
 		t.Fatalf("resolved = %+v %v", a, err)
 	}
 	var score float64
-	d.StateSQL().QueryRow(`SELECT anomaly_score FROM senders WHERE address='eve@example.com'`).Scan(&score) //nolint:errcheck
+	if err := d.StateSQL().QueryRow(`SELECT anomaly_score FROM senders WHERE address='eve@example.com'`).Scan(&score); err != nil {
+		t.Fatal(err)
+	}
 	if score != 0 {
 		t.Errorf("score after resolve = %v", score)
 	}

@@ -65,13 +65,10 @@ func Open(state, cache Options) (*DB, error) {
 	}
 	c, err := openFile(cache, "")
 	if err != nil {
-		d.Close()
-		return nil, fmt.Errorf("cache db: %w", err)
+		return nil, errors.Join(fmt.Errorf("cache db: %w", err), d.Close())
 	}
 	if err := ensureCacheSchema(c); err != nil {
-		c.Close()
-		d.Close()
-		return nil, fmt.Errorf("cache db: %w", err)
+		return nil, errors.Join(fmt.Errorf("cache db: %w", err), c.Close(), d.Close())
 	}
 	d.cache = c
 	d.Messages = &MessageRepo{db: c}
@@ -93,8 +90,7 @@ func OpenState(state Options) (*DB, error) {
 		return nil, fmt.Errorf("state db: %w", err)
 	}
 	if err := migrateState(s); err != nil {
-		s.Close()
-		return nil, fmt.Errorf("state db: %w", err)
+		return nil, errors.Join(fmt.Errorf("state db: %w", err), s.Close())
 	}
 	return &DB{
 		state:     s,
@@ -140,14 +136,14 @@ const (
 )
 
 func detect(path string) (fileKind, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- the operator's configured database path
 	if errors.Is(err, os.ErrNotExist) {
 		return fileNew, nil
 	}
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, len(sqliteMagic))
 	n, err := io.ReadFull(f, buf)
 	if n == 0 && (err == io.EOF || err == io.ErrUnexpectedEOF) {
@@ -208,7 +204,7 @@ func openFile(o Options, schema string) (*sql.DB, error) {
 
 	// Read the schema first so a wrong key surfaces as such, then apply ours.
 	if _, err := conn.Exec(`SELECT count(*) FROM sqlite_master`); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		if o.Key != "" && strings.Contains(err.Error(), "not a database") {
 			return nil, fmt.Errorf("%s: wrong encryption key or corrupt file", o.Path)
 		}
@@ -216,7 +212,7 @@ func openFile(o Options, schema string) (*sql.DB, error) {
 	}
 	if schema != "" {
 		if _, err := conn.Exec(schema); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("apply schema to %s: %w", o.Path, err)
 		}
 	}
@@ -227,11 +223,11 @@ func openFile(o Options, schema string) (*sql.DB, error) {
 // restrictFiles creates path (if missing) and sets it and any existing
 // -wal/-shm sidecars to 0600.
 func restrictFiles(path string) error {
-	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0o600) // #nosec G304 -- the operator's configured database path
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
 	}
-	f.Close()
+	_ = f.Close()
 	for _, p := range []string{path, path + "-wal", path + "-shm"} {
 		if err := os.Chmod(p, 0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("chmod %s: %w", p, err)
@@ -395,7 +391,7 @@ func hasColumn(conn *sql.DB, table, column string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {

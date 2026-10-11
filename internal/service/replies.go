@@ -200,13 +200,13 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 		var role, roleSource string
 		if err := rows.Scan(&r.it.threadHash, &r.it.ThreadID, &r.it.lastHash, &r.it.Counterpart, &r.it.Name, &r.it.Subject,
 			&r.it.MessageRef, &r.it.Folder, &r.uid, &r.last, &role, &roleSource, &written); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		r.known = outgoing || written > 0 || ((role == "personal" || role == "colleague") && strings.HasPrefix(roleSource, "signal:"))
 		all = append(all, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -387,7 +387,7 @@ func (s *Service) replyClearingFolders(ctx context.Context, account string) ([]s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var f string
 		if rows.Scan(&f) == nil && !slices.Contains(out, f) {
@@ -421,7 +421,7 @@ func (s *Service) cleanFirstContact(ctx context.Context, account, sender, messag
 	var hall sql.NullString
 	if err := cache.QueryRowContext(ctx, `SELECT hall FROM messages WHERE account = ? AND message_id IN (?, ?) AND COALESCE(hall,'') <> '' LIMIT 1`,
 		account, id, "<"+id+">").Scan(&hall); err != nil {
-		return false, nil //nolint:nilerr // not cached or not classified: not a clean first contact
+		return false, nil // not cached or not classified: not a clean first contact
 	}
 	if h := strings.Trim(strings.ToLower(strings.TrimSpace(hall.String)), "<>"); h != "conversation" && h != "personal" {
 		return false, nil

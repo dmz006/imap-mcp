@@ -145,7 +145,7 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 		var addr, domain, name, folder string
 		var n int
 		if err := rows.Scan(&addr, &domain, &name, &folder, &n); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		t := tally[addr]
@@ -156,7 +156,7 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 		t.discarded += n
 		t.byFolder[folder] += n
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -323,12 +323,12 @@ func (s *Service) learnExclusions(ctx context.Context, account string) (*learnEx
 			ex.held[bareAddr(a)] = true
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	rows, err = st.QueryContext(ctx, `SELECT target, status, COALESCE(rule_id,0) FROM learn_state WHERE account = ?`, account)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var t, status string
 		var id int64
@@ -483,7 +483,7 @@ func (s *Service) learnRun(ctx context.Context, now time.Time) error {
 				stale = append(stale, t)
 			}
 		}
-		rows.Close()
+		_ = rows.Close()
 		for _, t := range stale {
 			if _, err := st.ExecContext(ctx, `DELETE FROM learn_state WHERE account = ? AND target = ? AND status = ?`, a.Name, t, learnStatusSuggested); err != nil {
 				return err

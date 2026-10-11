@@ -73,7 +73,7 @@ func (s *Sender) sendImplicitTLS(addr string, auth smtp.Auth, rcpts []string, ra
 	if err != nil {
 		return fmt.Errorf("smtp client: %w", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() // after Quit; only closes the connection
 	if auth != nil {
 		if err := c.Auth(auth); err != nil {
 			return fmt.Errorf("smtp auth: %w", err)

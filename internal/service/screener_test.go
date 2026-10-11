@@ -44,7 +44,7 @@ func TestScreener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	s := New(cfg, pool, d, nil, nil)
 	ctx := context.Background()
 	st := d.StateSQL()
@@ -126,7 +126,7 @@ func TestScreener(t *testing.T) {
 		_ = rows.Scan(&x)
 		statuses[x]++
 	}
-	rows.Close()
+	_ = rows.Close()
 	// The forged sender is not even read (search is by the owner's address).
 	if statuses["ok"] != 1 || statuses["no dkim=pass and dmarc=pass in Authentication-Results"] != 1 {
 		t.Fatalf("reply statuses = %v", statuses)

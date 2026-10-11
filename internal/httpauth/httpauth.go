@@ -217,5 +217,5 @@ func (a *Authenticator) RequireScope(scope Scope) func(http.Handler) http.Handle
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, "{\"error\":%q}\n", msg)
+	_, _ = fmt.Fprintf(w, "{\"error\":%q}\n", msg)
 }

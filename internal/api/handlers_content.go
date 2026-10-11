@@ -124,5 +124,5 @@ func download(w http.ResponseWriter, filename string, data []byte) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Write(data) //nolint:errcheck
+	_, _ = w.Write(data)
 }

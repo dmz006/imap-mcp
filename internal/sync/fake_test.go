@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"slices"
-	gosync "sync"
 	"testing"
 	"time"
 
@@ -37,7 +36,6 @@ type fakeFolder struct {
 
 // fakeSource is an in-memory Source with CONDSTORE semantics.
 type fakeSource struct {
-	mu        gosync.Mutex
 	condstore bool
 	folders   map[string]*fakeFolder
 	// observations
@@ -153,7 +151,7 @@ func newHarness(t *testing.T, condstore bool, cfgMut func(*config.Config)) *harn
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	cfg := &config.Config{
 		Accounts: []config.AccountConfig{{Name: "personal"}},
 		Sync:     config.SyncConfig{WindowDays: 30, MaxMessageMB: 1, Folders: []string{"INBOX", `\Sent`}},
@@ -316,7 +314,9 @@ func TestSyncFlagsWithCondstore(t *testing.T) {
 func assertFlags(t *testing.T, h *harness, folder string, uid uint32, want string) {
 	t.Helper()
 	var got string
-	h.db.SQL().QueryRow(`SELECT flags FROM messages WHERE folder=? AND uid=?`, folder, uid).Scan(&got)
+	if err := h.db.SQL().QueryRow(`SELECT flags FROM messages WHERE folder=? AND uid=?`, folder, uid).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
 	if got != want {
 		t.Errorf("flags = %s, want %s", got, want)
 	}
@@ -336,7 +336,9 @@ func TestSyncUIDValidityRebuild(t *testing.T) {
 		t.Fatalf("after rebuild = %v", got)
 	}
 	var mid string
-	h.db.SQL().QueryRow(`SELECT message_id FROM messages WHERE folder='INBOX' AND uid=1`).Scan(&mid)
+	if err := h.db.SQL().QueryRow(`SELECT message_id FROM messages WHERE folder='INBOX' AND uid=1`).Scan(&mid); err != nil {
+		t.Fatal(err)
+	}
 	if mid != "z@x" {
 		t.Errorf("uid 1 is %q, want the new message", mid)
 	}
@@ -356,25 +358,35 @@ func TestSyncDedupAndBodyCap(t *testing.T) {
 	h.sync(t)
 
 	var queued, dups int
-	h.db.SQL().QueryRow(`SELECT count(*) FROM enrichment_queue`).Scan(&queued)
-	h.db.SQL().QueryRow(`SELECT count(*) FROM messages WHERE enrichment_status='duplicate'`).Scan(&dups)
+	if err := h.db.SQL().QueryRow(`SELECT count(*) FROM enrichment_queue`).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.SQL().QueryRow(`SELECT count(*) FROM messages WHERE enrichment_status='duplicate'`).Scan(&dups); err != nil {
+		t.Fatal(err)
+	}
 	if queued != 2 || dups != 1 {
 		t.Errorf("queued=%d duplicates=%d, want 2 and 1", queued, dups)
 	}
 	var skipped int
 	var body *string
-	h.db.SQL().QueryRow(`SELECT body_skipped, body_text FROM messages WHERE uid=2`).Scan(&skipped, &body)
+	if err := h.db.SQL().QueryRow(`SELECT body_skipped, body_text FROM messages WHERE uid=2`).Scan(&skipped, &body); err != nil {
+		t.Fatal(err)
+	}
 	if skipped != 1 || body != nil {
 		t.Errorf("oversize message: skipped=%d body=%v", skipped, body)
 	}
 	var text string
-	h.db.SQL().QueryRow(`SELECT body_text FROM messages WHERE folder='INBOX' AND uid=1`).Scan(&text)
+	if err := h.db.SQL().QueryRow(`SELECT body_text FROM messages WHERE folder='INBOX' AND uid=1`).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
 	if text != "body of 1\r\n" {
 		t.Errorf("body_text = %q", text)
 	}
 	// FTS sees cached bodies.
 	var hits int
-	h.db.SQL().QueryRow(`SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'body'`).Scan(&hits)
+	if err := h.db.SQL().QueryRow(`SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'body'`).Scan(&hits); err != nil {
+		t.Fatal(err)
+	}
 	if hits != 2 {
 		t.Errorf("fts hits = %d, want 2", hits)
 	}
@@ -552,11 +564,13 @@ func TestEnrichmentLaneAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id string
 		var lane int
-		rows.Scan(&id, &lane)
+		if err := rows.Scan(&id, &lane); err != nil {
+			t.Fatal(err)
+		}
 		lanes[id] = lane
 	}
 	want := map[string]int{"first@x": 1, "arrived@x": 0, "older@x": 1}

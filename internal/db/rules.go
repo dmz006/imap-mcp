@@ -73,7 +73,7 @@ func (r *RuleRepo) List() ([]Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Rule
 	for rows.Next() {
 		var rule Rule

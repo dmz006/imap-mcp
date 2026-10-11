@@ -50,7 +50,7 @@ func (st *store) apply(ctx context.Context, account, folder string, validity uin
 	if err != nil {
 		return res, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 
 	for _, h := range b.Headers {
 		if h.From.Addr == "" || h.Date.IsZero() {
@@ -271,7 +271,7 @@ func (st *store) register(ctx context.Context, account string, folders []string)
 			gone = append(gone, f)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, f := range gone {
 		if _, err := st.db.ExecContext(ctx, `DELETE FROM intel_scan WHERE account=? AND folder=?`, account, f); err != nil {
 			return err
@@ -314,12 +314,12 @@ func (st *store) pairReplies(ctx context.Context, account string) (int, error) {
 	for rows.Next() {
 		var p pair
 		if err := rows.Scan(&p.hash, &p.gap, &p.sender); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		pairs = append(pairs, p)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
@@ -330,7 +330,7 @@ func (st *store) pairReplies(ctx context.Context, account string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	done := 0
 	for _, p := range pairs {
 		r, err := tx.ExecContext(ctx, `UPDATE intel_messages SET paired=1 WHERE account=? AND msg_hash=? AND paired=0`, account, p.hash)

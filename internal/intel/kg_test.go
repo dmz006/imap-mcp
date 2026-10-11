@@ -19,7 +19,7 @@ func edges(t *testing.T, conn *sql.DB, pred string) map[string]int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]int{}
 	for rows.Next() {
 		var s, o string
@@ -39,7 +39,7 @@ func kgDB(t *testing.T) *db.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	return d
 }
 
@@ -178,7 +178,9 @@ func TestKGEndToEnd(t *testing.T) {
 	}
 	var conf float64
 	var props string
-	c.QueryRow(`SELECT r.confidence, r.properties FROM kg_relationships r JOIN kg_entities o ON o.id=r.object_id WHERE r.predicate='deadline' AND o.name='q4 budget'`).Scan(&conf, &props) //nolint:errcheck
+	if err := c.QueryRow(`SELECT r.confidence, r.properties FROM kg_relationships r JOIN kg_entities o ON o.id=r.object_id WHERE r.predicate='deadline' AND o.name='q4 budget'`).Scan(&conf, &props); err != nil {
+		t.Fatal(err)
+	}
 	if conf != confModel || !strings.Contains(props, "2026-11-01") {
 		t.Errorf("deadline conf=%v props=%q", conf, props)
 	}
@@ -206,13 +208,19 @@ func TestKGEndToEnd(t *testing.T) {
 	}
 
 	// Staleness: old evidence becomes history, fresh evidence is current.
-	c.Exec(`UPDATE kg_relationships SET last_seen = ? WHERE predicate = 'is_subscription'`, time.Now().Add(-400*24*time.Hour).Unix()) //nolint:errcheck
+	if _, err := c.Exec(`UPDATE kg_relationships SET last_seen = ? WHERE predicate = 'is_subscription'`, time.Now().Add(-400*24*time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.sc.markStale(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var stale, current int
-	c.QueryRow(`SELECT count(*) FROM kg_relationships WHERE predicate='is_subscription' AND valid_to IS NOT NULL`).Scan(&stale) //nolint:errcheck
-	c.QueryRow(`SELECT count(*) FROM kg_relationships WHERE predicate='corresponds_with' AND valid_to IS NULL`).Scan(&current)  //nolint:errcheck
+	if err := c.QueryRow(`SELECT count(*) FROM kg_relationships WHERE predicate='is_subscription' AND valid_to IS NOT NULL`).Scan(&stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.QueryRow(`SELECT count(*) FROM kg_relationships WHERE predicate='corresponds_with' AND valid_to IS NULL`).Scan(&current); err != nil {
+		t.Fatal(err)
+	}
 	if stale == 0 || current == 0 {
 		t.Errorf("stale=%d current=%d", stale, current)
 	}

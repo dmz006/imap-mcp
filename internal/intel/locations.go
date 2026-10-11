@@ -68,7 +68,7 @@ func (sc *Scanner) kinds(ctx context.Context, account string, all []Folder) (*fo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var f string
 		if err := rows.Scan(&f); err != nil {
@@ -170,7 +170,7 @@ func (sc *Scanner) locateFolder(ctx context.Context, account, folder string, k *
 		for _, h := range b.Headers {
 			if hash := msgHash(h.MessageID); hash != 0 {
 				if err := sc.st.locate(ctx, tx, account, hash, folder, k); err != nil {
-					tx.Rollback() //nolint:errcheck
+					_ = tx.Rollback()
 					return err
 				}
 			}
@@ -180,7 +180,7 @@ func (sc *Scanner) locateFolder(ctx context.Context, account, folder string, k *
 			VALUES(?,?,?,?,unixepoch())
 			ON CONFLICT(account, folder) DO UPDATE SET uidvalidity = excluded.uidvalidity, last_uid = excluded.last_uid, updated_at = unixepoch()`,
 			account, folder, validity, after); err != nil {
-			tx.Rollback() //nolint:errcheck
+			_ = tx.Rollback()
 			return err
 		}
 		if err := tx.Commit(); err != nil {

@@ -17,7 +17,7 @@ func TestOpenAppliesPragmas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	var journal string
 	if err := d.SQL().QueryRow(`PRAGMA journal_mode`).Scan(&journal); err != nil {
@@ -54,12 +54,12 @@ func TestConcurrentOpenersShareFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open a: %v", err)
 	}
-	defer a.Close()
+	defer func() { _ = a.Close() }()
 	b, err := Open(st, ca)
 	if err != nil {
 		t.Fatalf("Open b: %v", err)
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	const n = 200
 	var wg sync.WaitGroup
@@ -107,23 +107,29 @@ func TestIntelTablesMoveToState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	d.Close()
+	_ = d.Close()
 
 	d, err = Open(st, ca)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	var n int
-	d.SQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships')`).Scan(&n) //nolint:errcheck
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships')`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 0 {
 		t.Errorf("%d intelligence tables left in cache.db", n)
 	}
-	d.SQL().QueryRow(`SELECT count(*) FROM messages`).Scan(&n) //nolint:errcheck
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM messages`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 1 {
 		t.Errorf("cache was rebuilt: %d messages", n)
 	}
-	d.StateSQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships','intel_messages','intel_scan')`).Scan(&n) //nolint:errcheck
+	if err := d.StateSQL().QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('senders','anomalies','kg_entities','kg_relationships','intel_messages','intel_scan')`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 6 {
 		t.Errorf("state DB has %d of 6 intelligence tables", n)
 	}
@@ -154,21 +160,25 @@ func TestStateMigrationAddsKGColumns(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	old.Close()
+	_ = old.Close()
 
 	d, err := OpenState(Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	var rows, flagged int
-	d.StateSQL().QueryRow(`SELECT count(*), sum(kg_done + kg_tags_done + kg_llm_done) FROM intel_messages`).Scan(&rows, &flagged) //nolint:errcheck
+	if err := d.StateSQL().QueryRow(`SELECT count(*), sum(kg_done + kg_tags_done + kg_llm_done) FROM intel_messages`).Scan(&rows, &flagged); err != nil {
+		t.Fatal(err)
+	}
 	if rows != 2 || flagged != 0 {
 		t.Errorf("index rows=%d flags=%d", rows, flagged)
 	}
 	var last int
 	var completed sql.NullInt64
-	d.StateSQL().QueryRow(`SELECT last_uid, completed_at FROM intel_scan`).Scan(&last, &completed) //nolint:errcheck
+	if err := d.StateSQL().QueryRow(`SELECT last_uid, completed_at FROM intel_scan`).Scan(&last, &completed); err != nil {
+		t.Fatal(err)
+	}
 	if last != 0 || completed.Valid {
 		t.Errorf("scan not reset: last_uid=%d completed=%v", last, completed)
 	}
@@ -185,11 +195,15 @@ func TestStateMigrationAddsKGColumns(t *testing.T) {
 		t.Error("one finding per message and type: unique index missing")
 	}
 	// A second open is a no-op: the scan is not reset again.
-	d.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 9`) //nolint:errcheck
-	d.Close()
+	if _, err := d.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 9`); err != nil {
+		t.Fatal(err)
+	}
+	_ = d.Close()
 	d, _ = OpenState(Options{Path: path})
-	defer d.Close()
-	d.StateSQL().QueryRow(`SELECT last_uid FROM intel_scan`).Scan(&last) //nolint:errcheck
+	defer func() { _ = d.Close() }()
+	if err := d.StateSQL().QueryRow(`SELECT last_uid FROM intel_scan`).Scan(&last); err != nil {
+		t.Fatal(err)
+	}
 	if last != 9 {
 		t.Errorf("second open reset the scan: last_uid=%d", last)
 	}
@@ -215,13 +229,13 @@ func TestStateMigrationRescansForReplyThreads(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	old.Close()
+	_ = old.Close()
 
 	d, err := OpenState(Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	var last, until, completed int
 	if err := d.StateSQL().QueryRow(`SELECT last_uid, rescan_until, completed_at FROM intel_scan`).Scan(&last, &until, &completed); err != nil {
 		t.Fatal(err)
@@ -229,23 +243,25 @@ func TestStateMigrationRescansForReplyThreads(t *testing.T) {
 	if last != 0 || until != 500 || completed != 123 {
 		t.Errorf("last_uid=%d rescan_until=%d completed_at=%d, want 0, 500, 123", last, until, completed)
 	}
-	d.Close()
+	_ = d.Close()
 	// Opening again does not restart it a second time.
 	d2, err := OpenState(Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d2.Close()
+	defer func() { _ = d2.Close() }()
 	if _, err := d2.StateSQL().Exec(`UPDATE intel_scan SET last_uid = 600`); err != nil {
 		t.Fatal(err)
 	}
-	d2.Close()
+	_ = d2.Close()
 	d3, err := OpenState(Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d3.Close()
-	d3.StateSQL().QueryRow(`SELECT last_uid FROM intel_scan`).Scan(&last) //nolint:errcheck
+	defer func() { _ = d3.Close() }()
+	if err := d3.StateSQL().QueryRow(`SELECT last_uid FROM intel_scan`).Scan(&last); err != nil {
+		t.Fatal(err)
+	}
 	if last != 600 {
 		t.Errorf("rescan restarted again: last_uid=%d", last)
 	}

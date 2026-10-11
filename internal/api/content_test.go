@@ -42,7 +42,7 @@ func contentServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	authn, err := httpauth.New([]httpauth.Token{
 		{Name: "reader", Value: readToken, Scopes: []httpauth.Scope{httpauth.ScopeRead}},
@@ -68,7 +68,7 @@ func do(t *testing.T, method, u, token, body string) *http.Response {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -82,19 +82,25 @@ func TestRESTContentRoutes(t *testing.T) {
 		Count       int
 		Attachments []struct{ Part, Filename string }
 	}
-	json.NewDecoder(resp.Body).Decode(&list) //nolint:errcheck
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != 200 || list.Count != 1 || list.Attachments[0].Part != "2" {
 		t.Fatalf("attachments: %d %+v", resp.StatusCode, list)
 	}
 	resp = do(t, "GET", hs.URL+"/api/threads/"+url.PathEscape("<root@example.com>"), readToken, "")
 	var th struct{ Count int }
-	json.NewDecoder(resp.Body).Decode(&th) //nolint:errcheck
+	if err := json.NewDecoder(resp.Body).Decode(&th); err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != 200 || th.Count != 2 {
 		t.Fatalf("thread: %d %+v", resp.StatusCode, th)
 	}
 	resp = do(t, "GET", hs.URL+"/api/search/cross?from=bob&live=true", readToken, "")
 	var xs struct{ Count int }
-	json.NewDecoder(resp.Body).Decode(&xs) //nolint:errcheck
+	if err := json.NewDecoder(resp.Body).Decode(&xs); err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != 200 || xs.Count != 1 {
 		t.Fatalf("cross search: %d %+v", resp.StatusCode, xs)
 	}
@@ -171,7 +177,7 @@ func TestIntelProgressNamesOnlyBehindAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 || strings.Contains(string(body), `"work"`) || !strings.Contains(string(body), `"index":1`) ||
 		!strings.Contains(string(body), `"hold_digest_hour"`) {
 		t.Errorf("health %d: %s", resp.StatusCode, body)

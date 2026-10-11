@@ -50,7 +50,7 @@ func (s *Service) AccountStats(ctx context.Context, account string) (AccountStat
 	if err != nil {
 		return st, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var k string
 		var n int

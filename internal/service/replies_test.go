@@ -90,7 +90,9 @@ func TestReplyLists(t *testing.T) {
 		}
 	}
 	var answered int
-	st.QueryRow(`SELECT answered FROM reply_threads WHERE message_ref = 't5@x'`).Scan(&answered) //nolint:errcheck
+	if err := st.QueryRow(`SELECT answered FROM reply_threads WHERE message_ref = 't5@x'`).Scan(&answered); err != nil {
+		t.Fatal(err)
+	}
 	if answered != 1 {
 		t.Error("\\Answered found on the server was not recorded")
 	}

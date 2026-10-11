@@ -44,12 +44,12 @@ func (s *Service) Query(ctx context.Context, q query.Query) (*QueryResult, error
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	rows, err := tx.QueryContext(ctx, c.SQL, c.Args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	res := &QueryResult{View: q.View, Columns: c.Columns, Rows: [][]any{}}
 	for rows.Next() {

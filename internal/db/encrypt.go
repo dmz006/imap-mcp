@@ -139,9 +139,11 @@ type exclusiveConn struct {
 	conn *sql.Conn
 }
 
+// close releases the lock. Nothing is written through this connection after
+// the lock is taken, so a close error has nothing to lose.
 func (c *exclusiveConn) close() {
-	c.conn.Close()
-	c.db.Close()
+	_ = c.conn.Close()
+	_ = c.db.Close()
 }
 
 // lockExclusive opens path, leaves WAL mode and takes a persistent EXCLUSIVE
@@ -158,7 +160,7 @@ func lockExclusive(ctx context.Context, path string) (*exclusiveConn, error) {
 	db.SetMaxOpenConns(1)
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	c := &exclusiveConn{db: db, conn: conn}
@@ -210,13 +212,13 @@ func verifyEncrypted(ctx context.Context, path, key string, want map[string]tabl
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // read-only
 	db.SetMaxOpenConns(1)
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var ok string
 	if err := conn.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&ok); err != nil {
@@ -258,12 +260,12 @@ func contentDigest(ctx context.Context, conn *sql.Conn) (map[string]tableDigest,
 	for rows.Next() {
 		var n string
 		if err := rows.Scan(&n); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		tables = append(tables, n)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -285,7 +287,7 @@ func digestTable(ctx context.Context, conn *sql.Conn, table string) (tableDigest
 	if err != nil {
 		return d, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	vals := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
@@ -298,7 +300,7 @@ func digestTable(ctx context.Context, conn *sql.Conn, table string) (tableDigest
 		}
 		h := sha256.New()
 		for _, v := range vals {
-			fmt.Fprintf(h, "%T:%v\x1f", v, v)
+			_, _ = fmt.Fprintf(h, "%T:%v\x1f", v, v)
 		}
 		s := h.Sum(nil)
 		d.sum[0] += binary.LittleEndian.Uint64(s[0:8])
@@ -309,12 +311,12 @@ func digestTable(ctx context.Context, conn *sql.Conn, table string) (tableDigest
 }
 
 func syncFile(path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- a database file under the operator's configured path
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return f.Sync()
+	err = f.Sync()
+	return errors.Join(err, f.Close())
 }
 
 // redact removes the key (raw and URI-escaped) from an error message.

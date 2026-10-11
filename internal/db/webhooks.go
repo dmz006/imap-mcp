@@ -73,7 +73,7 @@ func (r *WebhookRepo) query(ctx context.Context, where string, args ...any) ([]W
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Webhook{}
 	for rows.Next() {
 		w, err := scanWebhook(rows)
@@ -150,7 +150,7 @@ const deliveryCols = `id, webhook_id, delivery_id, event, payload, status, attem
 	COALESCE(last_status,0), COALESCE(last_error,''), created_at, COALESCE(done_at,0)`
 
 func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Delivery{}
 	for rows.Next() {
 		var d Delivery
@@ -194,7 +194,7 @@ func (r *WebhookRepo) Delivered(ctx context.Context, d Delivery, status int, now
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `UPDATE webhook_deliveries SET status='delivered', attempts=attempts+1,
 		last_status=?, last_error=NULL, done_at=? WHERE id=?`, status, now.Unix(), d.ID); err != nil {
 		return err
@@ -214,7 +214,7 @@ func (r *WebhookRepo) Failed(ctx context.Context, d Delivery, status int, msg st
 	if err != nil {
 		return 0, false, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	if next.IsZero() {
 		_, err = tx.ExecContext(ctx, `UPDATE webhook_deliveries SET status='failed', attempts=attempts+1,
 			last_status=?, last_error=?, done_at=? WHERE id=?`, status, msg, now.Unix(), d.ID)

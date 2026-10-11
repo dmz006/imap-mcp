@@ -34,7 +34,7 @@ func parseBody(raw []byte) parsedBody {
 	if r == nil {
 		return out
 	}
-	if err == nil || r.Header.Header.Len() > 0 {
+	if err == nil || r.Header.Len() > 0 {
 		if refs, err := r.Header.MsgIDList("References"); err == nil {
 			out.References = refs
 		}

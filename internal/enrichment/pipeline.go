@@ -282,7 +282,7 @@ func (p *Pipeline) selectLane(ctx context.Context, lane, limit int) ([]queueItem
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var items []queueItem
 	for rows.Next() {
 		var it queueItem
@@ -344,11 +344,19 @@ func (p *Pipeline) handle(ctx context.Context, it queueItem) bool {
 		return false
 	}
 	p.succeed()
-	p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='done', processed_at=unixepoch(), last_error=NULL WHERE id=?`, it.queueID)           //nolint:errcheck
-	p.db.SQL().ExecContext(ctx, `UPDATE messages SET enrichment_status='done', enriched_at=unixepoch(), enrichment_error=NULL WHERE id=?`, it.messageID) //nolint:errcheck
+	p.setStatus(ctx, `UPDATE enrichment_queue SET status='done', processed_at=unixepoch(), last_error=NULL WHERE id=?`, it.queueID)
+	p.setStatus(ctx, `UPDATE messages SET enrichment_status='done', enriched_at=unixepoch(), enrichment_error=NULL WHERE id=?`, it.messageID)
 	p.bus.PublishAsync(bus.Event{Type: bus.EventEnrichmentDone, Payload: result})
 	p.log.Debug("enriched", "message_id", it.messageID, "lane", it.lane, "hall", result.Hall)
 	return true
+}
+
+// setStatus records a queue/message status change. A failure is logged; the
+// row keeps its previous status.
+func (p *Pipeline) setStatus(ctx context.Context, query string, args ...any) {
+	if _, err := p.db.SQL().ExecContext(ctx, query, args...); err != nil {
+		p.log.Warn("enrichment status update failed", "err", err)
+	}
 }
 
 // fail requeues the item (or marks it error after max attempts) and, for
@@ -358,11 +366,11 @@ func (p *Pipeline) fail(ctx context.Context, it queueItem, err error) {
 	maxAttempts := max(p.cfg.MaxAttempts, 1)
 	p.log.Warn("enrich message failed", "message_id", it.messageID, "attempt", attempts, "err", err)
 	if attempts >= maxAttempts {
-		p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='error', last_error=? WHERE id=?`, err.Error(), it.queueID)            //nolint:errcheck
-		p.db.SQL().ExecContext(ctx, `UPDATE messages SET enrichment_status='error', enrichment_error=? WHERE id=?`, err.Error(), it.messageID) //nolint:errcheck
+		p.setStatus(ctx, `UPDATE enrichment_queue SET status='error', last_error=? WHERE id=?`, err.Error(), it.queueID)
+		p.setStatus(ctx, `UPDATE messages SET enrichment_status='error', enrichment_error=? WHERE id=?`, err.Error(), it.messageID)
 		p.bus.PublishAsync(bus.Event{Type: bus.EventEnrichmentError, Payload: map[string]any{"message_id": it.messageID, "error": err.Error()}})
 	} else {
-		p.db.SQL().ExecContext(ctx, `UPDATE enrichment_queue SET status='pending', last_error=? WHERE id=?`, err.Error(), it.queueID) //nolint:errcheck
+		p.setStatus(ctx, `UPDATE enrichment_queue SET status='pending', last_error=? WHERE id=?`, err.Error(), it.queueID)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -458,7 +466,7 @@ func (p *Pipeline) Stats(ctx context.Context) (Stats, error) {
 		var lane, n int
 		var oldest sql.NullInt64
 		if err := rows.Scan(&status, &lane, &n, &oldest); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return st, err
 		}
 		switch status {
@@ -475,9 +483,9 @@ func (p *Pipeline) Stats(ctx context.Context) (Stats, error) {
 			st.Errors += n
 		}
 	}
-	rows.Close()
-	p.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM enrichment_queue WHERE status='done' AND processed_at >= ?`, now-3600).Scan(&st.DoneLastHour) //nolint:errcheck
-	p.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE enrichment_status='duplicate'`).Scan(&st.Duplicates)                           //nolint:errcheck
+	_ = rows.Close()
+	_ = p.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM enrichment_queue WHERE status='done' AND processed_at >= ?`, now-3600).Scan(&st.DoneLastHour)
+	_ = p.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE enrichment_status='duplicate'`).Scan(&st.Duplicates)
 	p.mu.Lock()
 	st.BackfillPaused = p.paused
 	if d := p.backoffUntil.Sub(p.now()); d > 0 {

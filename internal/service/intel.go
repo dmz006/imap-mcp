@@ -96,7 +96,7 @@ func (s *Service) SemanticSearch(ctx context.Context, p SemanticParams) (Semanti
 	if err != nil {
 		return res, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id, date int64
 		var h SemanticHit
@@ -195,7 +195,7 @@ func (s *Service) ListSenders(ctx context.Context, role, domain string, limit in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Sender{}
 	for rows.Next() {
 		x, err := scanSender(rows)
@@ -235,7 +235,7 @@ func (s *Service) GetSenderProfile(ctx context.Context, address string) (SenderP
 	}
 	p.Sender = x
 	if s.db.SQL() != nil {
-		s.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE lower(from_addr) = ?`, address).Scan(&p.CachedMessages) //nolint:errcheck
+		_ = s.db.SQL().QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE lower(from_addr) = ?`, address).Scan(&p.CachedMessages)
 	}
 	if err == sql.ErrNoRows && p.CachedMessages == 0 {
 		return p, notFound("no profile or cached mail for %s", address)
@@ -278,7 +278,7 @@ func (s *Service) SenderHistory(ctx context.Context, account, address string, li
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []SemanticHit{}
 	for rows.Next() {
 		var h SemanticHit
@@ -341,7 +341,7 @@ func (s *Service) KGQuery(ctx context.Context, p KGParams) ([]KGEdge, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []KGEdge{}
 	for rows.Next() {
 		var e KGEdge
@@ -425,7 +425,7 @@ func (s *Service) Anomalies(ctx context.Context, p AnomalyParams) ([]Anomaly, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Anomaly{}
 	for rows.Next() {
 		var a Anomaly

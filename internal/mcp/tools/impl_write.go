@@ -177,11 +177,11 @@ func (h *Handlers) FlagBulk(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	uidSet := imaplib.UIDSetNum(uids...)
 	if addFlags != "" {
 		opts := &imaplib.StoreFlags{Op: imaplib.StoreFlagsAdd, Flags: service.ParseFlags(addFlags)}
-		conn.Client().Store(uidSet, opts, nil).Close() //nolint:errcheck
+		_ = conn.Client().Store(uidSet, opts, nil).Close()
 	}
 	if removeFlags != "" {
 		opts := &imaplib.StoreFlags{Op: imaplib.StoreFlagsDel, Flags: service.ParseFlags(removeFlags)}
-		conn.Client().Store(uidSet, opts, nil).Close() //nolint:errcheck
+		_ = conn.Client().Store(uidSet, opts, nil).Close()
 	}
 	return mcp.NewToolResultText(fmt.Sprintf("updated flags on %d messages in %s", len(uids), folder)), nil
 }

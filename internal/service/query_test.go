@@ -17,7 +17,7 @@ func querySvc(t *testing.T) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	now := time.Now().Unix()
 	for i, m := range []struct {
 		from, subject, flags string

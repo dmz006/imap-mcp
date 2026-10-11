@@ -90,7 +90,7 @@ func (r *MessageRepo) CachedUIDs(ctx context.Context, account, folder string) (m
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[uint32][]string{}
 	for rows.Next() {
 		var uid uint32
@@ -122,7 +122,7 @@ func (r *MessageRepo) Insert(ctx context.Context, m *CachedMessage) (InsertResul
 	if err != nil {
 		return res, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 
 	dup := false
 	if m.MessageID != "" {
@@ -231,7 +231,7 @@ func (r *MessageRepo) Counts(ctx context.Context) ([]FolderCount, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []FolderCount
 	for rows.Next() {
 		var c FolderCount
@@ -330,12 +330,12 @@ func (r *MessageRepo) Sweep(ctx context.Context, f SweepFilter, dryRun bool, now
 	for rows.Next() {
 		var c FolderCount
 		if err := rows.Scan(&c.Account, &c.Folder, &c.Count); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, c)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil || dryRun || len(out) == 0 {
 		return out, err
 	}
@@ -343,7 +343,7 @@ func (r *MessageRepo) Sweep(ctx context.Context, f SweepFilter, dryRun bool, now
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE `+where, args...); err != nil {
 		return nil, err
 	}
@@ -409,14 +409,14 @@ func (r *MessageRepo) pruneWhere(ctx context.Context, drop func(account, folder 
 	for rows.Next() {
 		var c FolderCount
 		if err := rows.Scan(&c.Account, &c.Folder, &c.Count); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		if drop(c.Account, c.Folder) {
 			stale = append(stale, c)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
