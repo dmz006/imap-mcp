@@ -7,6 +7,10 @@ measured. [tuning.md](tuning.md) turns these into a setup guide.
 
 | Release | Symptom | Cause | Fix |
 |---|---|---|---|
+| 0.20.0 | gpt-oss answered nothing in a verdict evaluation (100 of 100 unparsed) | In Ollama's JSON mode gpt-oss returns an empty answer; it answers fine as plain text with low thinking | The verdict client falls back: JSON mode with thinking off, then plain text with low thinking, then no thinking switch |
+| 0.20.0 | Every model looked like it flagged a lot of legitimate mail | The "legitimate" sample counted anyone ever written to, store notices included, and a "bulk" verdict on those is right; the hold only holds a score-0 message on "scam" | The evaluation applies the automated-sender filter to the legitimate sample and reports scam-only false positives separately |
+| 0.20.0 | Newer candidate models would not download on one GPU host | That host's Ollama was too old for the models' format | Evaluate on a host with a current Ollama (the evaluation takes any Ollama URL), and upgrade the other |
+| 0.20.0 | The small classify model caught 0 of 5 spam in a smoke test | Small models used as-is classify poorly (published results agree) | The verdict model is separate from the classify model and chosen by evaluation on the owner's mail |
 | 0.19.1 | The 0.19.0 release build failed: "no matching files" for the rule packs | `.gitignore` ignores `*.yaml` (to keep configs with credentials out), so the pack files were never committed; local builds still had them | Except `internal/rulepacks/packs/*.yaml`; check `git status` for untracked files a build needs |
 | 0.18.1 | Identity detection proposed nothing | The owner's display names were counted only from mail indexed after the release and from cached sent mail, and the cache synced only INBOX | Read the From names of up to 200 Sent messages once when none are known |
 | 0.18.0 | About half of one account's `needs_reply` items were noise (46 items) | The owner's work and Kindle addresses counted as other people; calendar invites, store notices and family FYI forwards counted as conversations | Identities (D50); drop invites, automated senders and bare forwards (D51). 46 → 23 |

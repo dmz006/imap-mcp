@@ -172,15 +172,36 @@ func NewOllama(url, model string) Model {
 
 func (o *ollama) Name() string { return "ollama:" + o.model }
 
+// Judge tries, in order: JSON mode with thinking off (most models); plain
+// text with low thinking (gpt-oss answers empty in JSON mode); plain text
+// with no thinking switch (models without one). The first non-empty answer
+// wins.
 func (o *ollama) Judge(ctx context.Context, prompt string) (string, error) {
-	body := map[string]any{"model": o.model, "prompt": prompt, "stream": false, "format": "json",
-		"think": false, "options": map[string]any{"temperature": 0}}
-	out, err := o.generate(ctx, body)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "think") {
-		delete(body, "think") // a model without a thinking switch
-		out, err = o.generate(ctx, body)
+	var lastErr error
+	for _, extra := range []map[string]any{
+		{"format": "json", "think": false},
+		{"think": "low"},
+		{},
+	} {
+		body := map[string]any{"model": o.model, "prompt": prompt, "stream": false, "options": map[string]any{"temperature": 0}}
+		for k, v := range extra {
+			body[k] = v
+		}
+		out, err := o.generate(ctx, body)
+		if err == nil && strings.TrimSpace(out) != "" {
+			return out, nil
+		}
+		if err != nil {
+			lastErr = err
+			if ctx.Err() != nil {
+				return "", err
+			}
+		}
 	}
-	return out, err
+	if lastErr == nil {
+		lastErr = fmt.Errorf("%s: empty answer", o.Name())
+	}
+	return "", lastErr
 }
 
 func (o *ollama) generate(ctx context.Context, body map[string]any) (string, error) {

@@ -49,8 +49,8 @@ type Scanner struct {
 	bus *bus.Bus  // anomaly.detected; nil = not published
 	det *detector // this tick's anomaly detector (nil = off)
 
-	discardFolders []string                // rules.learn.discard_folders
-	alsoMe         []string                // identity.also_me (D50)
+	discardFolders []string // rules.learn.discard_folders
+	alsoMe         []string // identity.also_me (D50)
 	afterTick      func(ctx context.Context) error
 	base           map[string]ownSet       // account → login addresses only
 	folderKinds    map[string]*folderKinds // this tick's classification per account (D34)

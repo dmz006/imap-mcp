@@ -141,16 +141,21 @@ func (s *Service) evalSample(ctx context.Context, perClass int) ([]labeled, erro
 
 	// Legitimate: the latest message of conversations with correspondents.
 	var legit []ExportRef
-	rows, err = st.QueryContext(ctx, `SELECT t.account, t.folder, t.uid FROM reply_threads t JOIN senders s ON s.address = t.counterpart
+	// The same automated-sender filter as needs_reply (D51): store notices
+	// and no-reply senders are not "legitimate correspondence" for scoring.
+	rows, err = st.QueryContext(ctx, `SELECT t.account, t.folder, t.uid, t.counterpart FROM reply_threads t JOIN senders s ON s.address = t.counterpart
 		WHERE t.outgoing = 0 AND t.direct = 1 AND COALESCE(t.uid,0) > 0 AND COALESCE(t.folder,'') <> ''
 			AND (s.sent_count > 0 OR s.reply_count > 0) AND COALESCE(s.role,'') NOT IN ('bot','newsletter','vendor','self')
-		ORDER BY random() LIMIT ?`, perClass*2)
+			AND NOT (COALESCE(s.message_count,0) > 0
+				AND (COALESCE(s.list_count,0) + COALESCE(s.bulk_count,0) + COALESCE(s.auto_count,0)) * 2 > COALESCE(s.message_count,0))
+		ORDER BY random() LIMIT ?`, perClass*4)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var r ExportRef
-		if rows.Scan(&r.Account, &r.Folder, &r.UID) == nil {
+		var counterpart string
+		if rows.Scan(&r.Account, &r.Folder, &r.UID, &counterpart) == nil && !intel.IsNoReply(counterpart) {
 			legit = append(legit, r)
 		}
 	}
@@ -212,9 +217,10 @@ type EvalParams struct {
 // EvalThreshold is one model's result at one confidence threshold.
 type EvalThreshold struct {
 	Threshold      float64 `json:"threshold"`
-	SpamCaught     int     `json:"spam_caught"`     // spam judged scam/bulk at or above the threshold
-	FalsePositives int     `json:"false_positives"` // legitimate mail judged scam/bulk at or above it
-	LegitVetted    int     `json:"legit_vetted"`    // legitimate mail judged legitimate at or above it
+	SpamCaught     int     `json:"spam_caught"`          // spam judged scam/bulk at or above the threshold
+	FalsePositives int     `json:"false_positives"`      // legitimate mail judged scam/bulk at or above it
+	ScamFP         int     `json:"scam_false_positives"` // legitimate mail judged scam at or above it (what can hold a score-0 message)
+	LegitVetted    int     `json:"legit_vetted"`         // legitimate mail judged legitimate at or above it
 	SpamRecall     float64 `json:"spam_recall"`
 	FPRate         float64 `json:"false_positive_rate"`
 }
@@ -362,6 +368,9 @@ func evaluate(ctx context.Context, m verdict.Model, sample []labeled) EvalModel 
 				th.SpamCaught++
 			case !a.spam && flagged:
 				th.FalsePositives++
+				if a.r.Verdict == "scam" {
+					th.ScamFP++
+				}
 			case !a.spam && a.r.Verdict == "legitimate" && a.r.Confidence >= t:
 				th.LegitVetted++
 			}

@@ -216,11 +216,11 @@ func runVerdictEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%-28s %5s %5s %6s %6s %7s | %s\n", "model", "spam", "legit", "unpars", "errors", "avg ms", "threshold: spam caught / false positives / legit vetted")
+	fmt.Printf("%-28s %5s %5s %6s %6s %7s | %s\n", "model", "spam", "legit", "unpars", "errors", "avg ms", "threshold: spam caught / false pos (scam only) / legit vetted")
 	for _, r := range results {
 		line := fmt.Sprintf("%-28s %5d %5d %6d %6d %7d |", r.Model, r.Spam, r.Legit, r.Unparsed, r.Errors, r.AvgMillis)
 		for _, t := range r.Thresholds {
-			line += fmt.Sprintf(" %.1f: %d/%d/%d", t.Threshold, t.SpamCaught, t.FalsePositives, t.LegitVetted)
+			line += fmt.Sprintf(" %.1f: %d/%d(%d)/%d", t.Threshold, t.SpamCaught, t.FalsePositives, t.ScamFP, t.LegitVetted)
 		}
 		fmt.Println(line)
 	}

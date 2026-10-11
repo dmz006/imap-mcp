@@ -35,11 +35,11 @@ func TestVerdictHold(t *testing.T) {
 	me := imaptest.Username
 	now := time.Now()
 	for _, m := range []string{
-		raw("v0s@x", "Dr. Ann <ann@health.example>", me, "A ritual for memory"),                              // score 0, model: scam
-		raw("v0l@x", "Bob <bob@friendly.example>", me, "Hello"),                                              // score 0, model: legitimate
-		raw("v1b@x", "Promo <p@single.example>", me, "News", "List-Unsubscribe: <mailto:u@single.example>"),  // score 1, model: bulk
+		raw("v0s@x", "Dr. Ann <ann@health.example>", me, "A ritual for memory"),                                  // score 0, model: scam
+		raw("v0l@x", "Bob <bob@friendly.example>", me, "Hello"),                                                  // score 0, model: legitimate
+		raw("v1b@x", "Promo <p@single.example>", me, "News", "List-Unsubscribe: <mailto:u@single.example>"),      // score 1, model: bulk
 		raw("v1n@x", "Promo2 <p@otherone.example>", me, "News", "List-Unsubscribe: <mailto:u@otherone.example>"), // score 1, no verdict
-		raw("v0w@x", "Weak <w@weak.example>", me, "Hi"),                                                      // score 0, model: scam below threshold
+		raw("v0w@x", "Weak <w@weak.example>", me, "Hi"),                                                          // score 0, model: scam below threshold
 	} {
 		f.srv.Append(t, "INBOX", m, now)
 	}
