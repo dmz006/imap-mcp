@@ -74,3 +74,15 @@ func TestNewSender_Validation(t *testing.T) {
 		t.Error("missing host should error")
 	}
 }
+
+func TestSendRejectsHeaderInjection(t *testing.T) {
+	s := &Sender{cfg: &config.SMTPConfig{Host: "127.0.0.1", Port: 1, From: "me@example.com"}}
+	for _, m := range []Message{
+		{To: []string{"a@example.com\r\nBcc: x@example.com"}, Subject: "s", Body: "b"},
+		{To: []string{"a@example.com"}, Cc: []string{"c@example.com\nBcc: x@example.com"}, Subject: "s", Body: "b"},
+	} {
+		if err := s.Send(m); err == nil || !strings.Contains(err.Error(), "header injection") {
+			t.Errorf("Send(%q) = %v, want a header injection error", m.To, err)
+		}
+	}
+}

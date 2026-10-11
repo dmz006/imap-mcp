@@ -47,6 +47,14 @@ func (s *Sender) Send(msg Message) error {
 	if len(msg.To) == 0 {
 		return fmt.Errorf("at least one recipient is required")
 	}
+	// Header fields must be single lines: a CR or LF in an address would let
+	// the caller add headers (Bcc, …). Callers validate addresses already;
+	// this keeps the guarantee here too. The subject is sanitized in build.
+	for _, v := range append(append([]string{s.cfg.From}, msg.To...), msg.Cc...) {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("header injection: a CR or LF in an address is not allowed")
+		}
+	}
 	addr := net.JoinHostPort(s.cfg.Host, fmt.Sprint(s.cfg.Port))
 	raw := s.build(msg)
 	rcpts := append(append([]string{}, msg.To...), msg.Cc...)
