@@ -147,13 +147,16 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(func() { _ = d.Close() })
 	f.d = d
 	// Cached, classified mail for the hall and model passes.
-	for _, c := range []struct{ from, subject, hall string }{
-		{"billing@vendor.example.org", "Your invoice", "transactional"},
-		{"billing@vendor.example.org", "Receipt", "transactional"},
-		{"who@mystery.example", "Quarterly sync", "unclassified"},
-		{"what@puzzle.example", "Hello", "unclassified"},
+	for _, c := range []struct {
+		from, subject, hall string
+		uid                 uint32 // len(subject) + len(from), as before
+	}{
+		{"billing@vendor.example.org", "Your invoice", "transactional", 38},
+		{"billing@vendor.example.org", "Receipt", "transactional", 33},
+		{"who@mystery.example", "Quarterly sync", "unclassified", 33},
+		{"what@puzzle.example", "Hello", "unclassified", 24},
 	} {
-		res, err := d.Messages.Insert(context.Background(), &db.CachedMessage{Account: "test", Folder: "INBOX", UID: uint32(len(c.subject) + len(c.from)),
+		res, err := d.Messages.Insert(context.Background(), &db.CachedMessage{Account: "test", Folder: "INBOX", UID: c.uid,
 			MessageID: c.from + c.subject, FromAddr: c.from, Subject: c.subject, Date: t0, InternalDate: t0, Flags: []string{}})
 		if err != nil {
 			t.Fatal(err)

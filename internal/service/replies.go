@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -233,6 +234,9 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 				continue
 			}
 			firstContact[it.threadHash] = true
+		}
+		if r.uid < 0 || r.uid > math.MaxUint32 {
+			continue // not an IMAP UID; the index only stores uint32 UIDs
 		}
 		it.Account, it.UID = account, uint32(r.uid)
 		it.LastDate = time.Unix(r.last, 0).UTC().Format(time.RFC3339)

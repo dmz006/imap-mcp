@@ -131,6 +131,7 @@ func (s *Service) suggestions(ctx context.Context, account string, matches bool)
 
 	// Candidates: senders with at least min_discards of the owner's own
 	// discards, never written to or replied to, not trusted.
+	// #nosec G202 -- ph is only a list of ? placeholders (one per discard folder); folders are arguments
 	rows, err := st.QueryContext(ctx, `SELECT s.address, COALESCE(s.domain,''), COALESCE(s.name,''), m.folder, count(*)
 		FROM intel_messages m JOIN senders s ON s.id = m.sender_id
 		LEFT JOIN rule_moves rm ON rm.account = m.account AND rm.msg_hash = m.msg_hash

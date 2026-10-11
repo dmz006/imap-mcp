@@ -263,6 +263,7 @@ func ensureCacheSchema(conn *sql.DB) error {
 	// 0.15.0: clear placeholder wing/room tags the classify model copied
 	// from its prompt (enrichment.CleanTag now rejects them on the way in).
 	for _, col := range []string{"wing", "room"} {
+		// #nosec G202 -- col comes from the fixed list {wing, room} and placeholderSQL adds only constant SQL
 		if _, err := conn.Exec(`UPDATE messages SET ` + col + ` = '' WHERE ` + placeholderSQL(col)); err != nil {
 			return fmt.Errorf("clear placeholder %s tags: %w", col, err)
 		}

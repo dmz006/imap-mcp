@@ -181,7 +181,7 @@ func TestOneClickPost(t *testing.T) {
 		}
 		b, _ := io.ReadAll(r.Body)
 		gotBody, gotType, gotMethod, gotCookie = string(b), r.Header.Get("Content-Type"), r.Method, r.Header.Get("Cookie")
-		http.SetCookie(w, &http.Cookie{Name: "track", Value: "1"})
+		http.SetCookie(w, &http.Cookie{Name: "track", Value: "1", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

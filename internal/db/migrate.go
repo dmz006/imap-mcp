@@ -134,6 +134,7 @@ func fingerprint(conn *sql.DB) (*tableFingerprint, error) {
 		if !ok {
 			continue
 		}
+		// #nosec G202 -- t ranges over the constant stateTables list
 		rows, err := conn.Query(`SELECT * FROM ` + t + ` ORDER BY 1, 2`)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t, err)

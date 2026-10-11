@@ -23,7 +23,7 @@ func TestServeAuthValidation(t *testing.T) {
 		{"bad name", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a b", Token: goodTok, Scopes: []string{"read"}}}}), "name must match"},
 		{"empty name", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Token: goodTok, Scopes: []string{"read"}}}}), "#1"},
 		{"short token", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a", Token: "short", Scopes: []string{"read"}}}}), "at least 32"},
-		{"unresolved env", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a", Token: "${IMAP_MCP_TEST_UNSET_TOKEN_VAR}", Scopes: []string{"read"}}}}), "unresolved"},
+		{"unresolved env", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a", Token: "${IMAP_MCP_TEST_UNSET_TOKEN_VAR}", Scopes: []string{"read"}}}}), "unresolved"}, // #nosec G101 -- an unresolved ${ENV} reference, not a credential
 		{"no scopes", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a", Token: goodTok}}}), "at least one scope"},
 		{"bad scope", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a", Token: goodTok, Scopes: []string{"root"}}}}), "unknown scope"},
 		{"secret without datawatch", authCfg(ServerAuthConfig{Tokens: []TokenConfig{{Name: "a", Token: "${secret:x}", Scopes: []string{"read"}}}}), "datawatch block"},
@@ -68,7 +68,7 @@ func TestServeAuthResolvesSecret(t *testing.T) {
 	defer srv.Close()
 
 	cfg := authCfg(ServerAuthConfig{Tokens: []TokenConfig{
-		{Name: "datawatch", Token: "${secret:imap_mcp_token_datawatch}", Scopes: []string{"read", "send"}},
+		{Name: "datawatch", Token: "${secret:imap_mcp_token_datawatch}", Scopes: []string{"read", "send"}}, // #nosec G101 -- a ${secret:...} reference, not a credential
 	}})
 	cfg.Datawatch = &DatawatchConfig{APIURL: srv.URL, Token: "dw-token"}
 	toks, _, err := cfg.ServeAuth()

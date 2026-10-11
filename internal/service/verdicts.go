@@ -277,7 +277,9 @@ func (s *Service) StartVerdictEval(ctx context.Context, p EvalParams) (EvalRun, 
 		return EvalRun{}, err
 	}
 	id, _ := r.LastInsertId()
-	go s.runVerdictEval(id, p)
+	// The evaluation is a background job polled by id (verdict_eval_results);
+	// it must outlive the request that started it.
+	go s.runVerdictEval(id, p) // #nosec G118 -- intentionally detached from the request context
 	return s.VerdictEval(ctx, id)
 }
 

@@ -80,7 +80,7 @@ func TestGetAttachmentsSavesIntoSandbox(t *testing.T) {
 	if bin["saved_to"] != "attachments/work/1-3-authorized_keys" {
 		t.Errorf("hostile filename not contained: %v", bin["saved_to"])
 	}
-	data, err := os.ReadFile(filepath.Join(dir, bin["saved_to"].(string)))
+	data, err := os.ReadFile(filepath.Join(dir, bin["saved_to"].(string))) // #nosec G304 -- dir is t.TempDir(); the test checks saved_to is contained
 	if err != nil || string(data) != "\x00\x01\x02\xff" {
 		t.Errorf("saved bytes = %q, %v", data, err)
 	}
@@ -95,7 +95,8 @@ func TestExportMessageWritesFiles(t *testing.T) {
 	if !ok || eml["saved_to"] != "exports/work-INBOX-2.eml" || eml["format"] != "eml" {
 		t.Fatalf("eml = %v", eml)
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, "exports/work-INBOX-2.eml")); err != nil || !strings.Contains(string(b), "Message-ID: <p@example.com>") {
+	b, err := os.ReadFile(filepath.Join(dir, "exports/work-INBOX-2.eml")) // #nosec G304 -- a fixed name under t.TempDir()
+	if err != nil || !strings.Contains(string(b), "Message-ID: <p@example.com>") {
 		t.Errorf("eml file: %v", err)
 	}
 	mbox, ok := call(t, h.ExportMessage, map[string]any{"folder": "INBOX", "uids": "1, 2", "filename": "out/all.mbox"})

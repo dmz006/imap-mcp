@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -152,20 +153,18 @@ func (s *Service) ListMessages(ctx context.Context, p ListMessagesParams) (Messa
 	}
 	// Seq 1 = oldest, seq N = newest.
 	var seqSet imaplib.SeqSet
+	// Offset and Limit are compared as ints so a huge offset cannot wrap.
+	if p.Offset >= int(total) {
+		return page, nil
+	}
 	if p.Ascending {
-		start, end := uint32(p.Offset+1), uint32(p.Offset+p.Limit)
-		if start > total {
-			return page, nil
-		}
-		seqSet.AddRange(start, min(end, total))
+		start, end := clampUint32(p.Offset+1), clampUint32(min(p.Offset+p.Limit, int(total)))
+		seqSet.AddRange(start, end)
 	} else {
-		if uint32(p.Offset) >= total {
-			return page, nil
-		}
-		end := total - uint32(p.Offset)
+		end := total - clampUint32(p.Offset)
 		start := uint32(1)
 		if int(end) > p.Limit {
-			start = end - uint32(p.Limit) + 1
+			start = end - clampUint32(p.Limit) + 1
 		}
 		seqSet.AddRange(start, end)
 	}
@@ -592,4 +591,16 @@ func reverse[T any](s []T) {
 	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
 		s[i], s[j] = s[j], s[i]
 	}
+}
+
+// clampUint32 converts n to an IMAP sequence number or count, clamping it
+// into [0, MaxUint32] instead of wrapping.
+func clampUint32(n int) uint32 {
+	if n <= 0 {
+		return 0
+	}
+	if n >= math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(n)
 }

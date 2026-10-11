@@ -30,8 +30,10 @@ func (r *SyncRepo) Get(ctx context.Context, account, folder string) (FolderSyncS
 	if err != nil {
 		return st, err
 	}
-	st.UIDValidity = uint32(validity.Int64)
-	st.HighestModSeq = uint64(modseq.Int64)
+	// Both columns are written only by Put below, from these same unsigned
+	// fields, so the conversions round-trip losslessly.
+	st.UIDValidity = uint32(validity.Int64) // #nosec G115 -- stored from a uint32 by Put
+	st.HighestModSeq = uint64(modseq.Int64) // #nosec G115 -- stored by Put as int64(uint64); two's-complement round trip
 	if last.Valid {
 		st.LastSynced = time.Unix(last.Int64, 0)
 	}
@@ -47,7 +49,7 @@ func (r *SyncRepo) Put(ctx context.Context, account, folder string, st FolderSyn
 			uid_validity=excluded.uid_validity,
 			highest_modseq=excluded.highest_modseq,
 			last_synced=excluded.last_synced`,
-		account, folder, st.UIDValidity, int64(st.HighestModSeq))
+		account, folder, st.UIDValidity, int64(st.HighestModSeq)) // #nosec G115 -- RFC 7162 mod-sequences fit in 63 bits; Get reverses it losslessly
 	return err
 }
 
@@ -321,6 +323,7 @@ func (f SweepFilter) Empty() bool {
 // mailbox.
 func (r *MessageRepo) Sweep(ctx context.Context, f SweepFilter, dryRun bool, now time.Time) ([]FolderCount, error) {
 	where, args := f.where(now)
+	// #nosec G202 -- where is built by SweepFilter.where from constant conditions; every filter value is a ? argument
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT account, folder, count(*) FROM messages WHERE `+where+` GROUP BY account, folder ORDER BY account, folder`, args...)
 	if err != nil {
@@ -344,6 +347,7 @@ func (r *MessageRepo) Sweep(ctx context.Context, f SweepFilter, dryRun bool, now
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// #nosec G202 -- where is built by SweepFilter.where from constant conditions; every filter value is a ? argument
 	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE `+where, args...); err != nil {
 		return nil, err
 	}

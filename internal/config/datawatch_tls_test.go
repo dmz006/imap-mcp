@@ -14,7 +14,7 @@ func writeCert(t *testing.T, srv *httptest.Server) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "cert.pem")
 	b := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	if err := os.WriteFile(p, b, 0o644); err != nil {
+	if err := os.WriteFile(p, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -45,7 +45,7 @@ func TestDatawatchCAFilePinsSelfSignedCert(t *testing.T) {
 func TestDatawatchCAFileFailsClosed(t *testing.T) {
 	dir := t.TempDir()
 	notPEM := filepath.Join(dir, "junk.pem")
-	_ = os.WriteFile(notPEM, []byte("not a certificate"), 0o644)
+	_ = os.WriteFile(notPEM, []byte("not a certificate"), 0o600)
 	for name, f := range map[string]string{"missing": filepath.Join(dir, "nope.pem"), "junk": notPEM} {
 		d := &DatawatchConfig{APIURL: "https://127.0.0.1:1", Token: "t", CAFile: f}
 		if _, err := d.Transport(); err == nil || !strings.Contains(err.Error(), "ca_file") {

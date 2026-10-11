@@ -32,7 +32,7 @@ func plaintextPair(t *testing.T) (st, ca Options, backup string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(backup, b, 0o600); err != nil {
+	if err := os.WriteFile(backup, b, 0o600); err != nil { // #nosec G703 -- backup is under t.TempDir()
 		t.Fatal(err)
 	}
 	return st, ca, backup
@@ -61,7 +61,7 @@ func TestEncryptConvertsInPlace(t *testing.T) {
 
 	// No plaintext left in the files or any sidecar; no temp file left over.
 	for _, f := range []string{st.Path, ca.Path, st.Path + "-wal", ca.Path + "-wal"} {
-		b, err := os.ReadFile(f)
+		b, err := os.ReadFile(f) // #nosec G304 -- database files under t.TempDir()
 		if err != nil {
 			continue
 		}

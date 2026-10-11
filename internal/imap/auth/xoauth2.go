@@ -126,7 +126,9 @@ func (x *XOAuth2) saveToken(t *oauth2.Token) error {
 	if err := os.MkdirAll(filepath.Dir(x.tokenFile), 0700); err != nil {
 		return err
 	}
-	data, err := json.Marshal(t)
+	// Persisting the token is the point: it goes only to the operator's token
+	// file, created 0600 in a 0700 directory.
+	data, err := json.Marshal(t) // #nosec G117 -- written only to the private token file below
 	if err != nil {
 		return err
 	}

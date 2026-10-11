@@ -1,0 +1,9 @@
+version: "2"
+
+# CI lint gate (D70, D73): the standard linters plus gosec, with no
+# exclusions, presets or baseline. Findings are fixed in code; a reasoned
+# `#nosec Gxxx -- why` is allowed only where the code is provably safe.
+linters:
+  default: standard
+  enable:
+    - gosec

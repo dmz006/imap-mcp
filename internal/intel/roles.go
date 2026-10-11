@@ -169,6 +169,7 @@ func (sc *Scanner) majorityHalls(ctx context.Context, batch []senderStats) map[s
 	for i, s := range batch {
 		args[i], marks[i] = s.Address, "?"
 	}
+	// #nosec G202 -- only a list of ? placeholders (one per address) is concatenated; addresses are arguments
 	rows, err := sc.cache.QueryContext(ctx, `SELECT lower(from_addr), hall, count(*) AS n FROM messages
 		WHERE lower(from_addr) IN (`+strings.Join(marks, ",")+`) AND hall IS NOT NULL AND hall NOT IN ('', 'unclassified')
 		GROUP BY 1, 2 ORDER BY 1, n DESC`, args...)

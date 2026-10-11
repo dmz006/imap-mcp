@@ -69,6 +69,7 @@ func scanWebhook(sc interface{ Scan(...any) error }) (Webhook, error) {
 }
 
 func (r *WebhookRepo) query(ctx context.Context, where string, args ...any) ([]Webhook, error) {
+	// #nosec G202 -- webhookCols is a constant and where is one of two constant clauses from this file; values are ? arguments
 	rows, err := r.db.QueryContext(ctx, `SELECT `+webhookCols+` FROM webhooks w `+where+` ORDER BY w.id`, args...)
 	if err != nil {
 		return nil, err

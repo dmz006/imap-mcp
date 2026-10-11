@@ -283,6 +283,7 @@ func contentDigest(ctx context.Context, conn *sql.Conn) (map[string]tableDigest,
 
 func digestTable(ctx context.Context, conn *sql.Conn, table string) (tableDigest, error) {
 	var d tableDigest
+	// #nosec G202 -- table is a name read from sqlite_master of the file being encrypted, quoted as an identifier; not user input
 	rows, err := conn.QueryContext(ctx, `SELECT * FROM "`+strings.ReplaceAll(table, `"`, `""`)+`"`)
 	if err != nil {
 		return d, err

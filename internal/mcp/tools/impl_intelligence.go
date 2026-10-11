@@ -87,7 +87,7 @@ func (h *Handlers) scanSubscriptions(ctx context.Context, account, folder string
 	end := mbox.NumMessages
 	start := uint32(1)
 	if int(end) > limit {
-		start = end - uint32(limit) + 1
+		start = end - clampUint32(limit) + 1
 	}
 
 	var seqSet imaplib.SeqSet

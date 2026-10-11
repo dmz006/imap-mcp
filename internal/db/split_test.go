@@ -184,7 +184,7 @@ func TestEncryptedFiles(t *testing.T) {
 
 	// No plaintext on disk, in the DB or its WAL.
 	for _, f := range []string{st.Path, ca.Path, st.Path + "-wal", ca.Path + "-wal"} {
-		b, err := os.ReadFile(f)
+		b, err := os.ReadFile(f) // #nosec G304 -- database files under t.TempDir()
 		if err != nil {
 			continue
 		}

@@ -42,8 +42,8 @@ func (h *Handlers) TopSenders(_ context.Context, req mcp.CallToolRequest) (*mcp.
 
 	// Choose the window: most recent `scan` messages, or all.
 	start, end := uint32(1), total
-	if scan > 0 && uint32(scan) < total {
-		start = total - uint32(scan) + 1
+	if scan > 0 && scan < int(total) {
+		start = total - clampUint32(scan) + 1
 	}
 	var seqSet imaplib.SeqSet
 	seqSet.AddRange(start, end)
