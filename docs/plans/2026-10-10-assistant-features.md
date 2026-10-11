@@ -22,7 +22,7 @@
 | Q3 | Second opinion for borderline mail + payment/credential-request alerts | 2 | 0.20.0 |
 | Q4 | Safe one-click unsubscribe (RFC 8058) | 3 | 0.21.0 |
 | V3 | Links that open a message from reports: Gmail, Thunderbird `mid:`, URL templates (D59, D60) | — | 0.22.0 |
-| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.23.0 |
+| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 1.0.0 |
 
 Each phase is a minor release, live-validated before the next one starts
 (D12). Q4 and Q5 are independent of each other; Q2 and Q3 both feed the
@@ -319,7 +319,7 @@ confirm no further mail after a few days.
 
 ---
 
-## Q5 — screener (0.23.0)
+## Q5 — screener (1.0.0)
 
 Approve or block held senders from the daily digest, without opening any
 folder, and route approved senders the HEY way: inbox, feed (newsletters) or
@@ -381,6 +381,7 @@ not from the owner) is rejected and logged.
 | D58 | Q4 | Expired DKIM signatures | Decided: accepted if otherwise valid; shown in the dry run |
 | D59 | V3 | Links to open a message | Decided: per-account `link`: gmail (default for Gmail), thunderbird, URL template, none |
 | D60 | — | Version plan | Decided: V3 = 0.22.0; Q5 → 0.23.0, then 1.0.0 |
+| D63 | — | Q5 release | Decided: Q5 ships as the official 1.0.0 |
 | D42 | Q5 | Trusting digest replies | Decided: off (default) / token / hmac, configurable |
 | D43 | Q5 | Block scope | Decided: domain unless freemail or a correspondent's domain; preview count |
 | D61 | Q5 | Screener rules active? | Decided: inactive by default; operator's install active |
@@ -398,7 +399,7 @@ not from the owner) is rejected and logged.
 | Q3 | 0.20.0 | Done, shadow mode (gemma4:26b @ 0.9, D55) | Yes | Yes (108 shadow verdicts in the first 90 min; activation is the operator's call) |
 | Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
 | V3 | 0.22.0 | Done (D59, D60) | Yes | Yes (all 37 gmail reply items carry a Gmail link; dmzs set to thunderbird, no open items) |
-| Q5 | 0.23.0 → 1.0.0 | Built (D42, D43, D61, D62) | Yes | Pending |
+| Q5 | 1.0.0 | Done (D42, D43, D61, D62, D63) | Yes | Yes (201 held senders listed; 2 domain blocks previewed then applied, 4 messages trashed, rules active per D61; no addresses in the service log; email modes off, unit-tested) |
 | S1 | after 1.0.0 | Planned (operator request 2026-10-11) | | |
 
 When Q5 is done and validated, the release is the official **1.0.0**

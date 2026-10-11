@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.23.0 |
+| Current version | 1.0.0 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -478,7 +478,7 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 | Item | Notes |
 |------|-------|
 | Intelligence | Content cleaning before models (`Cleaner`) |
-| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2, done in 0.17.0), model second opinion + payment/credential-request anomaly (Q3, done in 0.20.0), one-click unsubscribe (Q4, done in 0.21.0), message links (V3, 0.22.0, D59), screener (Q5, 0.23.0, D42, D43, D61, D62) |
+| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2, done in 0.17.0), model second opinion + payment/credential-request anomaly (Q3, done in 0.20.0), one-click unsubscribe (Q4, done in 0.21.0), message links (V3, 0.22.0, D59), screener (Q5, 1.0.0, D42, D43, D61, D62) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

@@ -275,7 +275,7 @@ account.
   sender, subject, time and reasons, and how to release one, then each
   waiting conversation's sender, subject and days waiting. Since 0.22 each
   item has an `open:` link when the account has a link style
-  ([intelligence.md](intelligence.md#links-to-open-a-message)). Since 0.23
+  ([intelligence.md](intelligence.md#links-to-open-a-message)). Since 1.0
   held senders are numbered, with how to approve or block them
   ([screener.md](screener.md)).
 - **A `hold.digest` event**, `{"held": 3, "waiting": 5}` with the event's

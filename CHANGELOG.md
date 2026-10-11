@@ -6,7 +6,14 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.23.0] - 2026-10-11
+## [1.0.0] - 2026-10-11
+
+The first official release: every planned assistant feature is in and
+validated on real mailboxes (AGENT.md D44, D63). Since 0.15: reply tracking
+(0.16), rules learned from your moves (0.17), your other addresses (0.18),
+setup check and starter rule packs (0.19), a second-opinion verdict model
+(0.20), safe unsubscribe (0.21), links that open a message (0.22), and the
+screener below.
 
 ### Added
 - **The screener (Q5; AGENT.md D42, D43, D61, D62).** Decide senders the

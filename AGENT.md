@@ -431,6 +431,8 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D63 (1.0.0):** Q5 ships directly as the official 1.0.0
+  (no 0.23.0 tag); S1 (repository and CI security hardening) follows.
 - **2026-10-11 — D42 (screener: trusting an email reply, Q5):** all three
   modes, chosen by `rules.screener.email_commands`: `off` (default; decide
   only over MCP, REST, the CLI or an agent), `token` (a reply to the digest
