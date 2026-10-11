@@ -33,6 +33,10 @@ func header(lu, lup string) string {
 // signed signs msg for list.example.com over headers and returns the
 // message and a LookupTXT that serves the key.
 func signed(t *testing.T, msg string, headers []string) ([]byte, func(string) ([]string, error)) {
+	return signedExp(t, msg, headers, time.Time{})
+}
+
+func signedExp(t *testing.T, msg string, headers []string, exp time.Time) ([]byte, func(string) ([]string, error)) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -40,7 +44,7 @@ func signed(t *testing.T, msg string, headers []string) ([]byte, func(string) ([
 	}
 	var out bytes.Buffer
 	if err := dkim.Sign(&out, strings.NewReader(msg), &dkim.SignOptions{
-		Domain: "list.example.com", Selector: "s1", Signer: priv, HeaderKeys: headers,
+		Domain: "list.example.com", Selector: "s1", Signer: priv, HeaderKeys: headers, Expiration: exp,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +65,25 @@ func TestAnalyzeOneClick(t *testing.T) {
 	p := Analyze(raw, Options{LookupTXT: lookup})
 	if p.Method != MethodOneClick || p.Host != "list.example.com" || p.SignedBy != "list.example.com" || p.URL != "https://list.example.com/u/abc123" {
 		t.Fatalf("plan = %+v", p)
+	}
+}
+
+// An expired signature that otherwise verifies is accepted (D58); an expired
+// one over altered headers is not.
+func TestAnalyzeExpiredSignature(t *testing.T) {
+	msg := header("<https://list.example.com/u/1>, <mailto:unsub@list.example.com>", "List-Unsubscribe=One-Click") + body
+	raw, lookup := signedExp(t, msg, both, time.Now().AddDate(0, 0, -30))
+	p := Analyze(raw, Options{LookupTXT: lookup})
+	if p.Method != MethodOneClick || !p.SignatureExpired {
+		t.Fatalf("expired plan = %+v", p)
+	}
+	raw = bytes.Replace(raw, []byte("/u/1>"), []byte("/u/2>"), 1)
+	if p := Analyze(raw, Options{LookupTXT: lookup}); p.Method == MethodOneClick || !strings.Contains(p.Reason, "does not verify") {
+		t.Fatalf("tampered expired plan = %+v", p)
+	}
+	raw, lookup = signed(t, msg, both)
+	if p := Analyze(raw, Options{LookupTXT: lookup}); p.SignatureExpired {
+		t.Fatalf("unexpired plan = %+v", p)
 	}
 }
 

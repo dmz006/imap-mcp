@@ -22,6 +22,12 @@ verified, not which headers it covered, so imap-mcp verifies the signature
 itself (go-msgauth; the key is looked up in DNS) and requires it to cover
 both `List-Unsubscribe` and `List-Unsubscribe-Post` (D41).
 
+Some senders give their signatures an expiry (`x=`), so the signature on an
+old message can be expired. Expiry is meant for checking at delivery; a
+signature that otherwise verifies still shows the sender put the headers
+there, so it is accepted and the dry run says `signature_expired: true`
+(D58).
+
 ## The one-click request
 
 - `https:` only, to a public address: loopback, private, link-local and

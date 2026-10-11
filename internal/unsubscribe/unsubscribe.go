@@ -49,6 +49,9 @@ type Plan struct {
 	Mailto *MailtoMessage `json:"mailto,omitempty"`
 	// SignedBy is the DKIM domain whose signature covers both headers.
 	SignedBy string `json:"signed_by,omitempty"`
+	// SignatureExpired: that signature is past its x= expiry but otherwise
+	// verifies, which is accepted (D58).
+	SignatureExpired bool `json:"signature_expired,omitempty"`
 }
 
 // MailtoMessage is the unsubscribe email a mailto: URI asks for.
@@ -89,12 +92,12 @@ func Analyze(raw []byte, opt Options) Plan {
 			reason = "the https List-Unsubscribe URI is malformed"
 			break
 		}
-		domain, derr := signedBoth(raw, opt)
+		domain, expired, derr := signedBoth(raw, opt)
 		if derr != nil {
 			reason = derr.Error()
 			break
 		}
-		return Plan{Method: MethodOneClick, URL: https, Host: u.Hostname(), SignedBy: domain}
+		return Plan{Method: MethodOneClick, URL: https, Host: u.Hostname(), SignedBy: domain, SignatureExpired: expired}
 	}
 	if mailto != "" {
 		if m, ok := parseMailto(mailto); ok {
@@ -169,14 +172,15 @@ func parseMailto(s string) (*MailtoMessage, bool) {
 }
 
 // signedBoth returns the domain of a DKIM signature that verifies and signs
-// both List-Unsubscribe and List-Unsubscribe-Post (D41).
-func signedBoth(raw []byte, opt Options) (string, error) {
+// both List-Unsubscribe and List-Unsubscribe-Post (D41), and whether that
+// signature is past its expiry (accepted, D58).
+func signedBoth(raw []byte, opt Options) (string, bool, error) {
 	vs, err := dkim.VerifyWithOptions(bytes.NewReader(raw), &dkim.VerifyOptions{LookupTXT: opt.LookupTXT, MaxVerifications: 5})
 	if err != nil && !errors.Is(err, dkim.ErrTooManySignatures) {
-		return "", fmt.Errorf("DKIM could not be checked")
+		return "", false, fmt.Errorf("DKIM could not be checked")
 	}
 	if len(vs) == 0 {
-		return "", fmt.Errorf("no DKIM signature")
+		return "", false, fmt.Errorf("no DKIM signature")
 	}
 	verified := false
 	for _, v := range vs {
@@ -194,13 +198,13 @@ func signedBoth(raw []byte, opt Options) (string, error) {
 			}
 		}
 		if lu && lup {
-			return v.Domain, nil
+			return v.Domain, !v.Expiration.IsZero() && time.Now().After(v.Expiration), nil
 		}
 	}
 	if !verified {
-		return "", fmt.Errorf("DKIM signature does not verify")
+		return "", false, fmt.Errorf("DKIM signature does not verify")
 	}
-	return "", fmt.Errorf("DKIM signature does not cover List-Unsubscribe and List-Unsubscribe-Post")
+	return "", false, fmt.Errorf("DKIM signature does not cover List-Unsubscribe and List-Unsubscribe-Post")
 }
 
 // Result is the outcome of a one-click POST.

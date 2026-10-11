@@ -23,6 +23,8 @@ All notable changes to imap-mcp are documented here. The format is based on
     the exact mailto message, message count); a confirmed call needs a dry
     run for the same sender in the last hour.
   - `archive_to` moves the sender's mail after success.
+  - A DKIM signature past its `x=` expiry that otherwise verifies is
+    accepted, and the dry run says `signature_expired` (D58).
   - Every attempt is recorded (no URL; the host only) and published as
     `unsubscribe.done` (method and status; the sender in the full payload).
 - **New `unsubscribe` token scope (D39).** No existing token gets it.

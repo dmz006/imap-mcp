@@ -431,6 +431,13 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D58 (expired DKIM signatures, Q4):** a signature past its
+  `x=` expiry that otherwise verifies and covers both unsubscribe headers is
+  accepted for one-click; the dry run says `signature_expired`. Found in
+  validation: 2 of 15 gmail dry runs failed only on expiry (newest messages
+  85 and 394 days old; the server had recorded dkim=pass). go-msgauth checks
+  expiry before the cryptography and has no clock option, so its clock is
+  set off in-process (`internal/unsubscribe/dkimclock.go`).
 - **2026-10-11 — D56 (senders who ignore an unsubscribe, Q4):** every
   unsubscribe is recorded; mail from that sender arriving more than
   `unsubscribe.grace_days` (default 3) later is listed in the daily digest
