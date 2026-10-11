@@ -10,9 +10,9 @@
 #
 # Schema (same fields and rules as the datawatch acceptance standard):
 #   id            osv/<GO-YYYY-NNNN> (or cve/, dependabot/, code-scanning/)
-#   kind          go-module | go-stdlib
-#   package       module path (or "stdlib")
-#   version       version accepted (go.mod / toolchain at acceptance)
+#   kind          go-module | go-stdlib | code (a code-scanning alert)
+#   package       module path ("stdlib"; for code: the CodeQL rule id)
+#   version       version accepted (go.mod / toolchain; for code: file:line)
 #   severity      low | medium | moderate | high | critical
 #   impact.traced     true when traced against imap-mcp's code
 #   impact.reachable  yes | no | unknown
@@ -39,3 +39,243 @@ entries:
     expires: "2027-01-09"
     validated_by: "claude-session"
     reason: "No fixed version exists (the package is deprecated, not patched). Re-check each release and when x/crypto changes."
+
+  - id: code-scanning/5
+    kind: code
+    package: "go/email-injection"
+    version: "internal/smtp/smtp.go:72"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "send_message sends mail the caller composed: that is the feature, and it needs the send scope. Header injection is the risk CodeQL means: the Subject has CR/LF replaced (sanitizeHeader), recipients must parse as plain addresses (validRecipient), and Send now rejects CR or LF in From, To and Cc (TestSendRejectsHeaderInjection). The body follows the blank line and is dot-stuffed by net/smtp."
+      method: "Traced the data flow from SendParams to smtp.Sender.build/Send; added and tested the CR/LF rejection."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/6
+    kind: code
+    package: "go/email-injection"
+    version: "internal/smtp/smtp.go:102"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "send_message sends mail the caller composed: that is the feature, and it needs the send scope. Header injection is the risk CodeQL means: the Subject has CR/LF replaced (sanitizeHeader), recipients must parse as plain addresses (validRecipient), and Send now rejects CR or LF in From, To and Cc (TestSendRejectsHeaderInjection). The body follows the blank line and is dot-stuffed by net/smtp."
+      method: "Traced the data flow from SendParams to smtp.Sender.build/Send; added and tested the CR/LF rejection."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/7
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:384"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/8
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:384"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/9
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:452"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/10
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:452"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/11
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:487"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/12
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:497"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/13
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:519"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/14
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/replies.go:543"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/15
+    kind: code
+    package: "go/log-injection"
+    version: "internal/httpauth/httpauth.go:178"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/16
+    kind: code
+    package: "go/log-injection"
+    version: "internal/httpauth/httpauth.go:186"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/17
+    kind: code
+    package: "go/log-injection"
+    version: "internal/httpauth/httpauth.go:207"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/18
+    kind: code
+    package: "go/log-injection"
+    version: "internal/service/screener.go:248"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "imap-mcp logs only through log/slog with its Text or JSON handler (cmd/imap-mcp/main.go). Both quote or escape CR, LF and other control characters in attribute values, so a value from mail or a request cannot start a new log line or forge an entry."
+      method: "Read the logging setup (slog.NewTextHandler / slog.NewJSONHandler are the only handlers) and the flagged call: the value is passed as a slog attribute, never formatted into the message string."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."
+
+  - id: code-scanning/19
+    kind: code
+    package: "go/sql-injection"
+    version: "internal/service/query.go:48"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "The /api/query DSL (admin scope) compiles to SQL from allowlisted views, fields, operators and aggregates in internal/query; every value is a bound parameter and identifiers come only from that package (AGENT.md D17). The query runs in a read-only transaction with a timeout."
+      method: "Read internal/query Compile: view and field lookups fail closed on unknown names; values are appended to Args, never to the SQL text."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "False positive for this code (CodeQL cannot see the handler escaping, the header checks or the allowlist); dismissed in GitHub with this reason."

@@ -7,7 +7,7 @@ Fails (exit 1) on:
     impact.method (when traced), first_added, added, expires, validated_by,
     reason;
   - severity not one of low|medium|moderate|high|critical;
-  - kind not one of go-module|go-stdlib;
+  - kind not one of go-module|go-stdlib|code (code: a code-scanning alert);
   - an id that is duplicated or lacks a cve/, osv/, dependabot/ or
     code-scanning/ prefix;
   - dates that are not YYYY-MM-DD, first_added after added, or expires later
@@ -32,7 +32,7 @@ import yaml
 
 PREFIXES = ("cve/", "osv/", "dependabot/", "code-scanning/")
 SEVERITIES = {"low", "medium", "moderate", "high", "critical"}
-KINDS = {"go-module", "go-stdlib"}
+KINDS = {"go-module", "go-stdlib", "code"}
 REACHABLE = {"yes", "no", "unknown"}
 
 

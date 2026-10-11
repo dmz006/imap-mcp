@@ -87,6 +87,15 @@ class Watch(unittest.TestCase):
         fix, _, _ = rw.classify([entry()], {}, {}, "", today)  # no longer reported
         self.assertEqual(len(fix), 1)
 
+    def test_code_scanning(self):
+        e = entry(id="code-scanning/7", kind="code", package="go/log-injection", version="internal/x.go")
+        today = dt.date(2026, 10, 11)
+        self.assertEqual(len(rw.classify([e], {}, {}, "", today, {"7": "dismissed"})[0]), 0)
+        self.assertEqual(len(rw.classify([e], {}, {}, "", today, {"7": "fixed"})[0]), 1)
+        self.assertEqual(len(rw.classify([e], {}, {}, "", today, {"7": "open"})[1]), 1)
+        errs, _ = car.check([e], today=today)
+        self.assertEqual(errs, [])
+
     def test_remove_blocks(self):
         text = "# head\nentries:\n  - id: osv/A\n    package: a\n\n  - id: osv/B\n    package: b\n"
         self.assertEqual(rw.remove_blocks(text, {"osv/A"}), "# head\nentries:\n  - id: osv/B\n    package: b\n")
