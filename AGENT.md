@@ -431,6 +431,42 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D66 (S1 rollout):** 1.0.1 (Go 1.27.2 and the dependency
+  upgrades) ships together with the registry validator and the CI and
+  security workflows, not before. Every GitHub security feature is enabled
+  (operator: "enable all security and workflows").
+- **2026-10-11 — D67 (main and tag protection, S1.8):** rulesets like
+  datawatch: main cannot be deleted or force-pushed; changes go through a PR
+  whose required checks pass; repository admins may bypass. v* tags cannot
+  be deleted, moved or created except by a bypass actor. Work moves to a PR
+  per change, merged when green.
+- **2026-10-11 — D68 (re-validating accepted risks, S1.6):** a daily
+  workflow opens a PR that upgrades and removes entries whose fix is now
+  published, and opens or updates one tracking issue for entries expiring
+  within 14 days, past expiry, or whose module version moved.
+- **2026-10-11 — D69 (release tooling, S1.7):** GoReleaser (linux and darwin
+  amd64/arm64, windows/amd64), checksums signed keylessly with cosign, a
+  syft SBOM per archive, GitHub build-provenance attestations; release notes
+  still come from CHANGELOG.md.
+- **2026-10-11 — D70 (gosec, S1.5):** fix every finding, mark configured-path
+  reads with a reasoned `#nosec`, and block on any new finding (no
+  baseline file).
+- **2026-10-11 — D71 (Dependabot, S1.3):** daily version updates, grouped
+  (Go minor/patch in one PR, GitHub Actions in one PR; majors separate);
+  security updates as advisories land.
+- **2026-10-11 — D72 (SECURITY.md, S1.9):** fixes for the latest 1.x minor
+  only; reports through GitHub private vulnerability reporting; first
+  response within 72 hours, critical fixes within 14 days.
+- **2026-10-11 — D64 (Go toolchain, S1):** move to Go 1.27.2 (go.mod, CI,
+  and the local toolchain used for production builds). Go 1.25.10 left 18
+  reachable standard-library vulnerabilities; 1.27.2 leaves none.
+- **2026-10-11 — D65 (vulnerability policy, S1):** follow the datawatch
+  pattern: upgrade a vulnerable dependency when a fix exists; otherwise trace
+  it against imap-mcp's code and record an exception in
+  `security/accepted-risks.yml` (same schema and rules as datawatch's
+  acceptance standard). CI blocks on any reachable govulncheck finding not
+  in the registry and on schema errors; a daily workflow re-validates every
+  entry (expiry, version moved, fix published).
 - **2026-10-11 — D63 (1.0.0):** Q5 ships directly as the official 1.0.0
   (no 0.23.0 tag); S1 (repository and CI security hardening) follows.
 - **2026-10-11 — D42 (screener: trusting an email reply, Q5):** all three
