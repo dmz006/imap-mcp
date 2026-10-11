@@ -103,6 +103,7 @@ func (s *Server) Router() http.Handler {
 	write := s.authn.RequireScope(httpauth.ScopeWrite)
 	send := s.authn.RequireScope(httpauth.ScopeSend)
 	admin := s.authn.RequireScope(httpauth.ScopeAdmin)
+	unsub := s.authn.RequireScope(httpauth.ScopeUnsubscribe)
 
 	// ── Event stream (long-lived: no request timeout) ───────────────────────
 	r.With(read).Get("/api/events", s.handleEventStream)
@@ -176,6 +177,8 @@ func (s *Server) Router() http.Handler {
 		r.With(admin).Post("/api/verdicts/eval", s.handleStartVerdictEval)
 		r.With(read).Get("/api/verdicts/eval", s.handleVerdictEval)
 		r.With(read).Get("/api/rule-packs", s.handleListRulePacks)
+		r.With(unsub).Post("/api/unsubscribe", s.handleUnsubscribe)
+		r.With(read).Get("/api/unsubscribes", s.handleListUnsubscribes)
 		r.With(write).Post("/api/rule-packs/{name}/import", s.handleImportRulePack)
 		r.With(write).Post("/api/identities/confirm", s.handleConfirmIdentity)
 		r.With(write).Post("/api/identities/reject", s.handleRejectIdentity)

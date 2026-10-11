@@ -371,6 +371,26 @@ CREATE TABLE IF NOT EXISTS message_verdicts (
     PRIMARY KEY (account, msg_hash)
 ) WITHOUT ROWID;
 
+-- unsubscribes: every unsubscribe attempt and dry run (Q4, D39-D41, D56).
+-- The one-click URL can identify the recipient, so only its host is kept.
+-- status: dry_run | done | failed | sent (mailto). ignored_reported marks a
+-- sender reported for mail after the grace period, so it is reported once.
+CREATE TABLE IF NOT EXISTS unsubscribes (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    account          TEXT NOT NULL,
+    sender           TEXT NOT NULL,
+    method           TEXT NOT NULL,   -- one-click | mailto | none
+    host             TEXT,
+    status           TEXT NOT NULL,
+    status_code      INTEGER,
+    error            TEXT,
+    archived         INTEGER NOT NULL DEFAULT 0,
+    ignored_reported INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_unsubscribes_sender ON unsubscribes(account, sender, created_at);
+
 -- verdict_evals: verdict-model evaluation runs on the owner's labeled mail
 -- (D53, D54). Results are counts only.
 CREATE TABLE IF NOT EXISTS verdict_evals (

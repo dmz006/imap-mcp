@@ -27,6 +27,7 @@ const (
 	KindUnprocessable             // 422: valid input the config can't serve (e.g. receive-only account)
 	KindUnavailable               // 503: subsystem not running in this mode
 	KindUpstream                  // 502: IMAP/SMTP server failure
+	KindForbidden                 // 403: the caller's token lacks a scope this call turned out to need
 )
 
 // Error is a classified service error.

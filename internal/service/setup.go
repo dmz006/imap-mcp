@@ -173,6 +173,16 @@ func (s *Service) SetupCheck(ctx context.Context) (SetupReport, error) {
 					Fix: "Wait; /api/health shows progress (rescan_folders_remaining)."})
 			}
 		}
+		ign, err := s.ignoredUnsubscribes(ctx, a.Name, false)
+		if err != nil {
+			return out, err
+		}
+		if len(ign) > 0 {
+			add(Finding{ID: "unsubscribe_ignored", Account: a.Name, Severity: "warn",
+				What: fmt.Sprintf("%d sender(s) still mail you more than %d day(s) after you unsubscribed.", len(ign), s.cfg.Unsub.GraceDaysOrDefault()),
+				Why:  "A sender that ignores an unsubscribe will not stop on its own.",
+				Fix:  "list_unsubscribes shows them, each with an inactive trash rule to create (create_rule)."})
+		}
 		if err := st.QueryRowContext(ctx, `SELECT count(*) FROM learn_state WHERE account = ? AND status = 'suggested'`, a.Name).Scan(&n); err != nil {
 			return out, err
 		}

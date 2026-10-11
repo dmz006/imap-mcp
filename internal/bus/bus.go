@@ -22,8 +22,9 @@ const (
 	EventEnrichmentError   EventType = "enrichment.error"
 	EventAnomalyDetected   EventType = "anomaly.detected"
 	EventRuleFired         EventType = "rule.fired"
-	EventHoldDigest        EventType = "hold.digest"    // D31: account + held count only
-	EventRuleSuggested     EventType = "rule.suggested" // D36, D46: rules learned from the owner's moves
+	EventHoldDigest        EventType = "hold.digest"      // D31: account + held count only
+	EventRuleSuggested     EventType = "rule.suggested"   // D36, D46: rules learned from the owner's moves
+	EventUnsubscribeDone   EventType = "unsubscribe.done" // Q4: method and status; the sender only in the full payload
 	EventAccountConnected  EventType = "account.connected"
 	EventAccountError      EventType = "account.error"
 	EventAccountDisconnect EventType = "account.disconnected"

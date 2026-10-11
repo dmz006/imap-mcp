@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"net/http"
 	"strconv"
 
@@ -186,4 +187,36 @@ func (s *Server) handleStartVerdictEval(w http.ResponseWriter, r *http.Request) 
 // GET /api/verdicts/eval?id=  (latest when no id)
 func (s *Server) handleVerdictEval(w http.ResponseWriter, r *http.Request) {
 	respond(w)(s.svc.VerdictEval(r.Context(), int64(queryInt(r, "id", 0))))
+}
+
+// POST /api/unsubscribe (unsubscribe scope; archive_to also needs write, D57;
+// a mailto unsubscribe also needs send, D40)
+// Body: {"account", "sender" | "uid", "folder", "confirm", "archive_to"}
+func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Account   string `json:"account"`
+		Sender    string `json:"sender"`
+		UID       uint32 `json:"uid"`
+		Folder    string `json:"folder"`
+		Confirm   bool   `json:"confirm"`
+		ArchiveTo string `json:"archive_to"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	p := httpauth.FromContext(r.Context())
+	if s.authn != nil && req.ArchiveTo != "" && !p.Has(httpauth.ScopeWrite) {
+		http.Error(w, "forbidden: archive_to also needs scope write", http.StatusForbidden)
+		return
+	}
+	respond(w)(s.svc.Unsubscribe(r.Context(), service.UnsubscribeParams{
+		Account: req.Account, Sender: req.Sender, UID: req.UID, Folder: req.Folder,
+		Confirm: req.Confirm, ArchiveTo: req.ArchiveTo, CanSend: s.authn == nil || p.Has(httpauth.ScopeSend),
+	}))
+}
+
+// GET /api/unsubscribes?account=&dry_runs=&limit=
+func (s *Server) handleListUnsubscribes(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	respond(w)(s.svc.ListUnsubscribes(r.Context(), q.Get("account"), q.Get("dry_runs") == "true", queryInt(r, "limit", 100)))
 }

@@ -27,6 +27,8 @@ func writeError(w http.ResponseWriter, err error) {
 		code = http.StatusServiceUnavailable
 	case service.KindUpstream:
 		code = http.StatusBadGateway
+	case service.KindForbidden:
+		code = http.StatusForbidden
 	}
 	http.Error(w, err.Error(), code)
 }

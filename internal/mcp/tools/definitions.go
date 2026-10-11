@@ -424,6 +424,27 @@ func DismissReplyTool() mcp.Tool {
 	)
 }
 
+func UnsubscribeTool() mcp.Tool {
+	return mcp.NewTool("unsubscribe",
+		mcp.WithDescription("Unsubscribe from a sender the safe way: RFC 8058 one-click (an https List-Unsubscribe whose headers a verified DKIM signature covers), or the sender's mailto address. Never follows links in the body. Without confirm it is a dry run that shows the method or why it isn't possible; a confirmed call needs a dry run for the same sender in the last hour. mailto also needs the send scope; archive_to also needs write"),
+		mcp.WithString("account", mcp.Description("Account name (omit for the default)")),
+		mcp.WithString("sender", mcp.Description("Sender address (or give uid)")),
+		mcp.WithNumber("uid", mcp.Description("UID of one of the sender's messages in folder")),
+		mcp.WithString("folder", mcp.Description("Folder holding the sender's mail (default INBOX)")),
+		mcp.WithBoolean("confirm", mcp.Description("true to actually unsubscribe, after a dry run (default false: dry run)")),
+		mcp.WithString("archive_to", mcp.Description("After success, move the sender's mail in folder here (needs write scope)")),
+	)
+}
+
+func ListUnsubscribesTool() mcp.Tool {
+	return mcp.NewTool("list_unsubscribes",
+		mcp.WithDescription("List unsubscribes done (method, status, HTTP status; never the URL), and senders still mailing after the grace period, each with an inactive trash rule to offer"),
+		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
+		mcp.WithBoolean("dry_runs", mcp.Description("Include dry runs (default false)")),
+		mcp.WithNumber("limit", mcp.Description("Max entries (default 100)")),
+	)
+}
+
 func EnrichmentStatusTool() mcp.Tool {
 	return mcp.NewTool("enrichment_status",
 		mcp.WithDescription("Get enrichment pipeline status: pending, processing, done, error counts per account"),

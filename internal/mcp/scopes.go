@@ -42,6 +42,7 @@ var toolScopes = map[string]httpauth.Scope{
 	"list_rule_packs":      httpauth.ScopeRead,
 	"read_file":            httpauth.ScopeRead,
 	"list_files":           httpauth.ScopeRead,
+	"list_unsubscribes":    httpauth.ScopeRead,
 
 	// write — mailbox changes, rules changes, sandbox writes
 	"create_folder":      httpauth.ScopeWrite,
@@ -73,6 +74,9 @@ var toolScopes = map[string]httpauth.Scope{
 	// send
 	"send_message": httpauth.ScopeSend,
 
+	// unsubscribe — an outbound request to a sender on the owner's behalf (D39)
+	"unsubscribe": httpauth.ScopeUnsubscribe,
+
 	// admin — operational triggers
 	"sync_account":       httpauth.ScopeAdmin,
 	"trigger_enrichment": httpauth.ScopeAdmin,
@@ -86,6 +90,13 @@ var argScopes = map[string]func(args map[string]any) httpauth.Scope{
 	// Listing attachments is a read; downloading one writes into working_dir (D24).
 	"get_attachments": func(args map[string]any) httpauth.Scope {
 		if part, _ := args["part"].(string); part != "" {
+			return httpauth.ScopeWrite
+		}
+		return ""
+	},
+	// Archiving after an unsubscribe moves mail (D57).
+	"unsubscribe": func(args map[string]any) httpauth.Scope {
+		if dest, _ := args["archive_to"].(string); dest != "" {
 			return httpauth.ScopeWrite
 		}
 		return ""

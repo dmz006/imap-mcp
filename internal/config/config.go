@@ -27,6 +27,7 @@ type Config struct {
 	Intel      IntelConfig      `yaml:"intelligence"`
 	Rules      RulesConfig      `yaml:"rules"`
 	Identity   IdentityConfig   `yaml:"identity"`
+	Unsub      UnsubConfig      `yaml:"unsubscribe"`
 	Log        LogConfig        `yaml:"log"`
 	// Datawatch is optional. When present, ${secret:name} references in
 	// credentials resolve against a datawatch secrets service. When absent,
@@ -137,7 +138,7 @@ type ServerAuthConfig struct {
 }
 
 // TokenConfig is one named bearer token. Token must be a ${secret:name} or
-// ${ENV} reference in YAML; Scopes is any of read, write, send, admin.
+// ${ENV} reference in YAML; Scopes is any of read, write, send, admin, unsubscribe.
 type TokenConfig struct {
 	Name   string   `yaml:"name"`
 	Token  string   `yaml:"token"`
@@ -323,6 +324,31 @@ type ToolsConfig struct {
 // account logins. Entries are addresses or @domains.
 type IdentityConfig struct {
 	AlsoMe []string `yaml:"also_me"`
+}
+
+// UnsubConfig tunes unsubscribing (AGENT.md Q4, D56).
+type UnsubConfig struct {
+	// GraceDays: mail from a sender more than this many days after an
+	// unsubscribe is reported as ignored. Default 3.
+	GraceDays int `yaml:"grace_days"`
+	// TimeoutSeconds for the one-click POST. Default 15.
+	TimeoutSeconds int `yaml:"timeout_seconds"`
+}
+
+// GraceDaysOrDefault returns the grace period (default 3).
+func (u UnsubConfig) GraceDaysOrDefault() int {
+	if u.GraceDays <= 0 {
+		return 3
+	}
+	return u.GraceDays
+}
+
+// TimeoutOrDefault returns the one-click timeout (default 15 s).
+func (u UnsubConfig) TimeoutOrDefault() time.Duration {
+	if u.TimeoutSeconds <= 0 {
+		return 15 * time.Second
+	}
+	return time.Duration(u.TimeoutSeconds) * time.Second
 }
 
 // RulesConfig tunes rule runs. The held-mail digest (AGENT.md D31) lists what
@@ -728,6 +754,8 @@ func applyEnvOverrides(cfg *Config) {
 		}
 	}
 	envInt("IMAP_MCP_INTELLIGENCE_VERDICT_PER_TICK", &cfg.Intel.Verdict.PerTick)
+	envInt("IMAP_MCP_UNSUBSCRIBE_GRACE_DAYS", &cfg.Unsub.GraceDays)
+	envInt("IMAP_MCP_UNSUBSCRIBE_TIMEOUT_SECONDS", &cfg.Unsub.TimeoutSeconds)
 	if v := os.Getenv("IMAP_MCP_IDENTITY_ALSO_ME"); v != "" {
 		cfg.Identity.AlsoMe = strings.Split(v, ",")
 	}

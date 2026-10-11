@@ -5,6 +5,7 @@ go 1.25.10
 require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
+	github.com/emersion/go-msgauth v0.7.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/mark3labs/mcp-go v0.54.1
 	github.com/ncruces/go-sqlite3 v0.35.3

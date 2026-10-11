@@ -147,7 +147,11 @@ func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding)
 	}
 	learned.identities = ids.Candidates
 	learned.setup = setup
-	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 && len(learned.identities) == 0 && len(setup) == 0 {
+	if learned.ignored, err = s.ignoredUnsubscribes(context.Background(), account, true); err != nil {
+		return false, err
+	}
+	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 && len(learned.identities) == 0 &&
+		len(setup) == 0 && len(learned.ignored) == 0 {
 		return false, nil
 	}
 
@@ -175,6 +179,9 @@ func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding)
 	}
 	if _, err := st.Exec(`UPDATE held_messages SET digested_at = ? WHERE account = ? AND digested_at IS NULL AND released_at IS NULL`,
 		now.Unix(), account); err != nil {
+		return false, err
+	}
+	if err := s.markIgnoredReported(context.Background(), learned.ignored); err != nil {
 		return false, err
 	}
 	if _, err := st.Exec(`INSERT INTO digest_log(account, sent_at) VALUES(?,?)
@@ -250,6 +257,13 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 		}
 		body.WriteString("\r\n")
 	}
+	if len(learned.ignored) > 0 {
+		fmt.Fprintf(&body, "Still mailing after you unsubscribed: %d sender(s).\r\n", len(learned.ignored))
+		body.WriteString("Each sent mail after the grace period. A rule can trash it (created inactive; turn it on when you agree):\r\n\r\n")
+		for _, r := range learned.ignored {
+			fmt.Fprintf(&body, "- %s: %d message(s) since %s\r\n  %s\r\n\r\n", r.Sender, r.Since, r.UnsubscribedAt[:10], r.Rule)
+		}
+	}
 	if len(learned.setup) > 0 {
 		fmt.Fprintf(&body, "Setup: %d new finding(s) from the setup check.\r\n\r\n", len(learned.setup))
 		for _, f := range learned.setup {
@@ -274,6 +288,9 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 	if n := len(learned.identities); n > 0 {
 		parts = append(parts, fmt.Sprintf("Is this you: %d", n))
 	}
+	if n := len(learned.ignored); n > 0 {
+		parts = append(parts, fmt.Sprintf("Ignored unsubscribes: %d", n))
+	}
 	subject := strings.Join(parts, "; ")
 	var msg strings.Builder
 	if owner != "" {
@@ -295,8 +312,9 @@ type digestLearning struct {
 		target string
 		ruleID int64
 	} // learned rules created since the last digest
-	identities []Identity // addresses that may be the owner's (D50)
-	setup      []Finding  // new setup-check findings (D52)
+	identities []Identity     // addresses that may be the owner's (D50)
+	setup      []Finding      // new setup-check findings (D52)
+	ignored    []IgnoredUnsub // senders still mailing after an unsubscribe (D56)
 }
 
 func (s *Service) digestLearned(account string) (digestLearning, error) {

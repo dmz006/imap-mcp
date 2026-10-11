@@ -104,6 +104,8 @@ func NewServer(
 	s.AddTool(tools.NeedsReplyTool(), h.NeedsReply)
 	s.AddTool(tools.AwaitingReplyTool(), h.AwaitingReply)
 	s.AddTool(tools.DismissReplyTool(), h.DismissReply)
+	s.AddTool(tools.UnsubscribeTool(), h.Unsubscribe)
+	s.AddTool(tools.ListUnsubscribesTool(), h.ListUnsubscribes)
 	s.AddTool(tools.EnrichmentStatusTool(), h.EnrichmentStatus)
 	s.AddTool(tools.TriggerEnrichmentTool(), h.TriggerEnrichment)
 

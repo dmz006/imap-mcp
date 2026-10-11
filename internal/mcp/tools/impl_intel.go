@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -139,4 +140,21 @@ func (h *Handlers) VerdictEval(ctx context.Context, req mcp.CallToolRequest) (*m
 // VerdictEvalResults returns an evaluation run.
 func (h *Handlers) VerdictEvalResults(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.VerdictEval(ctx, int64(req.GetFloat("id", 0))))
+}
+
+// Unsubscribe unsubscribes from a sender (Q4). A mailto unsubscribe sends
+// mail, so it needs the send scope as well (D40); with auth off (stdio or no
+// tokens) there is no principal and the operator is the caller.
+func (h *Handlers) Unsubscribe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := httpauth.FromContext(ctx)
+	return result(h.svc.Unsubscribe(ctx, service.UnsubscribeParams{
+		Account: req.GetString("account", ""), Sender: req.GetString("sender", ""), UID: uint32(req.GetFloat("uid", 0)),
+		Folder: req.GetString("folder", ""), Confirm: req.GetBool("confirm", false), ArchiveTo: req.GetString("archive_to", ""),
+		CanSend: p == nil || p.Has(httpauth.ScopeSend),
+	}))
+}
+
+// ListUnsubscribes lists the unsubscribe log and senders still mailing.
+func (h *Handlers) ListUnsubscribes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.ListUnsubscribes(ctx, req.GetString("account", ""), req.GetBool("dry_runs", false), int(req.GetFloat("limit", 100))))
 }

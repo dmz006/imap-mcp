@@ -31,10 +31,13 @@ const (
 	ScopeSend Scope = "send"
 	// ScopeAdmin covers webhooks, the query DSL, sync and enrichment triggers.
 	ScopeAdmin Scope = "admin"
+	// ScopeUnsubscribe covers unsubscribing: an outbound request to a sender
+	// on the owner's behalf (D39). A mailto unsubscribe also needs ScopeSend.
+	ScopeUnsubscribe Scope = "unsubscribe"
 )
 
 // AllScopes lists every valid scope.
-var AllScopes = []Scope{ScopeRead, ScopeWrite, ScopeSend, ScopeAdmin}
+var AllScopes = []Scope{ScopeRead, ScopeWrite, ScopeSend, ScopeAdmin, ScopeUnsubscribe}
 
 // ParseScope validates a scope name.
 func ParseScope(s string) (Scope, error) {
@@ -43,7 +46,7 @@ func ParseScope(s string) (Scope, error) {
 			return sc, nil
 		}
 	}
-	return "", fmt.Errorf("unknown scope %q (valid: read, write, send, admin)", s)
+	return "", fmt.Errorf("unknown scope %q (valid: read, write, send, admin, unsubscribe)", s)
 }
 
 // Token is one configured credential.
