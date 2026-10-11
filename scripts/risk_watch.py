@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Daily re-validation of security/accepted-risks.yml (D68).
 
-Inputs: the registry, a fresh `govulncheck -format json ./...` result, and
-`go list -m -json all` (the module versions in use). Sorts every entry into:
+Inputs: the registry, a fresh `govulncheck -format json ./...` result,
+`go list -m -json all` (the module versions in use) and, for code-scanning
+entries, the repository's code-scanning alerts (`--code-alerts`, the JSON
+array from the API). Sorts every entry into:
 
   fixable   - govulncheck reports a fixed version for it, or no longer
               reports it at all: upgrade the module and remove the entry;
   retrace   - the module (or Go toolchain) version in use differs from the
-              accepted `version`: the analysis must be redone;
+              accepted `version`, or a dismissed code-scanning alert is
+              open again: the analysis must be redone;
+  (code-scanning entries whose alert is fixed are fixable: removed only)
   expiring  - past `expires`, or due within 14 days.
 
 Writes:
@@ -42,10 +46,21 @@ def module_versions(path):
     return out
 
 
-def classify(entries, found, mods, goversion, today):
+def classify(entries, found, mods, goversion, today, alerts=None):
     fixable, retrace, expiring = [], [], []
+    alerts = alerts or {}
     for e in entries:
         rid = str(e["id"])
+        if rid.startswith("code-scanning/"):
+            state = alerts.get(rid.removeprefix("code-scanning/"))
+            if state == "fixed" or (alerts and state is None):
+                fixable.append((e, None))
+            elif state == "open":
+                retrace.append((e, "alert open again"))
+            exp = dt.date.fromisoformat(str(e["expires"]))
+            if exp <= today + dt.timedelta(days=14):
+                expiring.append((e, exp))
+            continue
         osv = rid.removeprefix("osv/")
         f = found.get(osv)
         pkg = e.get("package")
@@ -78,6 +93,7 @@ def main():
     ap.add_argument("--vulns")
     ap.add_argument("--modules")
     ap.add_argument("--goversion", default="")
+    ap.add_argument("--code-alerts", help="code-scanning alerts JSON (array with number, state)")
     ap.add_argument("--report")
     ap.add_argument("--upgrades")
     ap.add_argument("--remove")
@@ -93,7 +109,10 @@ def main():
 
     entries = (yaml.safe_load(Path(a.registry).read_text(encoding="utf-8")) or {}).get("entries") or []
     found, mods = findings(a.vulns), module_versions(a.modules)
-    fixable, retrace, expiring = classify(entries, found, mods, a.goversion, dt.date.today())
+    alerts = {}
+    if a.code_alerts:
+        alerts = {str(x["number"]): x["state"] for x in json.loads(Path(a.code_alerts).read_text(encoding="utf-8"))}
+    fixable, retrace, expiring = classify(entries, found, mods, a.goversion, dt.date.today(), alerts)
 
     with open(a.upgrades, "w") as up, open(a.remove, "w") as rm:
         for e, f in fixable:

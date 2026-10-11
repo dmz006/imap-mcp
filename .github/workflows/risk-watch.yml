@@ -29,6 +29,7 @@ jobs:
       pull-requests: write # open the PR
       issues: write        # the tracking issue
       actions: write       # start the checks on the PR branch
+      security-events: read # code-scanning alert states
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -40,7 +41,8 @@ jobs:
         run: |
           go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -format json ./... > govulncheck.json
           go list -m -json all > modules.json
-          python3 scripts/risk_watch.py --vulns govulncheck.json --modules modules.json \
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?per_page=100" --jq '[.[] | {number, state}]' | jq -s add > code-alerts.json
+          python3 scripts/risk_watch.py --vulns govulncheck.json --modules modules.json --code-alerts code-alerts.json \
             --goversion "$(go env GOVERSION)" --report report.md --upgrades upgrades.txt --remove remove.txt
 
       - name: PR for fixable entries

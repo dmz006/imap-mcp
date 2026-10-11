@@ -431,6 +431,13 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D74 (CodeQL triage, S1):** alerts assessed as not
+  exploitable are dismissed in GitHub as false positives with the reason,
+  and recorded as traced `code-scanning/<n>` entries (kind `code`) in
+  `security/accepted-risks.yml`; the daily re-validation reports an entry
+  whose alert is open again and removes one whose alert is fixed. First
+  set: 12 log-injection (slog escapes), 2 email-injection (send is the
+  feature; CR/LF rejected), 1 SQL injection (allowlisted DSL, D17).
 - **2026-10-11 — D73 (lint gate, S1.4):** fix all golangci-lint findings
   (234: errcheck, staticcheck, unused) rather than exclude or baseline them;
   `.golangci.yml` keeps the standard linters and adds gosec. Errors that can
