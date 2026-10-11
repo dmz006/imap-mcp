@@ -7,6 +7,7 @@ measured. [tuning.md](tuning.md) turns these into a setup guide.
 
 | Release | Symptom | Cause | Fix |
 |---|---|---|---|
+| 0.19.1 | The 0.19.0 release build failed: "no matching files" for the rule packs | `.gitignore` ignores `*.yaml` (to keep configs with credentials out), so the pack files were never committed; local builds still had them | Except `internal/rulepacks/packs/*.yaml`; check `git status` for untracked files a build needs |
 | 0.18.1 | Identity detection proposed nothing | The owner's display names were counted only from mail indexed after the release and from cached sent mail, and the cache synced only INBOX | Read the From names of up to 200 Sent messages once when none are known |
 | 0.18.0 | About half of one account's `needs_reply` items were noise (46 items) | The owner's work and Kindle addresses counted as other people; calendar invites, store notices and family FYI forwards counted as conversations | Identities (D50); drop invites, automated senders and bare forwards (D51). 46 → 23 |
 | 0.17.2 | After 0.17.1, the remaining `needs_reply` items on one account were still all spam | That spam passed every header check and the model labelled it a conversation | `needs_reply` lists correspondents only until the model second opinion (D49); a fake `Re:` from a stranger is held |

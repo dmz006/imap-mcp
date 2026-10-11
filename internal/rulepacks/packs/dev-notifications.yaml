@@ -1,0 +1,10 @@
+name: dev-notifications
+description: GitHub and GitLab notification mail, moved out of the inbox.
+dest: Notifications
+rules:
+  - name: github
+    from: notifications@github.com
+    action: move
+  - name: gitlab
+    from: gitlab@
+    action: move

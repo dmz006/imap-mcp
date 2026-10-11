@@ -1,0 +1,15 @@
+name: calendar-replies
+description: Replies to your invitations older than 7 days, trashed; your calendar already has them.
+rules:
+  - name: accepted
+    subject: "Accepted:"
+    older_than_days: 7
+    action: trash
+  - name: declined
+    subject: "Declined:"
+    older_than_days: 7
+    action: trash
+  - name: tentative
+    subject: "Tentatively Accepted:"
+    older_than_days: 7
+    action: trash

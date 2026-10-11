@@ -6,6 +6,14 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-10
+
+### Fixed
+- **The 0.19.0 release build failed:** the rule pack files were never
+  committed, because `.gitignore` ignores every `*.yaml` to keep configs
+  with credentials out. The packs are now excepted. 0.19.0 has no
+  published binaries; use 0.19.1.
+
 ## [0.19.0] - 2026-10-10
 
 ### Added

@@ -1,0 +1,15 @@
+name: bounces
+description: Bounce notices older than 30 days, trashed; recent ones stay so you can act on them.
+rules:
+  - name: mailer-daemon
+    from: MAILER-DAEMON
+    older_than_days: 30
+    action: trash
+  - name: postmaster
+    from: postmaster
+    older_than_days: 30
+    action: trash
+  - name: undelivered
+    subject: Undelivered Mail Returned to Sender
+    older_than_days: 30
+    action: trash

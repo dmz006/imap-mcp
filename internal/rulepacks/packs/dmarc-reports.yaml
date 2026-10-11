@@ -1,0 +1,17 @@
+name: dmarc-reports
+description: DMARC aggregate reports from the big receivers, moved out of the inbox.
+dest: Reports/DMARC
+rules:
+  - name: google
+    from: noreply-dmarc-support@google.com
+    action: move
+  - name: microsoft
+    from: dmarcreport@microsoft.com
+    action: move
+  - name: yahoo
+    from: noreply@dmarc.yahoo.com
+    action: move
+  - name: report-subject
+    description: Most report senders use "Report domain:" in the subject.
+    subject: "Report domain:"
+    action: move
