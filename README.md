@@ -77,7 +77,8 @@ Notes:
   you have not replied. `awaiting_reply` lists the ones where you wrote last.
   Both cover your whole history, wherever the mail is filed, and skip lists,
   bots and held mail. A reply, the `\Answered` flag or `dismiss_reply` clears
-  an item. The daily digest gains a "Waiting on you" section. See
+  an item. The daily digest gains a "Waiting on you" section. Items link to
+  the message (Gmail automatically; Thunderbird or webmail per account). See
   [docs/intelligence.md](docs/intelligence.md#reply-tracking).
 - A second-opinion model judges mail from strangers: it breaks ties in the
   new-sender hold, flags payment and credential requests, and vets first

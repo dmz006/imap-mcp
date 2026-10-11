@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.21.0"
+var Version = "0.22.0"
 
 type Config struct {
 	Accounts   []AccountConfig  `yaml:"accounts"`
@@ -50,6 +50,49 @@ type AccountConfig struct {
 	Inbound *InboundConfig `yaml:"inbound,omitempty"`
 	// Sync optionally overrides the global sync settings for this account.
 	Sync *AccountSyncConfig `yaml:"sync,omitempty"`
+	// Link is how reports link to a message (D59): gmail, thunderbird (mid:),
+	// none, or a URL template with {message_id}, {folder} and {uid}. Empty:
+	// gmail for Gmail's IMAP server, none otherwise.
+	Link string `yaml:"link,omitempty"`
+}
+
+// Link styles (D59).
+const (
+	LinkGmail       = "gmail"
+	LinkThunderbird = "thunderbird"
+	LinkNone        = "none"
+)
+
+// LinkStyle returns the account's link setting with the default applied.
+func (a AccountConfig) LinkStyle() string {
+	l := strings.TrimSpace(a.Link)
+	if l == "" {
+		h := strings.ToLower(a.IMAP.Host)
+		if h == "imap.gmail.com" || h == "imap.googlemail.com" {
+			return LinkGmail
+		}
+		return LinkNone
+	}
+	if strings.Contains(l, "{") {
+		return l
+	}
+	return strings.ToLower(l)
+}
+
+// ValidLink checks a link setting.
+func ValidLink(l string) error {
+	l = strings.TrimSpace(l)
+	switch strings.ToLower(l) {
+	case "", LinkGmail, LinkThunderbird, LinkNone:
+		return nil
+	}
+	if !strings.Contains(l, "{message_id}") && !strings.Contains(l, "{uid}") {
+		return fmt.Errorf("link must be gmail, thunderbird, none or a URL template with {message_id} or {uid}")
+	}
+	if i := strings.Index(l, ":"); i <= 0 || strings.ContainsAny(l[:i], "/{ ") {
+		return fmt.Errorf("link template must start with a URL scheme (https://...)")
+	}
+	return nil
 }
 
 // SMTPConfig is per-account outbound mail. Each receiving domain sends through
@@ -876,6 +919,9 @@ func validate(cfg *Config) error {
 		}
 		if a.Auth.Type == "" {
 			return fmt.Errorf("account %q: auth.type is required", a.Name)
+		}
+		if err := ValidLink(a.Link); err != nil {
+			return fmt.Errorf("account %q: %w", a.Name, err)
 		}
 		if a.Default {
 			defaults++

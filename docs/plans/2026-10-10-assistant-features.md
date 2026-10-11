@@ -21,7 +21,8 @@
 | V2 | Sharing tuning lessons: playbook, setup check, starter rule packs, lessons log (D52) | — | 0.19.0 |
 | Q3 | Second opinion for borderline mail + payment/credential-request alerts | 2 | 0.20.0 |
 | Q4 | Safe one-click unsubscribe (RFC 8058) | 3 | 0.21.0 |
-| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.22.0 |
+| V3 | Links that open a message from reports: Gmail, Thunderbird `mid:`, URL templates (D59, D60) | — | 0.22.0 |
+| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.23.0 |
 
 Each phase is a minor release, live-validated before the next one starts
 (D12). Q4 and Q5 are independent of each other; Q2 and Q3 both feed the
@@ -318,7 +319,7 @@ confirm no further mail after a few days.
 
 ---
 
-## Q5 — screener (0.22.0)
+## Q5 — screener (0.23.0)
 
 Approve or block held senders from the daily digest, without opening any
 folder, and route approved senders the HEY way: inbox, feed (newsletters) or
@@ -378,6 +379,8 @@ not from the owner) is rejected and logged.
 | D56 | Q4 | Senders who ignore an unsubscribe | Decided: track; digest + setup_check after 3 days (configurable); offer a rule |
 | D57 | Q4 | Scope for archive_to | Decided: also needs `write` |
 | D58 | Q4 | Expired DKIM signatures | Decided: accepted if otherwise valid; shown in the dry run |
+| D59 | V3 | Links to open a message | Decided: per-account `link`: gmail (default for Gmail), thunderbird, URL template, none |
+| D60 | — | Version plan | Decided: V3 = 0.22.0; Q5 → 0.23.0, then 1.0.0 |
 | D42 | Q5 | Trusting digest replies | Open |
 | D43 | Q5 | Block scope | Open |
 
@@ -392,7 +395,8 @@ not from the owner) is rejected and logged.
 | V2 | 0.19.x | Done (D52) | Yes | Yes (setup_check: 5 findings on production; packs listed) |
 | Q3 | 0.20.0 | Done, shadow mode (gemma4:26b @ 0.9, D55) | Yes | Yes (108 shadow verdicts in the first 90 min; activation is the operator's call) |
 | Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
-| Q5 | 0.22.0 → 1.0.0 | Planned | | |
+| V3 | 0.22.0 | Built (D59, D60) | Yes | Pending |
+| Q5 | 0.23.0 → 1.0.0 | Planned | | |
 
 When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).

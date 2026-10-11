@@ -431,6 +431,16 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D59 (links to open a message, V3):** each account has a
+  `link` setting: `gmail` (a Gmail search link on the Message-ID with
+  `authuser`; the default for Gmail servers), `thunderbird` (`mid:` link), a
+  URL template with `{message_id}`, `{folder}`, `{uid}`, or `none` (the
+  default otherwise). Outlook cannot be linked over IMAP (its links need
+  Microsoft Graph item ids); sender, date and subject are always shown.
+  Links appear in the digest and as `link` on `needs_reply`,
+  `awaiting_reply` items.
+- **2026-10-11 — D60 (version plan):** links ship next as V3 0.22.0; Q5
+  moves to 0.23.0, then 1.0.0.
 - **2026-10-11 — D58 (expired DKIM signatures, Q4):** a signature past its
   `x=` expiry that otherwise verifies and covers both unsubscribe headers is
   accepted for one-click; the dry run says `signature_expired`. Found in

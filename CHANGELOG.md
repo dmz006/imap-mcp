@@ -6,6 +6,21 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-11
+
+### Added
+- **Links that open a message (V3; AGENT.md D59).** Each account has a
+  `link` setting: `gmail` (a Gmail search link on the Message-ID with
+  `authuser`; the default for `imap.gmail.com`), `thunderbird` (`mid:`
+  links), a URL template with `{message_id}`, `{folder}` and `{uid}` for
+  webmail, or `none` (the default otherwise). `needs_reply` and
+  `awaiting_reply` items carry `link`; the daily digest adds an `open:`
+  line to each held message and waiting conversation. Outlook can't be
+  linked over IMAP (its links need Microsoft Graph item ids).
+
+### Changed
+- The screener (Q5) moves to 0.23.0, then 1.0.0 (D60).
+
 ## [0.21.0] - 2026-10-11
 
 ### Added

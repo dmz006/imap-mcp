@@ -296,6 +296,24 @@ conversations; the rest of the intelligence keeps working meanwhile.
 `/api/health` shows its progress: `intelligence.reply_history_complete`,
 and per account `rescan_complete` and `rescan_folders_remaining`.
 
+
+### Links to open a message
+
+`needs_reply` and `awaiting_reply` items carry a `link`, and each item in the
+daily digest (held mail and conversations waiting on you) has an `open:`
+line, when the account has a link style (AGENT.md D59). Set it per account:
+
+| `link` | Opens in | Link |
+|---|---|---|
+| `gmail` (default for `imap.gmail.com`) | Gmail on the web | `https://mail.google.com/mail/?authuser=<you>#search/rfc822msgid:<Message-ID>`; `authuser` picks the right account when several are signed in |
+| `thunderbird` | Thunderbird | `mid:<Message-ID>` (RFC 2392), the form Thunderbird's "Copy Message Link" makes. Clicking it inside Thunderbird opens the message; a browser may need `mid:` registered to Thunderbird |
+| a URL template | your webmail | `{message_id}`, `{folder}` and `{uid}` are filled in, e.g. `https://webmail.example.com/?_task=mail&_mbox={folder}&_uid={uid}&_action=show` (Roundcube) |
+| `none` (default otherwise) | | no link |
+
+Outlook can't be linked over IMAP: its links use Outlook's own item ids,
+which only Microsoft Graph returns. Sender, date and subject are always
+shown, so the message is easy to search for.
+
 ## Second opinion (the verdict model)
 
 A dedicated model gives a second opinion on mail from senders you have never

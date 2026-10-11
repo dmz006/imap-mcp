@@ -86,6 +86,9 @@ accounts:
     auth:
       type: plain
       username: user@gmail.com
+    # link: gmail                     # how reports link to a message (docs/intelligence.md#links-to-open-a-message):
+                                      # gmail (default for imap.gmail.com), thunderbird (mid:), none, or a URL template
+                                      # with {message_id}, {folder}, {uid}. Outlook can't be linked over IMAP.
       # Standalone: from the environment …
       password: ${GMAIL_APP_PASSWORD}
       # datawatch-integrated: … or store the App Password in datawatch's secrets

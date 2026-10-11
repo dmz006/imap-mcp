@@ -53,6 +53,7 @@ type ReplyItem struct {
 	UID         uint32 `json:"uid,omitempty"`
 	LastDate    string `json:"last_date"` // RFC 3339 (UTC)
 	DaysWaiting int    `json:"days_waiting"`
+	Link        string `json:"link,omitempty"` // opens the message in the owner's mail app (D59)
 
 	threadHash, lastHash int64
 }
@@ -117,6 +118,10 @@ func (s *Service) replyList(ctx context.Context, p ReplyParams, outgoing bool, n
 		}
 	}
 	slices.SortStableFunc(out.Items, func(a, b ReplyItem) int { return b.DaysWaiting - a.DaysWaiting })
+	for i := range out.Items {
+		it := &out.Items[i]
+		it.Link = s.messageLink(it.Account, it.MessageRef, it.Folder, it.UID)
+	}
 	out.Count = len(out.Items)
 	complete, err := s.replyHistoryComplete(ctx, accounts)
 	out.HistoryComplete = complete

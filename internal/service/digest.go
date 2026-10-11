@@ -18,8 +18,8 @@ const heldRetention = 90 * 24 * time.Hour
 
 // heldRow is one held message awaiting the digest.
 type heldRow struct {
-	sender, subject, reasons, folder string
-	heldAt                           int64
+	sender, subject, reasons, folder, link string
+	heldAt                                 int64
 }
 
 // digestReplyLimit is how many waiting conversations the digest lists.
@@ -115,7 +115,7 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 // nothing to report.
 func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding) (sent bool, err error) {
 	st := s.db.StateSQL()
-	rows, err := st.Query(`SELECT COALESCE(sender,''), COALESCE(subject,''), COALESCE(reasons,''), COALESCE(folder,''), held_at
+	rows, err := st.Query(`SELECT COALESCE(sender,''), COALESCE(subject,''), COALESCE(reasons,''), COALESCE(folder,''), held_at, COALESCE(message_ref,'')
 		FROM held_messages WHERE account = ? AND digested_at IS NULL AND released_at IS NULL ORDER BY held_at`, account)
 	if err != nil {
 		return false, err
@@ -123,10 +123,12 @@ func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding)
 	var held []heldRow
 	for rows.Next() {
 		var h heldRow
-		if err := rows.Scan(&h.sender, &h.subject, &h.reasons, &h.folder, &h.heldAt); err != nil {
+		var ref string
+		if err := rows.Scan(&h.sender, &h.subject, &h.reasons, &h.folder, &h.heldAt, &ref); err != nil {
 			rows.Close()
 			return false, err
 		}
+		h.link = s.messageLink(account, ref, h.folder, 0)
 		held = append(held, h)
 	}
 	rows.Close()
@@ -205,9 +207,13 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 		fmt.Fprintf(&body, "imap-mcp held %d message(s) from first-time senders that looked like bulk mail or scams.\r\n", len(held))
 		body.WriteString("Nothing was deleted. Move a message back to your inbox and that sender is never held again.\r\n\r\n")
 		for _, h := range held {
-			fmt.Fprintf(&body, "- %s  %s\r\n  \"%s\"\r\n  why: %s -> %s\r\n\r\n",
+			fmt.Fprintf(&body, "- %s  %s\r\n  \"%s\"\r\n  why: %s -> %s\r\n",
 				time.Unix(h.heldAt, 0).In(now.Location()).Format("Jan 2 15:04"), h.sender,
 				oneLine.Replace(h.subject), h.reasons, h.folder)
+			if h.link != "" {
+				fmt.Fprintf(&body, "  open: %s\r\n", h.link)
+			}
+			body.WriteString("\r\n")
 		}
 	}
 	if waiting.Count > 0 {
@@ -223,7 +229,11 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 			if w.Name != "" {
 				who = w.Name + " <" + w.Counterpart + ">"
 			}
-			fmt.Fprintf(&body, "- %d day(s)  %s\r\n  \"%s\"\r\n\r\n", w.DaysWaiting, oneLine.Replace(who), oneLine.Replace(w.Subject))
+			fmt.Fprintf(&body, "- %d day(s)  %s\r\n  \"%s\"\r\n", w.DaysWaiting, oneLine.Replace(who), oneLine.Replace(w.Subject))
+			if w.Link != "" {
+				fmt.Fprintf(&body, "  open: %s\r\n", w.Link)
+			}
+			body.WriteString("\r\n")
 		}
 	}
 	if len(learned.suggested) > 0 {
