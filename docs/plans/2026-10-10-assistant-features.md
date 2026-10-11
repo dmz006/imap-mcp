@@ -397,6 +397,7 @@ not from the owner) is rejected and logged.
 | Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
 | V3 | 0.22.0 | Done (D59, D60) | Yes | Yes (all 37 gmail reply items carry a Gmail link; dmzs set to thunderbird, no open items) |
 | Q5 | 0.23.0 → 1.0.0 | Planned | | |
+| S1 | after 1.0.0 | Planned (operator request 2026-10-11) | | |
 
 When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).
@@ -418,3 +419,13 @@ below were made without DIP. Reviewed with the operator one at a time
 - **Email as a control channel** (Q5): single-use tokens, own-address
   DKIM/DMARC, default-deny, and every rejected command logged.
 - **Digest length**: sections are capped (top N each) with counts for the rest.
+
+## S1 — repository and CI security hardening (after 1.0.0)
+
+Operator request (2026-10-11): once 1.0.0 is out, review how the datawatch
+repository sets up security (secret scanning, code scanning, Dependabot,
+builds, releases, all CI and repository management; read only, no code
+copied), then harden this repository, harden CI, and enable every security
+feature and workflow. Scope and choices go through the decision process
+when S1 starts.
+
