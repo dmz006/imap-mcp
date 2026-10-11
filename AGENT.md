@@ -107,6 +107,12 @@ release whose notes are the version's `CHANGELOG.md` section
 section before the tag is pushed. For a tag pushed earlier, run the workflow by
 hand with its `tag` input.
 
+**Lessons log.** Every problem found while validating on production gets a
+row in `docs/lessons-learned.md` (symptom, cause, fix, release) in the same
+release as its fix, with no mailbox content or personal details (D52). When
+a lesson changes how to set imap-mcp up, `docs/tuning.md` and, if it can be
+detected, `setup_check` are updated too.
+
 ---
 
 ## Dependency Rules

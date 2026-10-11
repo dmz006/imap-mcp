@@ -355,6 +355,14 @@ CREATE TABLE IF NOT EXISTS owner_names (
     count INTEGER NOT NULL DEFAULT 0
 );
 
+-- setup_findings: setup-check findings already reported in a digest (D52),
+-- so the digest's Setup section shows only new ones.
+CREATE TABLE IF NOT EXISTS setup_findings (
+    id          TEXT PRIMARY KEY,  -- finding id plus account
+    first_seen  INTEGER NOT NULL,
+    digested_at INTEGER
+);
+
 -- digest_log: when each account's daily digest was last sent (D31).
 CREATE TABLE IF NOT EXISTS digest_log (
     account TEXT PRIMARY KEY,

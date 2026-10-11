@@ -348,6 +348,31 @@ func RejectIdentityTool() mcp.Tool {
 	)
 }
 
+func SetupCheckTool() mcp.Tool {
+	return mcp.NewTool("setup_check",
+		mcp.WithDescription("Check this imap-mcp setup for the gaps that tuning on real mailboxes found: history scan off or unfinished, "+
+			"addresses of yours waiting to be confirmed, Sent not synced, no (or an inactive) new-sender hold, rules that never match, "+
+			"learned rule suggestions waiting, conversations waiting on you for over 30 days. Each finding says what, why it matters and the fix"),
+	)
+}
+
+func ListRulePacksTool() mcp.Tool {
+	return mcp.NewTool("list_rule_packs",
+		mcp.WithDescription("Built-in starter rule packs (dmarc-reports, bounces, calendar-replies, dev-notifications): generic rules with no "+
+			"personal senders. Import one with import_rule_pack"),
+	)
+}
+
+func ImportRulePackTool() mcp.Tool {
+	return mcp.NewTool("import_rule_pack",
+		mcp.WithDescription("Create a rule pack's rules for an account, INACTIVE (already imported rules are skipped). Dry-run each with "+
+			"run_rules {id, dry_run: true} before activating. Packs that move mail need their folder to exist"),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Pack name from list_rule_packs")),
+		mcp.WithString("account", mcp.Description("Account name (omit for default)")),
+		mcp.WithString("dest", mcp.Description("Folder for the pack's move rules (default: the pack's own, e.g. Reports/DMARC)")),
+	)
+}
+
 func NeedsReplyTool() mcp.Tool {
 	return mcp.NewTool("needs_reply",
 		mcp.WithDescription("Conversations waiting on you: the latest message is someone else's, addressed to you, and you have not replied, "+

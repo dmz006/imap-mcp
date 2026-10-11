@@ -43,8 +43,9 @@ shown; `tools/list` only shows tools the caller's token can use.
 | | `confirm_identity`, `reject_identity` | write |
 | | `trigger_enrichment` | admin |
 | Cache | `cache_sweep` | admin |
-| Rules | `list_rules`, `suggest_rules` | read |
-| | `create_rule`, `delete_rule`, `run_rules`, `dismiss_suggestion` | write |
+| Rules | `list_rules`, `suggest_rules`, `list_rule_packs` | read |
+| | `create_rule`, `delete_rule`, `run_rules`, `dismiss_suggestion`, `import_rule_pack` | write |
+| Setup | `setup_check` | read |
 | File sandbox (`working_dir`) | `read_file`, `list_files` | read |
 | | `write_file`, `delete_file` | write |
 
@@ -75,6 +76,10 @@ Notes:
   bots and held mail. A reply, the `\Answered` flag or `dismiss_reply` clears
   an item. The daily digest gains a "Waiting on you" section. See
   [docs/intelligence.md](docs/intelligence.md#reply-tracking).
+- `setup_check` reports the setup gaps tuning on real mailboxes found, each
+  with the fix; start with [docs/tuning.md](docs/tuning.md).
+  `list_rule_packs` / `import_rule_pack` add generic starter rules
+  (DMARC reports, bounces, calendar replies, dev notifications), inactive.
 - `suggest_identities` finds your other addresses (work, Kindle, old ones)
   so they count as you; confirm them or list them in `identity.also_me`.
 - `suggest_rules` learns from your own moves: a sender whose mail you mostly
@@ -266,7 +271,9 @@ These `IMAP_MCP_*` variables override YAML values (see [.env.example](.env.examp
 | [docs/rest-api.md](docs/rest-api.md) | Every REST route, `/api/health` fields, `/api/events` SSE format and event types |
 | [docs/webhooks.md](docs/webhooks.md) | Registering webhooks, delivery, retries, signatures |
 | [docs/query.md](docs/query.md) | `/api/query` DSL reference |
-| [docs/rules.md](docs/rules.md) | Rules engine, `run-rules`, dry run, scheduling |
+| [docs/rules.md](docs/rules.md) | Rules engine, `run-rules`, dry run, scheduling, starter rule packs |
+| [docs/tuning.md](docs/tuning.md) | Setting imap-mcp up on a real mailbox: order, what to expect, checks |
+| [docs/lessons-learned.md](docs/lessons-learned.md) | Problems found on real mailboxes and how they were fixed |
 | [docs/sync-cache.md](docs/sync-cache.md) | Sync window, folders, overrides, cleaning, `cache_sweep` |
 | [docs/enrichment.md](docs/enrichment.md) | Enrichment pipeline, providers, lanes, gates, status |
 | [docs/encryption.md](docs/encryption.md) | Storage split, at-rest encryption, keys, `db encrypt`, backups |

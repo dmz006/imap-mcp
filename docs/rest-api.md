@@ -493,6 +493,9 @@ Anomalies come from the same scanner (see [intelligence.md](intelligence.md#anom
 | `GET /api/kg` | `read` | `entity` (exact name, either end), `predicate`, `entity_type`, `limit` (default 50, max 500) | `{count, relationships: [{subject, subject_type, predicate, object, object_type, valid_from, valid_to, confidence, weight, last_seen, current, properties}]}`, strongest (`weight`) first. See [intelligence.md](intelligence.md#knowledge-graph) |
 | `GET /api/anomalies` | `read` | `account`, `severity` (`low`, `medium`, `high`), `type`, `sender`, `include_resolved` (bool), `limit` (default 20, max 500) | `{count, anomalies: [{id, account, sender, type, description, severity, detected_at, resolved, resolved_at, folder, uid, message_ref, details}]}`, newest first |
 | `POST /api/anomalies/{id}/resolve` | `write` | | The anomaly, now `resolved: true`. 404 for an unknown id. |
+| `GET /api/setup-check` | `read` | | `{count, findings: [{id, account?, severity, what, why, fix}]}`: setup gaps found on real mailboxes. See [tuning.md](tuning.md) |
+| `GET /api/rule-packs` | `read` | | `{count, packs: [{name, description, dest?, rules: [...]}]}`: built-in starter rule packs |
+| `POST /api/rule-packs/{name}/import` | `write` | Body `{account, dest?}` | `{pack, account, created: [ids], skipped?, note}`; rules are created inactive. 400 if the pack's folder does not exist. See [rules.md](rules.md#starter-rule-packs) |
 | `GET /api/identities` | `read` | | `{count, candidates: [{address, status, evidence, name, received, sent}], known: [...]}`: addresses that look like yours, and those known to be. See [intelligence.md](intelligence.md#your-other-addresses) |
 | `POST /api/identities/confirm` | `write` | Body `{"address"}` (address or `@domain`) | `{address, status: "confirmed"}`; it counts as you everywhere and its past mail is re-marked |
 | `POST /api/identities/reject` | `write` | Body `{"address"}` | `{address, status: "rejected"}`; never proposed again |

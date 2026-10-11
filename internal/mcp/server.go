@@ -82,6 +82,9 @@ func NewServer(
 	s.AddTool(tools.SuggestIdentitiesTool(), h.SuggestIdentities)
 	s.AddTool(tools.ConfirmIdentityTool(), h.ConfirmIdentity)
 	s.AddTool(tools.RejectIdentityTool(), h.RejectIdentity)
+	s.AddTool(tools.SetupCheckTool(), h.SetupCheck)
+	s.AddTool(tools.ListRulePacksTool(), h.ListRulePacks)
+	s.AddTool(tools.ImportRulePackTool(), h.ImportRulePack)
 
 	// ── Search ───────────────────────────────────────────────────────────────
 	s.AddTool(tools.SearchMessagesTool(), h.SearchMessages)

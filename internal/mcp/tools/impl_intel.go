@@ -107,3 +107,19 @@ func (h *Handlers) ConfirmIdentity(ctx context.Context, req mcp.CallToolRequest)
 func (h *Handlers) RejectIdentity(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.RejectIdentity(ctx, req.GetString("address", "")))
 }
+
+// SetupCheck reports setup gaps.
+func (h *Handlers) SetupCheck(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.SetupCheck(ctx))
+}
+
+// ListRulePacks lists the built-in rule packs.
+func (h *Handlers) ListRulePacks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	packs, err := h.svc.ListRulePacks()
+	return result(map[string]any{"count": len(packs), "packs": packs}, err)
+}
+
+// ImportRulePack creates a pack's rules, inactive.
+func (h *Handlers) ImportRulePack(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.ImportRulePack(ctx, req.GetString("account", ""), req.GetString("name", ""), req.GetString("dest", "")))
+}

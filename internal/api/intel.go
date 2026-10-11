@@ -150,3 +150,26 @@ func (s *Server) handleRejectIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w)(s.svc.RejectIdentity(r.Context(), req.Address))
 }
+
+// GET /api/setup-check
+func (s *Server) handleSetupCheck(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.SetupCheck(r.Context()))
+}
+
+// GET /api/rule-packs
+func (s *Server) handleListRulePacks(w http.ResponseWriter, r *http.Request) {
+	packs, err := s.svc.ListRulePacks()
+	respond(w)(map[string]any{"count": len(packs), "packs": packs}, err)
+}
+
+// POST /api/rule-packs/{name}/import  Body: {"account", "dest"}
+func (s *Server) handleImportRulePack(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Account string `json:"account"`
+		Dest    string `json:"dest"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	respond(w)(s.svc.ImportRulePack(r.Context(), req.Account, chi.URLParam(r, "name"), req.Dest))
+}

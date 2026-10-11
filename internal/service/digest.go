@@ -62,6 +62,10 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 	}
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
 	var errs []string
+	// New setup findings (D52), read once when the first digest is due.
+	// Global ones go into the first digest sent.
+	var fresh []Finding
+	freshRead, globalShown := false, false
 	for _, account := range accounts {
 		var last int64
 		if err := st.QueryRow(`SELECT max(COALESCE((SELECT max(digested_at) FROM held_messages WHERE account = ?), 0),
@@ -71,8 +75,34 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 		if last >= dayStart {
 			continue // already sent today
 		}
-		if err := s.sendHoldDigest(account, now); err != nil {
+		if !freshRead {
+			freshRead = true
+			if f, err := s.newFindings(context.Background()); err != nil {
+				errs = append(errs, "setup check: "+err.Error())
+			} else {
+				fresh = f
+			}
+		}
+		var setup []Finding
+		for _, f := range fresh {
+			if f.Account == account || (f.Account == "" && !globalShown) {
+				setup = append(setup, f)
+			}
+		}
+		sent, err := s.sendHoldDigest(account, now, setup)
+		if err != nil {
 			errs = append(errs, account+": "+err.Error())
+			continue
+		}
+		if sent {
+			for _, f := range setup {
+				if f.Account == "" {
+					globalShown = true
+				}
+			}
+			if err := s.markFindings(context.Background(), setup, now); err != nil {
+				errs = append(errs, account+": "+err.Error())
+			}
 		}
 	}
 	if len(errs) > 0 {
@@ -81,19 +111,21 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 	return nil
 }
 
-func (s *Service) sendHoldDigest(account string, now time.Time) error {
+// sendHoldDigest sends one account's digest; sent is false when there was
+// nothing to report.
+func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding) (sent bool, err error) {
 	st := s.db.StateSQL()
 	rows, err := st.Query(`SELECT COALESCE(sender,''), COALESCE(subject,''), COALESCE(reasons,''), COALESCE(folder,''), held_at
 		FROM held_messages WHERE account = ? AND digested_at IS NULL AND released_at IS NULL ORDER BY held_at`, account)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var held []heldRow
 	for rows.Next() {
 		var h heldRow
 		if err := rows.Scan(&h.sender, &h.subject, &h.reasons, &h.folder, &h.heldAt); err != nil {
 			rows.Close()
-			return err
+			return false, err
 		}
 		held = append(held, h)
 	}
@@ -102,25 +134,26 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 	if s.cfg.Intel.On() {
 		if waiting, err = s.replyList(context.Background(), ReplyParams{Account: account,
 			OlderThanDays: defaultReplyOlderDays, WithinDays: defaultReplyWithinDays, Limit: digestReplyLimit}, false, now); err != nil {
-			return err
+			return false, err
 		}
 	}
 	learned, err := s.digestLearned(account)
 	if err != nil {
-		return err
+		return false, err
 	}
 	ids, err := s.SuggestIdentities(context.Background())
 	if err != nil {
-		return err
+		return false, err
 	}
 	learned.identities = ids.Candidates
-	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 && len(learned.identities) == 0 {
-		return nil
+	learned.setup = setup
+	if len(held) == 0 && waiting.Count == 0 && len(learned.suggested) == 0 && len(learned.created) == 0 && len(learned.identities) == 0 && len(setup) == 0 {
+		return false, nil
 	}
 
 	conn, err := s.pool.Resolve(account)
 	if err != nil {
-		return err
+		return false, err
 	}
 	owner := ""
 	for _, a := range s.cfg.Accounts {
@@ -137,22 +170,22 @@ func (s *Service) sendHoldDigest(account string, now time.Time) error {
 	conn.Unlock()
 	for _, e := range []error{werr, cerr, aerr} {
 		if e != nil {
-			return fmt.Errorf("append digest: %w", e)
+			return false, fmt.Errorf("append digest: %w", e)
 		}
 	}
 	if _, err := st.Exec(`UPDATE held_messages SET digested_at = ? WHERE account = ? AND digested_at IS NULL AND released_at IS NULL`,
 		now.Unix(), account); err != nil {
-		return err
+		return false, err
 	}
 	if _, err := st.Exec(`INSERT INTO digest_log(account, sent_at) VALUES(?,?)
 		ON CONFLICT(account) DO UPDATE SET sent_at = excluded.sent_at`, account, now.Unix()); err != nil {
-		return err
+		return false, err
 	}
 	if b := s.pool.Bus(); b != nil {
 		b.Publish(bus.Event{Type: bus.EventHoldDigest, Account: account,
 			Payload: map[string]any{"account": account, "held": len(held), "waiting": waiting.Count, "suggested": len(learned.suggested)}})
 	}
-	return nil
+	return true, nil
 }
 
 // digestMessage renders the digest as a plain-text message from and to the
@@ -217,6 +250,12 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 		}
 		body.WriteString("\r\n")
 	}
+	if len(learned.setup) > 0 {
+		fmt.Fprintf(&body, "Setup: %d new finding(s) from the setup check.\r\n\r\n", len(learned.setup))
+		for _, f := range learned.setup {
+			fmt.Fprintf(&body, "- %s\r\n  Fix: %s\r\n\r\n", f.What, f.Fix)
+		}
+	}
 	body.WriteString("-- \r\nimap-mcp daily digest\r\n")
 
 	var parts []string
@@ -257,6 +296,7 @@ type digestLearning struct {
 		ruleID int64
 	} // learned rules created since the last digest
 	identities []Identity // addresses that may be the owner's (D50)
+	setup      []Finding  // new setup-check findings (D52)
 }
 
 func (s *Service) digestLearned(account string) (digestLearning, error) {

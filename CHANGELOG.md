@@ -6,6 +6,28 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-10
+
+### Added
+- **What tuning taught us, for everyone (AGENT.md D52).**
+  - `setup_check` (read) and `GET /api/setup-check`: the setup gaps found
+    on real mailboxes, each with why it matters and the fix (history scan
+    off or unfinished, addresses of yours unconfirmed, Sent not synced, no
+    or an inactive new-sender hold, rules that never match, suggestions
+    waiting, conversations waiting over 30 days). New findings appear once
+    in the daily digest under "Setup".
+  - Starter rule packs built into the binary: `dmarc-reports`, `bounces`,
+    `calendar-replies`, `dev-notifications`. `list_rule_packs` (read) and
+    `import_rule_pack` (write), `GET /api/rule-packs`,
+    `POST /api/rule-packs/{name}/import`; imported rules are inactive.
+  - `docs/tuning.md`: the order that works on a real mailbox, what to
+    expect, how to check it. `docs/lessons-learned.md`: every production
+    finding with its cause and fix. Examples §17 (first week) and a skill
+    workflow.
+
+### Upgrade
+- **Back up `imap.db` first.** One table is added; no rescan.
+
 ## [0.18.1] - 2026-10-10
 
 ### Fixed

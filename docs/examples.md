@@ -966,3 +966,32 @@ The daily digest lists open suggestions under "Suggested rules". A webhook
 on `rule.suggested` gets each new one with full details; register it with
 `"payload": "suggested,created"` if you only want the counts
 ([webhooks.md](webhooks.md#payload)).
+
+## 17. Your first week
+
+The order that works on a real mailbox is in [tuning.md](tuning.md). From
+an agent it looks like this:
+
+```
+setup_check                                → what's missing on this install, each with the fix
+suggest_identities → confirm_identity      → your work and old addresses count as you
+list_rule_packs → import_rule_pack { name: "bounces" }   → inactive rules; run_rules { id, dry_run: true } first
+create_rule { new_sender: true, action: "move", dest: "Held", active: false } → run_rules dry run → review the preview
+```
+
+Over REST:
+
+```bash
+curl -sS "$IMAP_MCP/api/setup-check" -H "Authorization: Bearer $READ_TOKEN"
+# → {"count":2,"findings":[
+#     {"id":"identities_pending","severity":"warn","what":"3 address(es) look like your own and wait for an answer.",
+#      "why":"Until confirmed, your other addresses count as other people: ...","fix":"Review suggest_identities, ..."},
+#     {"id":"no_hold_rule","account":"work","severity":"info","what":"No new-sender hold rule.", ...}]}
+
+curl -sS -X POST "$IMAP_MCP/api/rule-packs/dmarc-reports/import" -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" -d '{"account":"work","dest":"Reports"}'
+# → {"pack":"dmarc-reports","account":"work","created":[51,52,53,54],
+#    "note":"Rules are inactive: dry-run each with run_rules {id, dry_run: true}, then activate the ones you want."}
+```
+
+New setup findings also appear once in the daily digest, under "Setup".

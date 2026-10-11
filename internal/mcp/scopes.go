@@ -37,6 +37,8 @@ var toolScopes = map[string]httpauth.Scope{
 	"list_rules":           httpauth.ScopeRead,
 	"suggest_rules":        httpauth.ScopeRead,
 	"suggest_identities":   httpauth.ScopeRead,
+	"setup_check":          httpauth.ScopeRead,
+	"list_rule_packs":      httpauth.ScopeRead,
 	"read_file":            httpauth.ScopeRead,
 	"list_files":           httpauth.ScopeRead,
 
@@ -60,6 +62,7 @@ var toolScopes = map[string]httpauth.Scope{
 	"dismiss_suggestion": httpauth.ScopeWrite,
 	"confirm_identity":   httpauth.ScopeWrite,
 	"reject_identity":    httpauth.ScopeWrite,
+	"import_rule_pack":   httpauth.ScopeWrite,
 	"resolve_anomaly":    httpauth.ScopeWrite,
 	"dismiss_reply":      httpauth.ScopeWrite,
 	"export_message":     httpauth.ScopeWrite,

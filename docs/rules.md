@@ -346,6 +346,26 @@ with full details by default ([webhooks.md](webhooks.md#payload)). The daily
 digest lists open suggestions ("Suggested rules") and rules created since
 the last digest.
 
+## Starter rule packs
+
+Generic rule templates with no personal senders, built into the binary
+(AGENT.md D52):
+
+| Pack | Rules | Action |
+|---|---|---|
+| `dmarc-reports` | DMARC aggregate reports (Google, Microsoft, Yahoo, and "Report domain:" subjects) | move to `Reports/DMARC` |
+| `bounces` | MAILER-DAEMON, postmaster and "Undelivered Mail Returned to Sender", older than 30 days | trash |
+| `calendar-replies` | "Accepted:", "Declined:", "Tentatively Accepted:", older than 7 days | trash |
+| `dev-notifications` | GitHub and GitLab notification mail | move to `Notifications` |
+
+`list_rule_packs` (or `GET /api/rule-packs`) lists them with their rules.
+`import_rule_pack { name, account, dest }` (or
+`POST /api/rule-packs/{name}/import` with `{account, dest}`) creates the
+pack's rules **inactive**, named `pack:<pack>/<rule> (<account>)`;
+importing again skips rules that exist. A pack that moves mail needs its
+folder: create it first, or pass `dest`. Dry-run each rule, then activate
+it.
+
 ## The `rule.fired` event
 
 After a real run of a rule that matched at least one message, the server
