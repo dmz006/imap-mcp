@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -122,4 +123,20 @@ func (h *Handlers) ListRulePacks(ctx context.Context, req mcp.CallToolRequest) (
 // ImportRulePack creates a pack's rules, inactive.
 func (h *Handlers) ImportRulePack(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.ImportRulePack(ctx, req.GetString("account", ""), req.GetString("name", ""), req.GetString("dest", "")))
+}
+
+// VerdictEval starts a verdict model evaluation.
+func (h *Handlers) VerdictEval(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := service.EvalParams{URL: req.GetString("url", ""), PerClass: int(req.GetFloat("per_class", 50))}
+	for _, m := range strings.Split(req.GetString("models", ""), ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			p.Models = append(p.Models, m)
+		}
+	}
+	return result(h.svc.StartVerdictEval(ctx, p))
+}
+
+// VerdictEvalResults returns an evaluation run.
+func (h *Handlers) VerdictEvalResults(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.VerdictEval(ctx, int64(req.GetFloat("id", 0))))
 }

@@ -355,6 +355,34 @@ CREATE TABLE IF NOT EXISTS owner_names (
     count INTEGER NOT NULL DEFAULT 0
 );
 
+-- message_verdicts: the verdict model's second opinion per message (D37,
+-- D53). No content: the verdict, what the message asks for, confidence,
+-- short reasons and the model. run-rules (no model) reads these.
+CREATE TABLE IF NOT EXISTS message_verdicts (
+    account    TEXT NOT NULL,
+    msg_hash   INTEGER NOT NULL,
+    sender     TEXT,
+    verdict    TEXT NOT NULL,  -- legitimate | bulk | scam
+    asks       TEXT NOT NULL,  -- none | payment | credentials | gift_card | bank_change
+    confidence REAL NOT NULL,
+    reasons    TEXT,
+    model      TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (account, msg_hash)
+) WITHOUT ROWID;
+
+-- verdict_evals: verdict-model evaluation runs on the owner's labeled mail
+-- (D53, D54). Results are counts only.
+CREATE TABLE IF NOT EXISTS verdict_evals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    status      TEXT NOT NULL,  -- running | done | failed
+    params      TEXT,           -- JSON: url, models, sample
+    results     TEXT,           -- JSON: per model and threshold
+    error       TEXT,
+    started_at  INTEGER NOT NULL,
+    finished_at INTEGER
+);
+
 -- setup_findings: setup-check findings already reported in a digest (D52),
 -- so the digest's Setup section shows only new ones.
 CREATE TABLE IF NOT EXISTS setup_findings (

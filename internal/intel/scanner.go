@@ -51,10 +51,15 @@ type Scanner struct {
 
 	discardFolders []string                // rules.learn.discard_folders
 	alsoMe         []string                // identity.also_me (D50)
+	afterTick      func(ctx context.Context) error
 	base           map[string]ownSet       // account → login addresses only
 	folderKinds    map[string]*folderKinds // this tick's classification per account (D34)
 	locScope       map[string][]string     // this tick's location-only folders per account
 }
+
+// SetAfterTick sets work to run at the end of every tick (the verdict job,
+// D37). Its errors are logged, never fatal to the tick.
+func (sc *Scanner) SetAfterTick(f func(ctx context.Context) error) { sc.afterTick = f }
 
 // SetBus lets the scanner publish anomaly.detected.
 func (sc *Scanner) SetBus(b *bus.Bus) { sc.bus = b }
@@ -239,6 +244,11 @@ func (sc *Scanner) Tick(ctx context.Context) error {
 		}
 		if err := sc.markStale(ctx); err != nil {
 			return err
+		}
+	}
+	if sc.afterTick != nil {
+		if err := sc.afterTick(ctx); err != nil && ctx.Err() == nil {
+			sc.log.Warn("intel: after-tick job", "err", err)
 		}
 	}
 	if res.Scanned > 0 || res.Roles > 0 || res.ModelRoles > 0 || res.TagEdges > 0 || res.ModelEdges > 0 || res.Anomalies > 0 {

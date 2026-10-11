@@ -440,6 +440,59 @@ type IntelConfig struct {
 	// max(min, factor × daily average) messages in 24 hours. Defaults 10 and 5.
 	AnomalySpikeMin    int `yaml:"anomaly_spike_min"`
 	AnomalySpikeFactor int `yaml:"anomaly_spike_factor"`
+
+	// Verdict is the second-opinion model (AGENT.md D37, D38, D53, D54).
+	Verdict VerdictConfig `yaml:"verdict"`
+}
+
+// VerdictConfig sets the verdict model. With no model set, no verdicts are
+// made. With a model and active false (the default), verdicts are recorded
+// but act on nothing (shadow mode, D53): choose the model and the confidence
+// threshold with verdict_eval first.
+type VerdictConfig struct {
+	// Provider: "ollama" (default; direct) or "datawatch" (LLM proxy).
+	Provider     string `yaml:"provider"`
+	URL          string `yaml:"url"`           // ollama: default enrichment.ollama_url
+	Model        string `yaml:"model"`         // ollama model; empty = verdicts off
+	DatawatchLLM string `yaml:"datawatch_llm"` // datawatch: LLM registry name
+	// Active lets verdicts act: tie-break and score-0 holds, payment and
+	// credential anomalies, first contacts in needs_reply.
+	Active bool `yaml:"active"`
+	// Confidence: a verdict counts at or above this (default 0.9; pick it from verdict_eval).
+	Confidence float64 `yaml:"confidence"`
+	// PerTick caps verdict model calls per scan tick (default 20).
+	PerTick int `yaml:"per_tick"`
+	// BodyChars: how much of the body (quoted replies removed) the model reads (default 2000).
+	BodyChars int `yaml:"body_chars"`
+}
+
+// On reports whether a verdict model is configured.
+func (v VerdictConfig) On() bool {
+	return (v.Provider == "datawatch" && v.DatawatchLLM != "") || (v.Provider != "datawatch" && v.Model != "")
+}
+
+// ConfidenceOrDefault returns the threshold (default 0.9).
+func (v VerdictConfig) ConfidenceOrDefault() float64 {
+	if v.Confidence <= 0 || v.Confidence > 1 {
+		return 0.9
+	}
+	return v.Confidence
+}
+
+// PerTickOrDefault returns the per-tick cap (default 20).
+func (v VerdictConfig) PerTickOrDefault() int {
+	if v.PerTick <= 0 {
+		return 20
+	}
+	return v.PerTick
+}
+
+// BodyCharsOrDefault returns the excerpt length (default 2000).
+func (v VerdictConfig) BodyCharsOrDefault() int {
+	if v.BodyChars <= 0 {
+		return 2000
+	}
+	return v.BodyChars
 }
 
 // AnomaliesOn reports whether anomaly detection runs (default true).
@@ -654,6 +707,27 @@ func applyEnvOverrides(cfg *Config) {
 	envInt("IMAP_MCP_RULES_HOLD_DIGEST_HOUR", &cfg.Rules.HoldDigestHour)
 	envInt("IMAP_MCP_RULES_LEARN_MIN_DISCARDS", &cfg.Rules.Learn.MinDiscards)
 	envInt("IMAP_MCP_RULES_LEARN_DOMAIN_MIN_ADDRESSES", &cfg.Rules.Learn.DomainMinAddresses)
+	for key, dst := range map[string]*string{
+		"IMAP_MCP_INTELLIGENCE_VERDICT_PROVIDER":      &cfg.Intel.Verdict.Provider,
+		"IMAP_MCP_INTELLIGENCE_VERDICT_URL":           &cfg.Intel.Verdict.URL,
+		"IMAP_MCP_INTELLIGENCE_VERDICT_MODEL":         &cfg.Intel.Verdict.Model,
+		"IMAP_MCP_INTELLIGENCE_VERDICT_DATAWATCH_LLM": &cfg.Intel.Verdict.DatawatchLLM,
+	} {
+		if v := os.Getenv(key); v != "" {
+			*dst = v
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_INTELLIGENCE_VERDICT_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Intel.Verdict.Active = b
+		}
+	}
+	if v := os.Getenv("IMAP_MCP_INTELLIGENCE_VERDICT_CONFIDENCE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.Intel.Verdict.Confidence = f
+		}
+	}
+	envInt("IMAP_MCP_INTELLIGENCE_VERDICT_PER_TICK", &cfg.Intel.Verdict.PerTick)
 	if v := os.Getenv("IMAP_MCP_IDENTITY_ALSO_ME"); v != "" {
 		cfg.Identity.AlsoMe = strings.Split(v, ",")
 	}
@@ -741,6 +815,12 @@ func validate(cfg *Config) error {
 	}
 	if h := cfg.Rules.HoldDigestHour; h < 0 || h > 23 {
 		return fmt.Errorf("rules: hold_digest_hour must be 0-23")
+	}
+	if v := cfg.Intel.Verdict; v.Provider != "" && v.Provider != "ollama" && v.Provider != "datawatch" {
+		return fmt.Errorf("intelligence.verdict.provider must be ollama or datawatch")
+	}
+	if c := cfg.Intel.Verdict.Confidence; c < 0 || c > 1 {
+		return fmt.Errorf("intelligence.verdict.confidence must be between 0 and 1")
 	}
 	for _, a := range cfg.Identity.AlsoMe {
 		if a = strings.TrimSpace(a); !strings.Contains(a, "@") || strings.ContainsAny(a, " <>") {

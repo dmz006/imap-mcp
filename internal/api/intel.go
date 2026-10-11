@@ -173,3 +173,17 @@ func (s *Server) handleImportRulePack(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w)(s.svc.ImportRulePack(r.Context(), req.Account, chi.URLParam(r, "name"), req.Dest))
 }
+
+// POST /api/verdicts/eval  Body: {"url", "models": [...], "per_class"}
+func (s *Server) handleStartVerdictEval(w http.ResponseWriter, r *http.Request) {
+	var req service.EvalParams
+	if !decode(w, r, &req) {
+		return
+	}
+	respond(w)(s.svc.StartVerdictEval(r.Context(), req))
+}
+
+// GET /api/verdicts/eval?id=  (latest when no id)
+func (s *Server) handleVerdictEval(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.VerdictEval(r.Context(), int64(queryInt(r, "id", 0))))
+}

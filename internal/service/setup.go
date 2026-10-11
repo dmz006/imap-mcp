@@ -283,4 +283,3 @@ func (s *Service) markFindings(ctx context.Context, fs []Finding, now time.Time)
 	}
 	return nil
 }
-

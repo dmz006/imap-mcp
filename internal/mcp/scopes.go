@@ -38,6 +38,7 @@ var toolScopes = map[string]httpauth.Scope{
 	"suggest_rules":        httpauth.ScopeRead,
 	"suggest_identities":   httpauth.ScopeRead,
 	"setup_check":          httpauth.ScopeRead,
+	"verdict_eval_results": httpauth.ScopeRead,
 	"list_rule_packs":      httpauth.ScopeRead,
 	"read_file":            httpauth.ScopeRead,
 	"list_files":           httpauth.ScopeRead,
@@ -76,6 +77,7 @@ var toolScopes = map[string]httpauth.Scope{
 	"sync_account":       httpauth.ScopeAdmin,
 	"trigger_enrichment": httpauth.ScopeAdmin,
 	"cache_sweep":        httpauth.ScopeAdmin,
+	"verdict_eval":       httpauth.ScopeAdmin,
 }
 
 // argScopes adds a scope requirement that depends on a call's arguments: a

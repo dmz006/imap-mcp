@@ -348,6 +348,24 @@ func RejectIdentityTool() mcp.Tool {
 	)
 }
 
+func VerdictEvalTool() mcp.Tool {
+	return mcp.NewTool("verdict_eval",
+		mcp.WithDescription("Start a background evaluation of verdict models on your own labeled mail: mail the new-sender hold held and you never "+
+			"released counts as spam, the latest mail from people you correspond with as legitimate. Each model's accuracy, false-positive rate on "+
+			"legitimate mail and speed at confidence 0.6-0.9 (counts only). Mail bodies go only to the Ollama server given. Read results with verdict_eval_results"),
+		mcp.WithString("models", mcp.Required(), mcp.Description("Comma-separated Ollama model names")),
+		mcp.WithString("url", mcp.Description("Ollama URL (default: intelligence.verdict.url, else enrichment.ollama_url)")),
+		mcp.WithNumber("per_class", mcp.Description("Messages per label (default 50, max 200)")),
+	)
+}
+
+func VerdictEvalResultsTool() mcp.Tool {
+	return mcp.NewTool("verdict_eval_results",
+		mcp.WithDescription("Progress and results of a verdict_eval run (the latest when id is omitted)"),
+		mcp.WithNumber("id", mcp.Description("Run id from verdict_eval")),
+	)
+}
+
 func SetupCheckTool() mcp.Tool {
 	return mcp.NewTool("setup_check",
 		mcp.WithDescription("Check this imap-mcp setup for the gaps that tuning on real mailboxes found: history scan off or unfinished, "+

@@ -79,6 +79,8 @@ var brands = []struct {
 
 // newSenderGate holds what the new_sender condition needs for one rule run.
 type newSenderGate struct {
+	verdictOn  bool    // the verdict model acts (D37)
+	threshold  float64 // its confidence threshold
 	account    string
 	state      *sql.DB
 	cache      *sql.DB
@@ -114,7 +116,8 @@ func (s *Service) newSenderGate(account string, days int) (*newSenderGate, error
 	if days <= 0 {
 		days = DefaultNewSenderDays
 	}
-	g := &newSenderGate{account: account, state: s.db.StateSQL(), cache: s.db.SQL(),
+	g := &newSenderGate{verdictOn: s.cfg.Intel.Verdict.Active && s.cfg.Intel.Verdict.On(), threshold: s.cfg.Intel.Verdict.ConfidenceOrDefault(),
+		account: account, state: s.db.StateSQL(), cache: s.db.SQL(),
 		cutoff: time.Now().AddDate(0, 0, -days).Unix(), own: map[string]bool{}, ownDomains: map[string]bool{}, releasedBy: map[string]bool{}}
 	for _, a := range s.cfg.Accounts {
 		addrs := []string{a.Auth.Username}
@@ -305,10 +308,27 @@ func (g *newSenderGate) judge(env *imaplib.Envelope, h mail.Header, from string)
 	if err != nil || real {
 		return nil, false, err
 	}
-	switch {
-	case score >= holdScore:
+	if score >= holdScore {
 		return reasons, true, nil
-	case score == 0:
+	}
+	// With the verdict model active (D37) it breaks score-1 ties and may hold
+	// a score-0 first contact it judges a scam. No verdict yet: the message
+	// stays and is judged on the next run.
+	if g.verdictOn {
+		v, ok := g.verdict(env.MessageID)
+		if !ok || v.confidence < g.threshold {
+			return nil, false, nil
+		}
+		why := fmt.Sprintf("model: %s (%.2f)", v.verdict, v.confidence)
+		switch {
+		case score == 1 && (v.verdict == "scam" || v.verdict == "bulk"):
+			return append(reasons, why), true, nil
+		case score == 0 && v.verdict == "scam":
+			return []string{why}, true, nil
+		}
+		return nil, false, nil
+	}
+	if score == 0 {
 		return nil, false, nil
 	}
 	// One signal: let the classify model's hall decide. Not classified yet
@@ -541,4 +561,16 @@ func headerOf(m *imapclient.FetchMessageBuffer) mail.Header {
 		}
 	}
 	return mail.Header{}
+}
+
+// verdict returns the stored verdict for a message (D37).
+func (g *newSenderGate) verdict(messageID string) (storedVerdict, bool) {
+	var v storedVerdict
+	h := intel.MsgHash(messageID)
+	if h == 0 {
+		return v, false
+	}
+	err := g.state.QueryRow(`SELECT verdict, asks, confidence FROM message_verdicts WHERE account = ? AND msg_hash = ?`, g.account, h).
+		Scan(&v.verdict, &v.asks, &v.confidence)
+	return v, err == nil
 }

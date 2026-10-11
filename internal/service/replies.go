@@ -217,7 +217,7 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 			continue // D51
 		}
 		if !r.known {
-			if !replyFirstContacts {
+			if !replyFirstContacts && !s.verdictActive() {
 				continue
 			}
 			ok, err := s.cleanFirstContact(ctx, account, it.Counterpart, it.MessageRef)
@@ -397,6 +397,17 @@ func (s *Service) replyClearingFolders(ctx context.Context, account string) ([]s
 // and the sender has no open anomaly other than new_sender (which every first
 // contact has). The header half runs live in liveCheck.
 func (s *Service) cleanFirstContact(ctx context.Context, account, sender, messageRef string) (bool, error) {
+	if s.verdictActive() {
+		// D54: the verdict model replaces the classify label.
+		v, ok := s.verdictFor(ctx, account, messageRef)
+		if !ok || v.verdict != "legitimate" || v.confidence < s.cfg.Intel.Verdict.ConfidenceOrDefault() {
+			return false, nil
+		}
+		var open int
+		err := s.db.StateSQL().QueryRowContext(ctx, `SELECT count(*) FROM anomalies WHERE sender = ? AND resolved = 0 AND anomaly_type <> 'new_sender'`,
+			sender).Scan(&open)
+		return open == 0, err
+	}
 	cache := s.db.SQL()
 	id := strings.Trim(messageRef, "<>")
 	if cache == nil || id == "" {
@@ -580,3 +591,6 @@ func (s *Service) DismissReply(ctx context.Context, account, threadID string) (m
 	}
 	return map[string]any{"account": account, "thread_id": threadID, "dismissed": true}, nil
 }
+
+// verdictActive reports whether verdicts act (D53: after the evaluation).
+func (s *Service) verdictActive() bool { return s.cfg.Intel.Verdict.Active && s.cfg.Intel.Verdict.On() }

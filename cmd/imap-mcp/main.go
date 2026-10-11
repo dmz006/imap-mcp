@@ -26,6 +26,7 @@ import (
 	"github.com/dmz006/imap-mcp/internal/mcp/tools"
 	"github.com/dmz006/imap-mcp/internal/output"
 	"github.com/dmz006/imap-mcp/internal/server"
+	"github.com/dmz006/imap-mcp/internal/service"
 	"github.com/dmz006/imap-mcp/internal/sync"
 	"github.com/dmz006/imap-mcp/internal/trust"
 	"github.com/dmz006/imap-mcp/internal/webhook"
@@ -55,6 +56,8 @@ func run() error {
 		return runRules(os.Args[2:])
 	case "db":
 		return runDB(os.Args[2:])
+	case "verdict-eval":
+		return runVerdictEval(os.Args[2:])
 	case "version":
 		fmt.Println(Version)
 		return nil
@@ -159,6 +162,68 @@ func runRules(args []string) error {
 		fmt.Println(line)
 	}
 	fmt.Printf("run-rules: %d active rules, %d messages actioned (dry_run=%v)\n", len(results), total, *dryRun)
+	return nil
+}
+
+// runVerdictEval scores verdict models on the owner's own labeled mail
+// (AGENT.md D53): held-and-not-released mail is spam, correspondents' mail
+// is legitimate. It prints counts only; mail bodies go only to the Ollama
+// server given.
+func runVerdictEval(args []string) error {
+	fs := flag.NewFlagSet("verdict-eval", flag.ExitOnError)
+	cfgPath := fs.String("config", "", "config file path")
+	models := fs.String("models", "", "comma-separated Ollama model names")
+	url := fs.String("url", "", "Ollama URL (default: intelligence.verdict.url, else enrichment.ollama_url)")
+	perClass := fs.Int("per-class", 50, "messages per label (max 200)")
+	_ = fs.Parse(args)
+	if *models == "" {
+		return fmt.Errorf("--models is required")
+	}
+	cfg, log, err := loadConfig(*cfgPath)
+	if err != nil {
+		return err
+	}
+	keys, err := cfg.ResolveDBKeys(true, true)
+	if err != nil {
+		return err
+	}
+	database, err := db.Open(db.Options{Path: cfg.DB.Path, Key: keys.State}, db.Options{Path: cfg.DB.Cache.Path, Key: keys.Cache})
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer database.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
+	defer cancel()
+	pool := imap.NewPool(cfg, bus.New(), log)
+	if err := pool.Connect(ctx); err != nil {
+		return fmt.Errorf("connect accounts: %w", err)
+	}
+	defer pool.Close()
+	p := service.EvalParams{URL: *url, PerClass: min(*perClass, 200)}
+	for _, m := range strings.Split(*models, ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			p.Models = append(p.Models, m)
+		}
+	}
+	if p.URL == "" {
+		p.URL = cfg.Intel.Verdict.URL
+	}
+	if p.URL == "" {
+		p.URL = cfg.Enrichment.OllamaURL
+	}
+	svc := service.New(cfg, pool, database, nil, nil)
+	results, err := svc.RunVerdictEval(ctx, p, func(msg string) { fmt.Fprintln(os.Stderr, "verdict-eval:", msg) })
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%-28s %5s %5s %6s %6s %7s | %s\n", "model", "spam", "legit", "unpars", "errors", "avg ms", "threshold: spam caught / false positives / legit vetted")
+	for _, r := range results {
+		line := fmt.Sprintf("%-28s %5d %5d %6d %6d %7d |", r.Model, r.Spam, r.Legit, r.Unparsed, r.Errors, r.AvgMillis)
+		for _, t := range r.Thresholds {
+			line += fmt.Sprintf(" %.1f: %d/%d/%d", t.Threshold, t.SpamCaught, t.FalsePositives, t.LegitVetted)
+		}
+		fmt.Println(line)
+	}
 	return nil
 }
 
@@ -413,6 +478,9 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	}
 	scanner := intel.New(cfg, intel.NewIMAPSource(pool), database.StateSQL(), database.SQL(), classify, log)
 	scanner.SetBus(b) // anomaly.detected (D22)
+	// The verdict model's job runs after each tick (D37, D53); it does nothing
+	// until intelligence.verdict.model is set.
+	scanner.SetAfterTick(service.New(cfg, pool, database, syncer, pipeline).VerdictTick)
 
 	// Start background workers
 	go syncer.Run(ctx)
@@ -494,6 +562,8 @@ Usage:
   imap-mcp auth-setup [--account NAME] [--config PATH]
                                   Run OAuth2 browser flow for an account
   imap-mcp run-rules [--dry-run] [--config PATH]
+  imap-mcp verdict-eval --models a,b [--url URL] [--per-class N] [--config PATH]
+                                  Score verdict models on your own labeled mail
                                   Apply active rules once and exit
   imap-mcp db encrypt [--only state|cache] [--config PATH]
                                   Encrypt existing plaintext DBs in place with
