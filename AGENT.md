@@ -425,6 +425,13 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D52 (sharing what tuning taught us):** lessons from
+  production tuning reach every user, with no personal data: (1) a tuning
+  playbook (`docs/tuning.md`, a "first week" example, a skill workflow);
+  (2) a built-in setup check (read tool and REST route) that flags the gaps
+  found on production; (3) starter rule packs: generic, importable rule
+  templates; (4) a lessons log (`docs/lessons-learned.md`: symptom, cause,
+  fix, version), kept up as we go.
 - **2026-10-10 — D50 (the owner's other addresses):** the owner's other
   addresses (work, Kindle, old ones) are "you" everywhere: reply tracking,
   profiles, the new-sender hold and learning. Two sources: a config list,
