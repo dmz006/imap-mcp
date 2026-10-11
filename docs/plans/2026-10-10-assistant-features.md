@@ -368,8 +368,8 @@ not from the owner) is rejected and logged.
 | D34 | Q2 | Observing moves | Decided: location in the index + location-only Trash/Junk pass |
 | D35 | Q2 | Suggestion threshold | Decided: ratio ≥ 0.8, ≥ 3 discards, all history; domain at 2+ addresses |
 | D36 | Q2 | Automatic rules | Decided: configurable suggest (default) / inactive / active |
-| D37 | Q3 | What the model may decide | Open |
-| D38 | Q3 | Body access for verdicts | Open |
+| D37 | Q3 | What the model may decide | Decided: tie-breaker + may hold score-0 scams; never releases |
+| D38 | Q3 | Body access for verdicts | Decided: cache, else read-only fetch |
 | D39 | Q4 | Unsubscribe permission model | Open |
 | D40 | Q4 | mailto-only senders | Open |
 | D41 | Q4 | DKIM verification | Open |

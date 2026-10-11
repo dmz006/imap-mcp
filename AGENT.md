@@ -431,6 +431,23 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D37 (what the model may decide, Q3):** the verdict model
+  breaks ties for score-1 messages, confirms payment/credential anomalies,
+  vets first contacts for `needs_reply`, and may also hold a score-0 first
+  contact it judges a scam with high confidence (spam that looks like a
+  person, D49). It never releases mail the header checks hold (score ≥ 2).
+- **2026-10-10 — D38 (body access, Q3):** the model reads a short excerpt of
+  the cached body (quoted replies stripped); when the message is not cached,
+  imap-mcp fetches it read-only (PEEK). The body is untrusted input.
+- **2026-10-10 — D53 (choosing the verdict model, Q3):** a separate verdict
+  model setting, pointing at any supported provider (local Ollama, the
+  datawatch host's Ollama, the datawatch LLM proxy), independent of the
+  classify model. The model is chosen by evaluation on the owner's own
+  labeled mail (held and not released = spam; released senders and
+  correspondents = legitimate), reporting accuracy, the false-positive rate
+  on legitimate mail and latency, counts only. Until a model is chosen,
+  verdicts are recorded but act on nothing (shadow mode). The evaluation is
+  rerunnable for new models and is a playbook step.
 - **2026-10-10 — D52 (sharing what tuning taught us):** lessons from
   production tuning reach every user, with no personal data: (1) a tuning
   playbook (`docs/tuning.md`, a "first week" example, a skill workflow);
