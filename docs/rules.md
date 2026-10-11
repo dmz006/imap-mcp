@@ -216,7 +216,9 @@ This comes from the intelligence scan's sender profiles
 history scan is complete the rule matches nothing and reports why, because
 every sender would look new.
 
-**A new sender's message is held** when its header score is 2 or more:
+**A new sender's message is held** when its header score is 2 or more
+(with the verdict model active, it also breaks score-1 ties and can hold a
+score-0 scam; see [intelligence.md](intelligence.md#second-opinion-the-verdict-model)):
 
 | Signal | Points |
 |---|---|

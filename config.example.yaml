@@ -339,6 +339,11 @@ intelligence:
 # Rule runs (docs/rules.md). The held-mail digest lists what new_sender rules
 # held since the last one: a summary APPENDed to the account's INBOX (no mail is
 # sent) plus a hold.digest event.
+# intelligence.verdict: the second-opinion model (docs/intelligence.md). Off until a model is set;
+# shadow mode (records only) until active: true. Choose the model with `imap-mcp verdict-eval`.
+#   intelligence:
+#     verdict: {provider: ollama, url: "http://localhost:11434", model: "", confidence: 0.9, active: false, per_tick: 20}
+
 identity:
   also_me: []                  # your other addresses or @domains (work, Kindle, old ones); they count as you everywhere.
                                # IMAP_MCP_IDENTITY_ALSO_ME (comma-separated). suggest_identities proposes more.

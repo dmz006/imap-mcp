@@ -385,7 +385,7 @@ not from the owner) is rejected and logged.
 | Q2 | 0.17.x | Done | Yes | Yes (suggestions on one account; Gmail @domain match not yet exercised) |
 | V1 | 0.18.x | Done (validation follow-ups: D50, D51) | Yes | Yes (gmail needs_reply 46 → 23; 26 identities confirmed) |
 | V2 | 0.19.x | Done (D52) | Yes | Yes (setup_check: 5 findings on production; packs listed) |
-| Q3 | 0.20.0 | Planned | | |
+| Q3 | 0.20.0 | Built (shadow; model choice pending evaluation) | Yes | Pending |
 | Q4 | 0.21.0 | Planned | | |
 | Q5 | 0.22.0 → 1.0.0 | Planned | | |
 

@@ -324,6 +324,7 @@ to 0.10.4 or later.
 | 0.17.0 | **Back up `imap.db` first.** Columns and tables are added in place. On first start the header scan reads all history once more to record where each message is (an unfinished 0.16 rescan is folded into it); everything keeps working meanwhile. Learning from moves defaults to `rules.learn.mode: suggest`, so no rule is created unless you change it. Existing webhooks keep metadata-only payloads; new ones subscribed to `rule.suggested` or `*` default to `full` ([webhooks.md](webhooks.md#payload)). New tools `suggest_rules` (read) and `dismiss_suggestion` (write). |
 | 0.18.0 | **Back up `imap.db` first.** Two tables are added; no rescan. Add your other addresses to `identity.also_me` (optional); on first start their past mail is re-marked as yours. New tools `suggest_identities` (read), `confirm_identity` and `reject_identity` (write). |
 | 0.19.0 | **Back up `imap.db` first.** One table is added; no rescan. New tools `setup_check`, `list_rule_packs` (read) and `import_rule_pack` (write). Start with [tuning.md](tuning.md). |
+| 0.20.0 | **Back up `imap.db` first.** Two tables are added; no rescan. The verdict model stays off until you set `intelligence.verdict.model`, and records only until `active: true`. Choose it with `imap-mcp verdict-eval`. New tools `verdict_eval` (admin), `verdict_eval_results` (read). |
 
 ### The one-time 0.6.0 split
 

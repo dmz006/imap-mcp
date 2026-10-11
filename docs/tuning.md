@@ -33,7 +33,12 @@ problem we hit and how it was fixed.
 6. **Read the first digests.** The daily summary in your inbox lists held
    mail, conversations waiting on you, rule suggestions, addresses that may
    be yours and new setup findings. Act on what's wrong, not on everything.
-7. **Let learning catch up.** After a week of you trashing and junking mail
+7. **Choose a verdict model on your own mail.** Run `imap-mcp verdict-eval`
+   with a few candidate models (bigger is usually better; small models used
+   as-is do poorly), set the one with the fewest false positives as
+   `intelligence.verdict.model` and the threshold from the same table. Leave
+   it in shadow mode for a few days, then set `active: true`.
+8. **Let learning catch up.** After a week of you trashing and junking mail
    yourself, `suggest_rules` has evidence. Accept the suggestions that are
    right; `dismiss_suggestion` the rest.
 

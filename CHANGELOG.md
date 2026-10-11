@@ -6,6 +6,31 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-11
+
+### Added
+- **Second opinion for borderline mail (Q3; AGENT.md D37, D38, D53, D54).**
+  A dedicated verdict model (`intelligence.verdict`, separate from the
+  classify model) judges mail from strangers with a fixed prompt and a
+  strict JSON answer: legitimate, bulk or scam, what it asks for (payment,
+  credentials, gift cards, bank changes) and a confidence. Verdicts are
+  stored per message (no content) after each scan tick. Off until a model
+  is set; records only until `active: true`. When active:
+  - the new-sender hold sends score-1 ties to the model and holds a score-0
+    first contact the model calls a scam; it never releases what the header
+    checks hold;
+  - first-time senders return to `needs_reply` when the headers are clean
+    and the model says legitimate;
+  - `payment_request` and `credential_request` anomalies.
+- **Choose the model on your own mail.** `verdict_eval` (admin, background;
+  `POST /api/verdicts/eval`), `verdict_eval_results` (read;
+  `GET /api/verdicts/eval`) and `imap-mcp verdict-eval`: spam caught, false
+  positives and legitimate mail vetted per model at confidence 0.6–0.9,
+  plus speed. Counts only.
+
+### Upgrade
+- **Back up `imap.db` first.** Two tables are added; no rescan.
+
 ## [0.19.1] - 2026-10-10
 
 ### Fixed

@@ -45,7 +45,8 @@ shown; `tools/list` only shows tools the caller's token can use.
 | Cache | `cache_sweep` | admin |
 | Rules | `list_rules`, `suggest_rules`, `list_rule_packs` | read |
 | | `create_rule`, `delete_rule`, `run_rules`, `dismiss_suggestion`, `import_rule_pack` | write |
-| Setup | `setup_check` | read |
+| Setup | `setup_check`, `verdict_eval_results` | read |
+| | `verdict_eval` | admin |
 | File sandbox (`working_dir`) | `read_file`, `list_files` | read |
 | | `write_file`, `delete_file` | write |
 
@@ -76,6 +77,11 @@ Notes:
   bots and held mail. A reply, the `\Answered` flag or `dismiss_reply` clears
   an item. The daily digest gains a "Waiting on you" section. See
   [docs/intelligence.md](docs/intelligence.md#reply-tracking).
+- A second-opinion model judges mail from strangers: it breaks ties in the
+  new-sender hold, flags payment and credential requests, and vets first
+  contacts for `needs_reply`. Choose the model on your own mail with
+  `verdict_eval` (or `imap-mcp verdict-eval`); it records only until you turn
+  it on. See [docs/intelligence.md](docs/intelligence.md#second-opinion-the-verdict-model).
 - `setup_check` reports the setup gaps tuning on real mailboxes found, each
   with the fix; start with [docs/tuning.md](docs/tuning.md).
   `list_rule_packs` / `import_rule_pack` add generic starter rules

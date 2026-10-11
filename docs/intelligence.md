@@ -296,6 +296,67 @@ conversations; the rest of the intelligence keeps working meanwhile.
 `/api/health` shows its progress: `intelligence.reply_history_complete`,
 and per account `rescan_complete` and `rescan_folders_remaining`.
 
+## Second opinion (the verdict model)
+
+A dedicated model gives a second opinion on mail from senders you have never
+written to (AGENT.md D37, D38, D53, D54). It reads a fixed prompt: the
+sender, Reply-To, whether the mail is addressed to you, the authentication
+results, the subject and the first 2,000 characters of the body with quoted
+replies removed. The body is untrusted: it is fenced, the model is told to
+ignore instructions in it, and the answer must fit
+`{verdict: legitimate|bulk|scam, asks: none|payment|credentials|gift_card|bank_change, confidence, reasons}`
+or it is discarded.
+
+It runs after each scan tick, up to `per_tick` messages: cached INBOX mail
+from strangers first, then first contacts waiting in reply tracking (read
+over IMAP with PEEK when not cached). Verdicts are stored in `imap.db`
+(`message_verdicts`: verdict, asks, confidence, short reasons, model; no
+content).
+
+**Shadow mode first.** Until `active: true`, verdicts are recorded and act
+on nothing. When active:
+
+- **The new-sender hold:** score 2 or more is still held whatever the model
+  says; score 1 is held when the model says scam or bulk above the
+  threshold; score 0 is held only when the model says scam above the
+  threshold. No verdict yet: the message stays and is judged next run.
+- **`needs_reply`:** first-time senders come back when their header score is
+  0, the model says legitimate above the threshold, and they have no open
+  anomaly besides `new_sender`.
+- **Anomalies:** a message from a stranger that asks for payment, gift
+  cards, bank changes (`payment_request`) or credentials
+  (`credential_request`), medium severity, high alongside a look-alike
+  domain, a Reply-To mismatch or an authentication failure.
+
+**Choose the model on your own mail.** Published results don't transfer
+between mailboxes, and small models used as-is do poorly. `verdict_eval`
+(admin; `POST /api/verdicts/eval`) runs candidate Ollama models over a
+labeled sample of your mail in the background: mail the hold held that you
+never released is spam, the latest mail from people you correspond with is
+legitimate. `verdict_eval_results` (`GET /api/verdicts/eval`) shows, per
+model, spam caught, false positives and legitimate mail vetted at
+confidence 0.6, 0.7, 0.8 and 0.9, plus speed (counts only). From a terminal:
+
+```bash
+imap-mcp verdict-eval --models gpt-oss:20b,gemma3:12b --url http://gpu-host:11434 --per-class 50
+```
+
+Pick the model with the fewest false positives that still catches spam,
+set the threshold from the same table, and turn it on:
+
+```yaml
+intelligence:
+  verdict:
+    provider: ollama        # the datawatch LLM proxy needs a peer token (open item)
+    url: http://gpu-host:11434
+    model: gpt-oss:20b      # empty: no verdicts
+    confidence: 0.9         # from verdict_eval
+    active: false           # true once you trust it
+    per_tick: 20
+```
+
+Mail bodies are sent only to the Ollama server you name.
+
 ## Your other addresses
 
 Your account logins are "you". So are the addresses in `identity.also_me`

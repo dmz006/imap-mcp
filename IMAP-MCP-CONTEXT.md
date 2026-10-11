@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.19.1 |
+| Current version | 0.20.0 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -243,6 +243,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Sandbox files | `read_file`, `list_files`; `write_file`, `delete_file` | read; write |
 | Threads / content | `get_thread`, `get_attachments` (list), `cross_account_search` (read); `get_attachments` with `part`, `export_message` (write; into `working_dir`) | D23–D26 |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies` (built by `internal/intel`); `resolve_anomaly` | read; write |
+| Verdict model | `verdict_eval` (admin, background), `verdict_eval_results` (read); CLI `imap-mcp verdict-eval` | admin; read |
 | Setup / packs | `setup_check`, `list_rule_packs`; `import_rule_pack` (inactive rules, D52) | read; write |
 | Identities | `suggest_identities`; `confirm_identity`, `reject_identity` (D50) | read; write |
 | Reply tracking | `needs_reply`, `awaiting_reply` (`account`, `older_than_days` 2, `within_days` 90, `limit` 20; items carry `thread_id`, `history_complete` flag); `dismiss_reply` (`account`, `thread_id`) | read; write |
@@ -302,6 +303,16 @@ Behaviour notes:
   substring), held senders, dismissed targets. Hourly `learnRun` records new
   ones (`learn_state`) and in `inactive`/`active` mode creates `learned:`
   rules; publishes `rule.suggested` once per new target.
+- Verdict model (Q3; D37, D38, D53, D54): `internal/verdict` (fixed prompt,
+  fenced untrusted body, strict JSON parse; Ollama JSON mode, think off,
+  temperature 0). `VerdictTick` runs after each scanner tick (cached INBOX
+  strangers, then reply-tracking first contacts read with PEEK), stores
+  `message_verdicts`. Active only with `intelligence.verdict.active`: hold
+  score 1 scam/bulk ≥ thr, score 0 scam ≥ thr, never releases ≥2;
+  `needs_reply` first contacts = score 0 + legitimate ≥ thr + no anomaly;
+  `payment_request` / `credential_request` anomalies. Model chosen by
+  `verdict_eval` on labeled mail (held-not-released = spam, correspondents
+  = legit). datawatch proxy provider pending a peer token.
 - `setup_check` (D52): intel off, digest off, Sent not synced, identity
   candidates, no/inactive hold rule per account, history incomplete,
   suggestions pending, active rules unmatched for 30+ days, needs_reply
@@ -330,6 +341,8 @@ senders            -- sender profiles: counts each way, dates, reply stats, list
 intel_messages     -- D28 index: Message-ID hash, date, sender id, direction, In-Reply-To hash, kg_done/kg_tags_done/kg_llm_done, folder last seen (D34) (no addresses/content)
 intel_locscan      -- location-only pass progress over Trash/Junk folders the normal scan skips (D34)
 rule_moves         -- messages a rule moved/trashed (account, msg hash, rule id, dest); pruned after a year (D34)
+message_verdicts   -- verdict model per message (D37): verdict, asks, confidence, reasons, model; no content
+verdict_evals      -- verdict-model evaluation runs: params, results (counts), status
 setup_findings     -- setup-check findings already shown in a digest (D52)
 identities         -- the owner's other addresses (D50): candidate | confirmed | rejected | config, evidence, applied_at (history rewritten)
 owner_names        -- display names the owner sends under (normalised), for identity detection
@@ -429,6 +442,8 @@ GET    /api/senders, /api/senders/{address}                            read
 GET    /api/intelligence/status                                        read  (scan progress with account names; health shows it unnamed)
 GET    /api/kg, /api/anomalies                                         read
 POST   /api/anomalies/{id}/resolve                                     write
+POST   /api/verdicts/eval                                              admin
+GET    /api/verdicts/eval                                              read
 GET    /api/setup-check, /api/rule-packs                               read
 POST   /api/rule-packs/{name}/import                                   write
 GET    /api/identities                                                 read

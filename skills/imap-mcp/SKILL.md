@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.17.0"
+version: "0.18.0"
 tags:
   - email
   - imap
@@ -200,6 +200,12 @@ setup_check                         → gaps on this install, each with why and 
 suggest_identities                  → the user's other addresses; confirm only what the user says is theirs
 list_rule_packs / import_rule_pack  → generic starter rules, created inactive; dry-run before activating
 ```
+
+To choose a verdict model: `verdict_eval { models: "a,b", url }`, then
+`verdict_eval_results`; recommend the model with the fewest false positives
+on legitimate mail, but the user sets it in config and decides when it goes
+active. Anomalies `payment_request` / `credential_request` mean "verify by
+another channel before paying or logging in".
 
 Follow docs/tuning.md's order: history scan first, identities, packs, then
 the new-sender hold (inactive, previewed). Nothing is activated without the
@@ -467,7 +473,9 @@ When you run on a schedule with nobody watching:
 | | `dismiss_suggestion` | **`account`**, **`target`** (address or `@domain`) | write |
 | | `list_rule_packs` | none; built-in packs and their rules | read |
 | | `import_rule_pack` | **`name`**, `account`, `dest`; rules created inactive | write |
-| Setup | `setup_check` | none; `{findings: [{id, account, severity, what, why, fix}]}` | read |
+| Setup | `verdict_eval_results` | `id` (latest); per model: spam caught / false positives / legit vetted at 0.6–0.9 | read |
+| | `verdict_eval` | **`models`**, `url`, `per_class` (50); background run on the user's labeled mail | admin |
+| | `setup_check` | none; `{findings: [{id, account, severity, what, why, fix}]}` | read |
 | Search | `search_messages` | `folder` (INBOX), `from`, `subject`, `text`, `since`, `before`, `flags`, `limit` (50), `account` | read |
 | | `semantic_search` | `query` or `reference_uid`, `folder`, `limit` (10), `threshold` (0.7), `account` (omit for all) | read |
 | | `cross_account_search` | `from`, `subject`, `text`, `since`, `before`, `limit` (20 per account), `live`, `folder` (live; INBOX) | read |
