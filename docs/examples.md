@@ -1016,3 +1016,22 @@ sender with only a `mailto:` address gets the exact email shown in the dry
 run; sending it needs `send` too. If the sender keeps mailing more than
 three days later, the daily digest says so and offers a trash rule. See
 [unsubscribe.md](unsubscribe.md).
+
+## 19. Decide held senders without opening the folder
+
+> "What did the hold catch this week? Send the shop newsletter to my feed
+> and block the prize one."
+
+```
+held_senders { account: "work" }
+→ [1] news@shop.example.com (3)   [2] win@prize.example.net (1)
+screen_senders { account: "work", decisions: [{sender: "news@shop.example.com", action: "approve", dest: "feed"},
+                                              {sender: "win@prize.example.net", action: "block"}] }
+→ preview: 3 to Feed + a move rule; 1 to Trash + a trash rule for prize.example.net (0 in your inbox now)
+(the agent runs the preview's `run` after you say yes)
+```
+
+From a terminal: `imap-mcp screen --account work --approve 1:feed --block 2 --confirm`.
+With `rules.screener.email_commands: token` you can also reply `approve 1
+feed` / `block 2` to the digest. See [screener.md](screener.md).
+

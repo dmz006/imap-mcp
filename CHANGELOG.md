@@ -6,6 +6,30 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-11
+
+### Added
+- **The screener (Q5; AGENT.md D42, D43, D61, D62).** Decide senders the
+  new-sender hold is holding without opening the folder: `held_senders`
+  (read; `GET /api/held`) lists them numbered; `screen_senders` (write;
+  `POST /api/held/{account}/decide`; `imap-mcp screen`) approves (trust the
+  sender, move its held mail to the inbox, feed or receipts folder, with a
+  routing rule for feed and receipts) or blocks (held mail to Trash, a trash
+  rule for the sender's domain, or only the address for webmail or a domain
+  you correspond with).
+  - Every call is a preview unless `confirm: true`; the preview shows the
+    rule, its INBOX match count, and the exact live call (`run`).
+  - Rules start inactive unless `rules.screener.rules_active: true`.
+  - The daily digest numbers held senders, lists older undecided ones, and
+    says how to decide.
+  - Email replies to the digest are optional (`rules.screener.email_commands`):
+    `off` (default), `token` (from your own address, DKIM and DMARC pass,
+    with the digest's single-use token; `approve 3 feed`, `block 7`,
+    `release all`), or `hmac` (a `screen` command through the inbound
+    command channel). A short confirmation is appended to INBOX.
+  - `screener.decided` event with counts and the channel.
+- `docs/screener.md`.
+
 ## [0.22.0] - 2026-10-11
 
 ### Added

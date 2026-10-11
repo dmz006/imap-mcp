@@ -364,6 +364,12 @@ rules:
     min_discards: 3            # IMAP_MCP_RULES_LEARN_MIN_DISCARDS
     domain_min_addresses: 2    # IMAP_MCP_RULES_LEARN_DOMAIN_MIN_ADDRESSES
     discard_folders: []        # extra discard folders; IMAP_MCP_RULES_LEARN_DISCARD_FOLDERS
+  screener:                    # decide held senders (docs/screener.md)
+    email_commands: off        # off | token (reply to the digest) | hmac (inbound envelope); IMAP_MCP_RULES_SCREENER_EMAIL_COMMANDS
+    feed_folder: Feed          # approve ... feed; IMAP_MCP_RULES_SCREENER_FEED_FOLDER
+    receipts_folder: Receipts  # approve ... receipts; IMAP_MCP_RULES_SCREENER_RECEIPTS_FOLDER
+    rules_active: false        # rules the screener creates start active; IMAP_MCP_RULES_SCREENER_RULES_ACTIVE
+    poll_minutes: 5            # token mode: how often serve looks for replies; IMAP_MCP_RULES_SCREENER_POLL_MINUTES
 
 log:
   level: info

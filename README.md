@@ -39,6 +39,8 @@ shown; `tools/list` only shows tools the caller's token can use.
 | Analytics | `summarize_folder`, `detect_subscriptions`, `top_senders`, `get_sender_history` | read |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status` | read |
 | | `resolve_anomaly` | write |
+| Screener | `held_senders` | read |
+| | `screen_senders` | write |
 | Reply tracking | `needs_reply`, `awaiting_reply` | read |
 | | `dismiss_reply` | write |
 | Your addresses | `suggest_identities` | read |
@@ -91,6 +93,12 @@ Notes:
   first, then `confirm: true`; it needs the new `unsubscribe` token scope.
   Senders still mailing after 3 days are reported. See
   [docs/unsubscribe.md](docs/unsubscribe.md).
+- `held_senders` / `screen_senders` (also `imap-mcp screen` and REST) decide
+  held senders: approve to the inbox, a feed or receipts folder (with a
+  routing rule), or block (a trash rule for the domain, or the address for
+  webmail). Previews unless `confirm: true`. The digest numbers held
+  senders; replying to it is optional (`rules.screener.email_commands`). See
+  [docs/screener.md](docs/screener.md).
 - `setup_check` reports the setup gaps tuning on real mailboxes found, each
   with the fix; start with [docs/tuning.md](docs/tuning.md).
   `list_rule_packs` / `import_rule_pack` add generic starter rules

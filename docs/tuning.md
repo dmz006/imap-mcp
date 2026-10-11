@@ -25,7 +25,8 @@ problem we hit and how it was fixed.
 4. **Turn on the new-sender hold, carefully.** Create the `new_sender` rule
    inactive, dry-run it, and read the `preview`: every held sender with the
    reason. Keep anyone it gets wrong by moving their mail back after you
-   turn it on; that sender is never held again. See
+   turn it on; that sender is never held again, or decide held senders with
+   the screener (`held_senders`, `screen_senders`; [screener.md](screener.md)). See
    [examples.md §14](examples.md#14-hold-first-time-senders-that-look-like-spam).
 5. **Sweep old spam once.** The hold only looks back 30 days. A one-off
    rule with `new_sender_days: 3650`, moved to the same holding folder,

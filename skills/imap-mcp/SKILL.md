@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.20.0"
+version: "0.21.0"
 tags:
   - email
   - imap
@@ -117,6 +117,19 @@ user wants gone:
   Never open unsubscribe links or links in the body yourself.
 - `list_unsubscribes` shows what was done, and senders still mailing after
   the grace period, each with an inactive trash rule to offer.
+
+### 2b. Screen held senders
+
+```
+held_senders { account }                    → numbered senders the new-sender hold is holding
+screen_senders { account, decisions: [{sender, action: "approve", dest: "feed"}, {sender, action: "block"}] }
+                                            → preview: where mail goes, the rule, inbox matches, `run`
+```
+
+Show the user the preview (approve = trusted + moved; block = held mail to
+Trash + a trash rule for the domain, or the address for webmail). Only on
+their yes, run the preview's `run` (the same call with `confirm: true`).
+Rules start inactive unless the install sets `rules_active`; say so.
 
 ### 3. Audit a sender
 
@@ -484,6 +497,8 @@ When you run on a schedule with nobody watching:
 | | `import_rule_pack` | **`name`**, `account`, `dest`; rules created inactive | write |
 | Unsubscribe | `unsubscribe` | **`sender`** or `uid`, `account`, `folder` (INBOX), `confirm` (false = dry run), `archive_to`; `{status, plan: {method, reason, host, mailto}, messages_from_sender, http, archived}` | unsubscribe (+send for mailto, +write for archive_to) |
 | | `list_unsubscribes` | `account`, `dry_runs` (false), `limit` (100); `{items, still_mailing: [{sender, messages_since, offer}]}` | read |
+| Screener | `held_senders` | `account` (all); `{senders: [{number, sender, messages, reasons, subjects}]}` | read |
+| | `screen_senders` | **`decisions`** `[{sender, action: approve\|block, dest: inbox\|feed\|receipts}]`, `account`, `confirm` (false = preview with `run`) | write |
 | Setup | `verdict_eval_results` | `id` (latest); per model: spam caught / false positives / legit vetted at 0.6–0.9 | read |
 | | `verdict_eval` | **`models`**, `url`, `per_class` (50); background run on the user's labeled mail | admin |
 | | `setup_check` | none; `{findings: [{id, account, severity, what, why, fix}]}` | read |
