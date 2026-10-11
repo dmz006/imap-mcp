@@ -400,7 +400,7 @@ not from the owner) is rejected and logged.
 | Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
 | V3 | 0.22.0 | Done (D59, D60) | Yes | Yes (all 37 gmail reply items carry a Gmail link; dmzs set to thunderbird, no open items) |
 | Q5 | 1.0.0 | Done (D42, D43, D61, D62, D63) | Yes | Yes (201 held senders listed; 2 domain blocks previewed then applied, 4 messages trashed, rules active per D61; no addresses in the service log; email modes off, unit-tested) |
-| S1 | 1.0.1 | Built (D64–D73) | Yes | Pending |
+| S1 | 1.0.1 | Done (D64–D73) | Yes | Yes (PR #1: 11 checks green; v1.0.1 signature, checksums and SLSA provenance verified; production on go1.27.2; Dependabot opened its first PRs) |
 
 When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).
