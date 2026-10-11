@@ -131,7 +131,7 @@ func (s *Service) cacheCrossSearch(ctx context.Context, p CrossSearchParams) (Cr
 	if err != nil {
 		return res, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var h CrossSearchHit
 		var name string

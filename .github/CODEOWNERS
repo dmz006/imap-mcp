@@ -1,0 +1,10 @@
+# Every change needs the owner; these paths especially (security policy,
+# decisions, CI and release, accepted risks).
+*                       @dmz006
+/AGENT.md               @dmz006
+/SECURITY.md            @dmz006
+/LICENSE                @dmz006
+/.github/               @dmz006
+/.goreleaser.yaml       @dmz006
+/security/              @dmz006
+/scripts/               @dmz006

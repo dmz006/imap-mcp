@@ -1,0 +1,84 @@
+# Security scans (AGENT.md S1.5, D65, D70). Blocking: govulncheck against
+# the accepted-risks registry, gosec with no findings allowed, and the
+# registry's schema. Advisory: govulncheck on the newest Go, as an early
+# warning before a toolchain upgrade.
+name: security-scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -format json ./... > govulncheck.json
+      - name: gate against security/accepted-risks.yml
+        run: python3 scripts/vuln_gate.py govulncheck.json
+
+  govulncheck-latest-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: govulncheck (advisory)
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -format json ./... > govulncheck.json
+          python3 scripts/vuln_gate.py govulncheck.json
+
+  gosec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # gosec runs inside golangci-lint: the standalone gosec binary cannot
+      # read Go 1.27's export data and silently analyses less (lessons log).
+      - name: gosec (no findings allowed; reasoned #nosec only)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+          args: --default=none --enable=gosec
+
+  accepted-risks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: validate security/accepted-risks.yml
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
+        run: python3 scripts/check_accepted_risks.py --base "$BASE"

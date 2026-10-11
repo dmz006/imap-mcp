@@ -65,7 +65,7 @@ func (g *ollamaGate) Allow(ctx context.Context, _ time.Time) (bool, string) {
 	if err != nil {
 		return true, "ollama /api/ps unreachable; not yielding"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var ps struct {
 		Models []struct {
 			Name     string `json:"name"`
@@ -118,7 +118,7 @@ func (g *datawatchGate) Allow(ctx context.Context, _ time.Time) (bool, string) {
 	if err != nil {
 		return true, "datawatch unreachable; not yielding"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var c struct {
 		Pools []struct {
 			Name     string `json:"name"`

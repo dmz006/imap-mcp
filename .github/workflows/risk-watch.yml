@@ -1,0 +1,79 @@
+# Daily re-validation of security/accepted-risks.yml (AGENT.md D68).
+# - Entries with a published fix (or no longer reported): upgrade the
+#   module, remove the entry, run the tests, and open a PR. Checks for that
+#   PR are started by hand-dispatch here, because a PR opened with the
+#   workflow token starts no pull_request runs. Merging still goes through
+#   the main ruleset (D67) and the operator.
+# - Entries past or near expiry, or whose version in use moved: open or
+#   update one tracking issue.
+name: risk-watch
+
+on:
+  schedule:
+    - cron: "23 7 * * *" # daily 07:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: risk-watch
+  cancel-in-progress: false
+
+jobs:
+  revalidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write      # push the auto/ branch
+      pull-requests: write # open the PR
+      issues: write        # the tracking issue
+      actions: write       # start the checks on the PR branch
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: scan
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -format json ./... > govulncheck.json
+          go list -m -json all > modules.json
+          python3 scripts/risk_watch.py --vulns govulncheck.json --modules modules.json \
+            --goversion "$(go env GOVERSION)" --report report.md --upgrades upgrades.txt --remove remove.txt
+
+      - name: PR for fixable entries
+        run: |
+          [ -s remove.txt ] || { echo "nothing fixable"; exit 0; }
+          branch="auto/risk-revalidate-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          while read -r mod; do [ -n "$mod" ] && go get "$mod"; done < upgrades.txt
+          go mod tidy
+          python3 scripts/risk_watch.py --apply-removals remove.txt
+          go test ./...
+          python3 scripts/check_accepted_risks.py
+          git add -A go.mod go.sum security/accepted-risks.yml
+          git commit -m "chore(security): upgrade fixed dependencies, remove resolved accepted risks"
+          git push -f origin "$branch"
+          if ! gh pr view "$branch" >/dev/null 2>&1; then
+            { echo "The daily re-validation (D68) found accepted risks that are now fixable or no longer reported."; echo;
+              echo "Removed entries:"; sed 's/^/- /' remove.txt; echo; echo "Upgrades:"; sed 's/^/- /' upgrades.txt; } > body.md
+            gh pr create --base main --head "$branch" --title "Security: resolve fixable accepted risks ($(date -u +%F))" --body-file body.md
+          fi
+          for wf in ci.yml security-scan.yml secret-scan.yml; do gh workflow run "$wf" --ref "$branch"; done
+          gh workflow run dependency-review.yml --ref main -f head="$branch"
+
+      - name: tracking issue for expiring or re-trace entries
+        run: |
+          title="Accepted risks: re-validation needed"
+          num=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ ! -s report.md ]; then
+            [ -n "$num" ] && gh issue close "$num" --comment "All accepted risks are current ($(date -u +%F))."
+            exit 0
+          fi
+          { cat report.md; echo; echo "_Updated by the risk-watch workflow, $(date -u +%F)._"; } > issue.md
+          if [ -n "$num" ]; then gh issue edit "$num" --body-file issue.md
+          else gh issue create --title "$title" --body-file issue.md; fi

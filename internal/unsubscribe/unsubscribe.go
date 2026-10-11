@@ -270,9 +270,9 @@ func (c *Client) TrustTLS(cfg *tls.Config) { c.http.Transport.(*http.Transport).
 
 // publicIP reports whether ip is a routable public address.
 func publicIP(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsMulticast() ||
-		cgnat.Contains(ip) || ip.Equal(net.IPv4bcast))
+	return !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() &&
+		!ip.IsLinkLocalMulticast() && !ip.IsInterfaceLocalMulticast() && !ip.IsMulticast() &&
+		!cgnat.Contains(ip) && !ip.Equal(net.IPv4bcast)
 }
 
 var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
@@ -293,7 +293,7 @@ func (c *Client) OneClick(ctx context.Context, target string) Result {
 	if err != nil {
 		return Result{Error: scrub(err, target)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	return Result{Status: resp.StatusCode, OK: resp.StatusCode >= 200 && resp.StatusCode < 300}
 }

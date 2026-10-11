@@ -205,7 +205,7 @@ func (s *Service) SetupCheck(ctx context.Context) (SetupReport, error) {
 			createdAt[id] = at
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, r := range rules {
 		if r.Active && !r.Conditions.NewSender && r.RunCount == 0 && createdAt[r.ID] > 0 && createdAt[r.ID] < cutoff {
 			idle++
@@ -275,7 +275,7 @@ func (s *Service) newFindings(ctx context.Context) ([]Finding, error) {
 			gone = append(gone, id)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, id := range gone {
 		if _, err := st.ExecContext(ctx, `DELETE FROM setup_findings WHERE id = ?`, id); err != nil {
 			return nil, err

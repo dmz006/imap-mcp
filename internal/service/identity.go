@@ -46,7 +46,7 @@ func (s *Service) me(ctx context.Context) meSet {
 	if err != nil {
 		return m
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var a string
 		if rows.Scan(&a) == nil {
@@ -87,7 +87,7 @@ func (s *Service) SuggestIdentities(ctx context.Context) (IdentityList, error) {
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id Identity
 		if err := rows.Scan(&id.Address, &id.Status, &id.Evidence, &id.Name, &id.Received, &id.Sent); err != nil {

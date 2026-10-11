@@ -19,15 +19,21 @@ func TestOllamaProvidersAndErrorClasses(t *testing.T) {
 			return
 		}
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
 		switch r.URL.Path {
 		case "/api/embeddings":
-			json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{1, 2}})
+			if err := json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{1, 2}}); err != nil {
+				t.Error(err)
+			}
 		case "/api/generate":
 			if req["stream"] != false {
 				t.Error("generate must not stream")
 			}
-			json.NewEncoder(w).Encode(map[string]any{"response": "ok:" + req["model"].(string)})
+			if err := json.NewEncoder(w).Encode(map[string]any{"response": "ok:" + req["model"].(string)}); err != nil {
+				t.Error(err)
+			}
 		}
 	}))
 	defer srv.Close()
@@ -59,13 +65,17 @@ func TestDatawatchClassifier(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth, gotPath = r.Header.Get("Authorization"), r.URL.Path
 		var req map[string]string
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
 		gotPrompt = req["prompt"]
 		if fail {
 			http.Error(w, "no compute node", http.StatusBadGateway)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"text": `{"hall":"personal"}`, "used_model": "m", "duration_ms": 5})
+		if err := json.NewEncoder(w).Encode(map[string]any{"text": `{"hall":"personal"}`, "used_model": "m", "duration_ms": 5}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer srv.Close()
 	c := NewDatawatchClassifier(srv.URL, "fast-small", "tok")
@@ -106,7 +116,11 @@ func TestGates(t *testing.T) {
 	}
 
 	ps := `{"models":[{"name":"nomic-embed-text:latest","size_vram":300000000},{"name":"qwen3:1.7b","size_vram":2000000000}]}`
-	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(ps)) }))
+	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := w.Write([]byte(ps)); err != nil {
+			t.Error(err)
+		}
+	}))
 	defer ollama.Close()
 	g := NewOllamaGate(ollama.URL, []string{"nomic-embed-text", "qwen3:1.7b"}, 8)
 	if ok, why := g.Allow(ctx, time.Now()); !ok {
@@ -124,7 +138,9 @@ func TestGates(t *testing.T) {
 	var auth string
 	dw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth = r.Header.Get("Authorization")
-		w.Write([]byte(capJSON))
+		if _, err := w.Write([]byte(capJSON)); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer dw.Close()
 	dg := NewDatawatchGate(dw.URL, "t", []string{"node:gpu1"})

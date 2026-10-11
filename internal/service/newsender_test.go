@@ -47,7 +47,7 @@ func newHoldFixture(t *testing.T) *holdFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	return &holdFixture{srv: srv, s: New(cfg, pool, d, nil, nil), d: d, b: b}
 }
 
@@ -120,7 +120,9 @@ func TestNewSenderHold(t *testing.T) {
 		t.Fatalf("Held = %d, want 4", n)
 	}
 	var reasons string
-	st.QueryRow(`SELECT reasons FROM held_messages WHERE message_ref = 'h1@x'`).Scan(&reasons) //nolint:errcheck
+	if err := st.QueryRow(`SELECT reasons FROM held_messages WHERE message_ref = 'h1@x'`).Scan(&reasons); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(reasons, "brand") {
 		t.Errorf("h1 reasons = %q", reasons)
 	}
@@ -135,7 +137,9 @@ func TestNewSenderHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	var trusted int
-	st.QueryRow(`SELECT trusted FROM senders WHERE address = 'info@fakebooks.example'`).Scan(&trusted) //nolint:errcheck
+	if err := st.QueryRow(`SELECT trusted FROM senders WHERE address = 'info@fakebooks.example'`).Scan(&trusted); err != nil {
+		t.Fatal(err)
+	}
 	if trusted != 1 {
 		t.Error("released sender not trusted")
 	}

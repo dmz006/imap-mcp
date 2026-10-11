@@ -144,16 +144,19 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	f.d = d
 	// Cached, classified mail for the hall and model passes.
-	for _, c := range []struct{ from, subject, hall string }{
-		{"billing@vendor.example.org", "Your invoice", "transactional"},
-		{"billing@vendor.example.org", "Receipt", "transactional"},
-		{"who@mystery.example", "Quarterly sync", "unclassified"},
-		{"what@puzzle.example", "Hello", "unclassified"},
+	for _, c := range []struct {
+		from, subject, hall string
+		uid                 uint32 // len(subject) + len(from), as before
+	}{
+		{"billing@vendor.example.org", "Your invoice", "transactional", 38},
+		{"billing@vendor.example.org", "Receipt", "transactional", 33},
+		{"who@mystery.example", "Quarterly sync", "unclassified", 33},
+		{"what@puzzle.example", "Hello", "unclassified", 24},
 	} {
-		res, err := d.Messages.Insert(context.Background(), &db.CachedMessage{Account: "test", Folder: "INBOX", UID: uint32(len(c.subject) + len(c.from)),
+		res, err := d.Messages.Insert(context.Background(), &db.CachedMessage{Account: "test", Folder: "INBOX", UID: c.uid,
 			MessageID: c.from + c.subject, FromAddr: c.from, Subject: c.subject, Date: t0, InternalDate: t0, Flags: []string{}})
 		if err != nil {
 			t.Fatal(err)
@@ -205,7 +208,7 @@ func unseen(t *testing.T, srv *imaptest.Server) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.Login(imaptest.Username, imaptest.Password).Wait(); err != nil {
 		t.Fatal(err)
 	}
@@ -262,8 +265,12 @@ func TestScannerEndToEnd(t *testing.T) {
 		}
 	}
 	var junk, indexed int
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM senders WHERE address IN ('spam@spam.example','eve@example.com')`).Scan(&junk) //nolint:errcheck
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM intel_messages`).Scan(&indexed)                                                //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM senders WHERE address IN ('spam@spam.example','eve@example.com')`).Scan(&junk); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM intel_messages`).Scan(&indexed); err != nil {
+		t.Fatal(err)
+	}
 	if junk != 0 {
 		t.Error("excluded folders were scanned")
 	}
@@ -313,7 +320,9 @@ func TestUIDValidityRescan(t *testing.T) {
 		t.Errorf("rescan double-counted: %+v", a)
 	}
 	var validity uint32
-	f.d.StateSQL().QueryRow(`SELECT uidvalidity FROM intel_scan WHERE folder='Archive'`).Scan(&validity) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT uidvalidity FROM intel_scan WHERE folder='Archive'`).Scan(&validity); err != nil {
+		t.Fatal(err)
+	}
 	if validity == 0 {
 		t.Error("new UIDVALIDITY not stored")
 	}
@@ -358,7 +367,9 @@ func TestRolesFillInDuringLongScan(t *testing.T) {
 		t.Fatal("expected the cut-short tick to report cancellation")
 	}
 	var known int
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM senders WHERE role <> 'unknown'`).Scan(&known) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM senders WHERE role <> 'unknown'`).Scan(&known); err != nil {
+		t.Fatal(err)
+	}
 	if known == 0 {
 		t.Error("no roles assigned before the tick was cut short")
 	}
@@ -371,10 +382,12 @@ func TestProgressCountsUnstartedFolders(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	f.sc.src = &cancelAfter{Source: f.sc.src, n: 1, cancel: cancel}
-	f.sc.Tick(ctx) //nolint:errcheck
+	_ = f.sc.Tick(ctx)
 	var total, done int
-	f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done) //nolint:errcheck
-	if total != 3 || done == total {                                                                    // INBOX, Sent, Archive (Junk and Drafts excluded)
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done); err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 || done == total { // INBOX, Sent, Archive (Junk and Drafts excluded)
 		t.Errorf("registered %d folders, %d complete", total, done)
 	}
 	// A folder that leaves the scope stops counting toward progress.
@@ -382,7 +395,9 @@ func TestProgressCountsUnstartedFolders(t *testing.T) {
 	if err := f.sc.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*), count(completed_at) FROM intel_scan`).Scan(&total, &done); err != nil {
+		t.Fatal(err)
+	}
 	if total != 2 || done != 2 {
 		t.Errorf("after excluding Archive: %d folders, %d complete", total, done)
 	}
@@ -428,8 +443,10 @@ func TestReplyThreads(t *testing.T) {
 		return r, err == nil
 	}
 	var n int
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM reply_threads`).Scan(&n) //nolint:errcheck
-	if n != 5 {                                                            // a1 (with its reply), o1, v1, m1, m2; no list mail, nothing from Junk or Drafts
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM reply_threads`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 5 { // a1 (with its reply), o1, v1, m1, m2; no list mail, nothing from Junk or Drafts
 		t.Errorf("threads = %d, want 5", n)
 	}
 	if r, ok := get("a1@example.com"); !ok || r.outgoing != 1 || r.counterpart != "alice@example.com" || r.subject != "s-r1@example.com" {
@@ -490,7 +507,9 @@ func TestLocations(t *testing.T) {
 	}
 	where := func(id string) string {
 		var folder sql.NullString
-		f.d.StateSQL().QueryRow(`SELECT folder FROM intel_messages WHERE msg_hash = ?`, msgHash(id)).Scan(&folder) //nolint:errcheck
+		if err := f.d.StateSQL().QueryRow(`SELECT folder FROM intel_messages WHERE msg_hash = ?`, msgHash(id)).Scan(&folder); err != nil {
+			t.Fatal(err)
+		}
 		return folder.String
 	}
 	if w := where("v1@vendor.example.org"); w != "INBOX" {
@@ -519,7 +538,9 @@ func TestLocations(t *testing.T) {
 		t.Error("the location pass changed a profile")
 	}
 	var trusted int
-	f.d.StateSQL().QueryRow(`SELECT COALESCE(trusted,0) FROM senders WHERE address = 'who@mystery.example'`).Scan(&trusted) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT COALESCE(trusted,0) FROM senders WHERE address = 'who@mystery.example'`).Scan(&trusted); err != nil {
+		t.Fatal(err)
+	}
 	if trusted != 0 {
 		t.Fatal("trusted before any rescue")
 	}
@@ -532,8 +553,12 @@ func TestLocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	var open int
-	f.d.StateSQL().QueryRow(`SELECT COALESCE(trusted,0) FROM senders WHERE address = 'who@mystery.example'`).Scan(&trusted)     //nolint:errcheck
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM anomalies WHERE sender = 'who@mystery.example' AND resolved = 0`).Scan(&open) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT COALESCE(trusted,0) FROM senders WHERE address = 'who@mystery.example'`).Scan(&trusted); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM anomalies WHERE sender = 'who@mystery.example' AND resolved = 0`).Scan(&open); err != nil {
+		t.Fatal(err)
+	}
 	if trusted != 1 || open != 0 || where("m1@mystery.example") != "Archive" {
 		t.Errorf("rescue: trusted=%d open anomalies=%d location=%q", trusted, open, where("m1@mystery.example"))
 	}
@@ -580,7 +605,9 @@ func TestIdentities(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	st.QueryRow(`SELECT count(*) FROM identities WHERE status = 'candidate'`).Scan(&n) //nolint:errcheck
+	if err := st.QueryRow(`SELECT count(*) FROM identities WHERE status = 'candidate'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 2 {
 		t.Errorf("candidates = %d, want 2 (jroe@work, janeroe@kindle)", n)
 	}
@@ -591,9 +618,15 @@ func TestIdentities(t *testing.T) {
 	}
 	var incoming, threads int
 	var role string
-	st.QueryRow(`SELECT count(*) FROM intel_messages m JOIN senders s ON s.id = m.sender_id WHERE s.address = 'who@mystery.example' AND m.outgoing = 0`).Scan(&incoming) //nolint:errcheck
-	st.QueryRow(`SELECT count(*) FROM reply_threads WHERE counterpart = 'who@mystery.example'`).Scan(&threads)                                                           //nolint:errcheck
-	st.QueryRow(`SELECT role FROM senders WHERE address = 'who@mystery.example'`).Scan(&role)                                                                            //nolint:errcheck
+	if err := st.QueryRow(`SELECT count(*) FROM intel_messages m JOIN senders s ON s.id = m.sender_id WHERE s.address = 'who@mystery.example' AND m.outgoing = 0`).Scan(&incoming); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueryRow(`SELECT count(*) FROM reply_threads WHERE counterpart = 'who@mystery.example'`).Scan(&threads); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueryRow(`SELECT role FROM senders WHERE address = 'who@mystery.example'`).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
 	if incoming != 0 || threads != 0 || role != "self" || !f.sc.own["test"].has("who@mystery.example") {
 		t.Errorf("after confirming: incoming=%d threads=%d role=%q", incoming, threads, role)
 	}
@@ -602,7 +635,9 @@ func TestIdentities(t *testing.T) {
 	if _, err := f.sc.recomputeRoles(ctx); err != nil {
 		t.Fatal(err)
 	}
-	st.QueryRow(`SELECT role FROM senders WHERE address = 'who@mystery.example'`).Scan(&role) //nolint:errcheck
+	if err := st.QueryRow(`SELECT role FROM senders WHERE address = 'who@mystery.example'`).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
 	if role != "self" {
 		t.Errorf("role recomputed to %q", role)
 	}
@@ -620,7 +655,9 @@ func TestSeedOwnerNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	f.d.StateSQL().QueryRow(`SELECT count FROM owner_names WHERE name = 'jane roe'`).Scan(&count) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count FROM owner_names WHERE name = 'jane roe'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
 	if count < 3 {
 		t.Errorf("owner name count = %d, want >= 3", count)
 	}

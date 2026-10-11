@@ -14,7 +14,7 @@ func openTest(t *testing.T) *DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	return d
 }
 
@@ -166,15 +166,19 @@ func TestPlaceholderCleanup(t *testing.T) {
 	d := open()
 	mustExec(t, d.StateSQL(), `INSERT INTO kg_entities(entity_type, name) VALUES('project','<project or context, empty string if unclear>'),('topic','topic'),('project','Home renovation'),('person','project')`)
 	mustExec(t, d.SQL(), `INSERT INTO messages(account, folder, uid, from_addr, date, wing, room) VALUES('a','INBOX',1,'x@example.com',1,'<project or context>','<topic, empty string if unclear>'),('a','INBOX',2,'x@example.com',1,'Home renovation','permits')`)
-	d.Close()
+	_ = d.Close()
 	d = open()
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	var n int
-	d.StateSQL().QueryRow(`SELECT count(*) FROM kg_entities`).Scan(&n) //nolint:errcheck
+	if err := d.StateSQL().QueryRow(`SELECT count(*) FROM kg_entities`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 2 {
 		t.Errorf("entities left = %d, want 2 (real project and the person)", n)
 	}
-	d.SQL().QueryRow(`SELECT count(*) FROM messages WHERE wing <> '' OR room <> ''`).Scan(&n) //nolint:errcheck
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM messages WHERE wing <> '' OR room <> ''`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 1 {
 		t.Errorf("tagged messages = %d, want 1", n)
 	}

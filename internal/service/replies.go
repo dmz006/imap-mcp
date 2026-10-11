@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -200,13 +201,13 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 		var role, roleSource string
 		if err := rows.Scan(&r.it.threadHash, &r.it.ThreadID, &r.it.lastHash, &r.it.Counterpart, &r.it.Name, &r.it.Subject,
 			&r.it.MessageRef, &r.it.Folder, &r.uid, &r.last, &role, &roleSource, &written); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		r.known = outgoing || written > 0 || ((role == "personal" || role == "colleague") && strings.HasPrefix(roleSource, "signal:"))
 		all = append(all, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -233,6 +234,9 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 				continue
 			}
 			firstContact[it.threadHash] = true
+		}
+		if r.uid < 0 || r.uid > math.MaxUint32 {
+			continue // not an IMAP UID; the index only stores uint32 UIDs
 		}
 		it.Account, it.UID = account, uint32(r.uid)
 		it.LastDate = time.Unix(r.last, 0).UTC().Format(time.RFC3339)
@@ -387,7 +391,7 @@ func (s *Service) replyClearingFolders(ctx context.Context, account string) ([]s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var f string
 		if rows.Scan(&f) == nil && !slices.Contains(out, f) {
@@ -421,7 +425,7 @@ func (s *Service) cleanFirstContact(ctx context.Context, account, sender, messag
 	var hall sql.NullString
 	if err := cache.QueryRowContext(ctx, `SELECT hall FROM messages WHERE account = ? AND message_id IN (?, ?) AND COALESCE(hall,'') <> '' LIMIT 1`,
 		account, id, "<"+id+">").Scan(&hall); err != nil {
-		return false, nil //nolint:nilerr // not cached or not classified: not a clean first contact
+		return false, nil // not cached or not classified: not a clean first contact
 	}
 	if h := strings.Trim(strings.ToLower(strings.TrimSpace(hall.String)), "<>"); h != "conversation" && h != "personal" {
 		return false, nil

@@ -16,12 +16,14 @@ func anomalyTypes(t *testing.T, f *fixture) map[string]int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]int{}
 	for rows.Next() {
 		var typ string
 		var n int
-		rows.Scan(&typ, &n) //nolint:errcheck
+		if err := rows.Scan(&typ, &n); err != nil {
+			t.Fatal(err)
+		}
 		out[typ] = n
 	}
 	return out
@@ -71,7 +73,9 @@ func TestPerMessageAnomalies(t *testing.T) {
 
 	me := imaptest.Username
 	now := time.Now()
-	f.d.StateSQL().Exec(`UPDATE senders SET message_count = 5 WHERE address = 'alice@example.com'`) //nolint:errcheck
+	if _, err := f.d.StateSQL().Exec(`UPDATE senders SET message_count = 5 WHERE address = 'alice@example.com'`); err != nil {
+		t.Fatal(err)
+	}
 	f.srv.Append(t, "INBOX", msg("x1@new.example", "Stranger <stranger@new.example>", me, ""), now)
 	f.srv.Append(t, "INBOX", msg("x2@example.com", "alice@example.com", me, "Authentication-Results: mx.example.com; dkim=fail; dmarc=fail\r\n"), now)
 	f.srv.Append(t, "INBOX", msg("x3@examp1e.com", "billing@examp1e.com", me, ""), now)
@@ -89,7 +93,9 @@ func TestPerMessageAnomalies(t *testing.T) {
 	}
 	var folder, ref, details string
 	var uid int
-	f.d.StateSQL().QueryRow(`SELECT folder, uid, message_ref, details FROM anomalies WHERE anomaly_type = 'auth_failure'`).Scan(&folder, &uid, &ref, &details) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT folder, uid, message_ref, details FROM anomalies WHERE anomaly_type = 'auth_failure'`).Scan(&folder, &uid, &ref, &details); err != nil {
+		t.Fatal(err)
+	}
 	if folder != "INBOX" || uid == 0 || ref != "x2@example.com" || !json.Valid([]byte(details)) {
 		t.Errorf("auth_failure location = %s/%d ref=%s details=%s", folder, uid, ref, details)
 	}
@@ -103,14 +109,18 @@ func TestPerMessageAnomalies(t *testing.T) {
 	for _, e := range events {
 		p, _ := json.Marshal(e.Payload)
 		var m map[string]any
-		json.Unmarshal(p, &m) //nolint:errcheck
+		if err := json.Unmarshal(p, &m); err != nil {
+			t.Fatal(err)
+		}
 		if len(m) != 3 || m["id"] == nil || m["type"] == nil || m["severity"] == nil {
 			t.Errorf("payload must be id/type/severity only: %s", p)
 		}
 	}
 	var score float64
-	f.d.StateSQL().QueryRow(`SELECT anomaly_score FROM senders WHERE address = 'alice@example.com'`).Scan(&score) //nolint:errcheck
-	if score != 1.5 {                                                                                             // auth_failure (high 1.0) + reply_to_mismatch (medium 0.5)
+	if err := f.d.StateSQL().QueryRow(`SELECT anomaly_score FROM senders WHERE address = 'alice@example.com'`).Scan(&score); err != nil {
+		t.Fatal(err)
+	}
+	if score != 1.5 { // auth_failure (high 1.0) + reply_to_mismatch (medium 0.5)
 		t.Errorf("alice anomaly_score = %v", score)
 	}
 
@@ -170,7 +180,9 @@ func TestPeriodicAnomalies(t *testing.T) {
 		t.Fatalf("types = %v", got)
 	}
 	var who string
-	c.QueryRow(`SELECT sender FROM anomalies WHERE anomaly_type = 'silence'`).Scan(&who) //nolint:errcheck
+	if err := c.QueryRow(`SELECT sender FROM anomalies WHERE anomaly_type = 'silence'`).Scan(&who); err != nil {
+		t.Fatal(err)
+	}
 	if who != "carol@example.org" {
 		t.Errorf("silence for %s", who)
 	}
@@ -184,7 +196,9 @@ func TestPeriodicAnomalies(t *testing.T) {
 		t.Fatal(err)
 	}
 	var resolved int
-	c.QueryRow(`SELECT resolved FROM anomalies WHERE anomaly_type = 'silence'`).Scan(&resolved) //nolint:errcheck
+	if err := c.QueryRow(`SELECT resolved FROM anomalies WHERE anomaly_type = 'silence'`).Scan(&resolved); err != nil {
+		t.Fatal(err)
+	}
 	if resolved != 1 {
 		t.Error("silence not resolved when mail returned")
 	}

@@ -28,7 +28,7 @@ func TestLearnFromMoves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	s := New(cfg, pool, d, nil, nil)
 	ctx := context.Background()
 	st := d.StateSQL()
@@ -163,7 +163,9 @@ func TestRuleMovesRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM rule_moves WHERE rule_id = ? AND dest = 'Held'`, id).Scan(&n) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM rule_moves WHERE rule_id = ? AND dest = 'Held'`, id).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 1 {
 		t.Errorf("rule_moves rows = %d, want 1", n)
 	}

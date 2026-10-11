@@ -37,7 +37,7 @@ type Server struct {
 }
 
 // Close stops the server, e.g. to simulate an account going away.
-func (s *Server) Close() { s.srv.Close() }
+func (s *Server) Close() { _ = s.srv.Close() }
 
 // Start runs a server with the given folders (INBOX is always created) and
 // capabilities in addition to IMAP4rev1.
@@ -67,8 +67,8 @@ func Start(t testing.TB, folders []string, caps ...imaplib.Cap) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go srv.Serve(ln) //nolint:errcheck
-	t.Cleanup(func() { srv.Close() })
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
 	host, port, _ := net.SplitHostPort(ln.Addr().String())
 	p, _ := strconv.Atoi(port)
 	return &Server{Addr: ln.Addr().String(), User: user, Host: host, Port: p, srv: srv}

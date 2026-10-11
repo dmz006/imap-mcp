@@ -127,7 +127,7 @@ func (s *Service) evalSample(ctx context.Context, perClass int) ([]labeled, erro
 			spam = append(spam, r)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, r := range spam {
 		if countLabel(out, true) >= perClass || ctx.Err() != nil {
 			break
@@ -159,7 +159,7 @@ func (s *Service) evalSample(ctx context.Context, perClass int) ([]labeled, erro
 			legit = append(legit, r)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, r := range legit {
 		if countLabel(out, false) >= perClass || ctx.Err() != nil {
 			break
@@ -277,7 +277,9 @@ func (s *Service) StartVerdictEval(ctx context.Context, p EvalParams) (EvalRun, 
 		return EvalRun{}, err
 	}
 	id, _ := r.LastInsertId()
-	go s.runVerdictEval(id, p)
+	// The evaluation is a background job polled by id (verdict_eval_results);
+	// it must outlive the request that started it.
+	go s.runVerdictEval(id, p) // #nosec G118 -- intentionally detached from the request context
 	return s.VerdictEval(ctx, id)
 }
 
@@ -529,7 +531,7 @@ func (s *Service) verdictCandidates(ctx context.Context, limit int) ([]verdictCa
 				all = append(all, r)
 			}
 		}
-		rows.Close()
+		_ = rows.Close()
 		for _, r := range all {
 			if len(out) >= limit {
 				return out, nil
@@ -569,7 +571,7 @@ func (s *Service) verdictCandidates(ctx context.Context, limit int) ([]verdictCa
 			threads = append(threads, r)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, r := range threads {
 		if len(out) >= limit {
 			break

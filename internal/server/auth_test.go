@@ -61,7 +61,7 @@ func do(t *testing.T, ts *httptest.Server, method, path, token, body string, hdr
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	return resp, b
 }

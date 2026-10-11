@@ -102,7 +102,7 @@ func (s *Service) IntelStats(ctx context.Context) (IntelStats, error) {
 	if err != nil {
 		return st, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var role string
 		var n int

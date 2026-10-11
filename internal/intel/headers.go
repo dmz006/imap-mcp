@@ -121,7 +121,7 @@ func msgHash(id string) int64 {
 		return 0
 	}
 	sum := sha256.Sum256([]byte(id))
-	return int64(binary.BigEndian.Uint64(sum[:8]))
+	return int64(binary.BigEndian.Uint64(sum[:8])) // #nosec G115 -- deliberate bit reinterpretation of hash bytes as a signed SQLite key
 }
 
 // keyHash is msgHash for a message without a Message-ID: it identifies the

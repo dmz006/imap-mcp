@@ -95,7 +95,6 @@ func (s *Server) removeSSEClient(ch chan bus.Event) {
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 
 	// Per-route scope requirements (no-ops when auth is disabled).
@@ -363,14 +362,18 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			fmt.Fprintf(w, ": heartbeat\n\n")
+			if _, err := fmt.Fprintf(w, ": heartbeat\n\n"); err != nil {
+				return // client gone
+			}
 			flusher.Flush()
 		case e := <-ch:
 			data, err := json.Marshal(e)
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				return // client gone
+			}
 			flusher.Flush()
 		}
 	}
@@ -403,7 +406,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v) //nolint:errcheck
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // intelHealth is the header scanner's progress for /api/health (counts only).

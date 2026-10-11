@@ -126,7 +126,9 @@ func (x *XOAuth2) saveToken(t *oauth2.Token) error {
 	if err := os.MkdirAll(filepath.Dir(x.tokenFile), 0700); err != nil {
 		return err
 	}
-	data, err := json.Marshal(t)
+	// Persisting the token is the point: it goes only to the operator's token
+	// file, created 0600 in a 0700 directory.
+	data, err := json.Marshal(t) // #nosec G117 -- written only to the private token file below
 	if err != nil {
 		return err
 	}
@@ -164,9 +166,9 @@ func RunAuthSetup(ctx context.Context, username, clientID, clientSecret, tokenFi
 	mux.Handle(callbackPath, callbackHandler(state, results))
 	srv := &http.Server{Handler: mux, ReadTimeout: 2 * time.Minute}
 	for _, ln := range lns {
-		go srv.Serve(ln) //nolint:errcheck
+		go func() { _ = srv.Serve(ln) }()
 	}
-	defer srv.Close()
+	defer func() { _ = srv.Close() }()
 
 	var code string
 	select {
@@ -210,12 +212,12 @@ func callbackHandler(state string, results chan<- callbackResult) http.Handler {
 		switch {
 		case q.Get("error") != "":
 			res = callbackResult{err: fmt.Errorf("authorization denied: %s %s", q.Get("error"), q.Get("error_description"))}
-			fmt.Fprint(w, "<html><body><h2>Authorization failed. See the terminal.</h2></body></html>")
+			_, _ = fmt.Fprint(w, "<html><body><h2>Authorization failed. See the terminal.</h2></body></html>")
 		case res.code == "":
 			http.Error(w, "missing code", http.StatusBadRequest)
 			return
 		default:
-			fmt.Fprint(w, "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>")
+			_, _ = fmt.Fprint(w, "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>")
 		}
 		once.Do(func() { results <- res })
 	})

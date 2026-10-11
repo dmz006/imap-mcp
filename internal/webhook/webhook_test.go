@@ -142,7 +142,7 @@ func setup(t *testing.T, statuses ...int) (*db.DB, string, *receiver, *Enqueuer,
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	rc := &receiver{t: t, status: statuses}
 	srv := httptest.NewServer(rc)
 	t.Cleanup(srv.Close)
@@ -214,13 +214,15 @@ func TestRetryWithBackoff(t *testing.T) {
 func TestOutboxSurvivesRestart(t *testing.T) {
 	d, path, rc, q, _, _, _ := setup(t, 200)
 	q.Handle(bus.Event{Type: bus.EventRuleFired, Payload: map[string]any{"rule_id": 2}})
-	d.Close() // "crash" before any delivery
+	if err := d.Close(); err != nil { // "crash" before any delivery
+		t.Fatal(err)
+	}
 
 	d2, err := db.OpenState(db.Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d2.Close()
+	defer func() { _ = d2.Close() }()
 	disp := NewDispatcher(d2.Webhooks, bus.New(), quiet)
 	disp.now = func() time.Time { return time.Unix(1_800_000_100, 0) }
 	if disp.RunOnce(context.Background()); rc.count() != 1 {
@@ -288,7 +290,9 @@ func TestAutoDisableAndEnable(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	d.StateSQL().QueryRow(`SELECT count(*) FROM webhook_deliveries`).Scan(&n)
+	if err := d.StateSQL().QueryRow(`SELECT count(*) FROM webhook_deliveries`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 0 {
 		t.Errorf("delete left %d outbox rows", n)
 	}

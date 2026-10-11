@@ -23,7 +23,7 @@ func makeLegacy(t *testing.T, path string, nRules int) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Exec(legacySchema); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestLegacySplitPreservesState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	m := LastMigration
 	if m == nil {
@@ -110,22 +110,26 @@ func TestLegacySplitPreservesState(t *testing.T) {
 		t.Errorf("backup mode = %v, want 0600", fi.Mode().Perm())
 	}
 	bk, _ := driver.Open("file:"+m.BackupPath+"?mode=ro", fts5.Register)
-	defer bk.Close()
+	defer func() { _ = bk.Close() }()
 	var msgs, nrules int
-	bk.QueryRow(`SELECT count(*) FROM messages`).Scan(&msgs)
-	bk.QueryRow(`SELECT count(*) FROM rules`).Scan(&nrules)
+	if err := bk.QueryRow(`SELECT count(*) FROM messages`).Scan(&msgs); err != nil {
+		t.Fatal(err)
+	}
+	if err := bk.QueryRow(`SELECT count(*) FROM rules`).Scan(&nrules); err != nil {
+		t.Fatal(err)
+	}
 	if msgs != 1 || nrules != 250 {
 		t.Errorf("backup has %d messages, %d rules", msgs, nrules)
 	}
 
 	// Re-opening is a no-op (idempotent).
-	d.Close()
+	_ = d.Close()
 	LastMigration = nil
 	d2, err := Open(Options{Path: statePath}, Options{Path: filepath.Join(dir, "cache.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	d2.Close()
+	_ = d2.Close()
 	if LastMigration != nil {
 		t.Error("second open migrated again")
 	}
@@ -137,7 +141,7 @@ func TestOpenStateNeverTouchesCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if d.SQL() != nil || d.Messages != nil {
 		t.Error("state-only DB exposes cache")
 	}
@@ -163,20 +167,24 @@ func TestEncryptedFiles(t *testing.T) {
 	}
 	mustExec(t, d.SQL(), `INSERT INTO messages(account, folder, uid, subject, body_text, from_addr, date) VALUES('a','INBOX',1,'needle-subject','needle body','x@example.com',1)`)
 	var hits int
-	d.SQL().QueryRow(`SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'needle'`).Scan(&hits)
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'needle'`).Scan(&hits); err != nil {
+		t.Fatal(err)
+	}
 	if hits != 1 {
 		t.Errorf("FTS over encrypted cache: %d hits", hits)
 	}
 	var mode string
-	d.SQL().QueryRow(`PRAGMA journal_mode`).Scan(&mode)
+	if err := d.SQL().QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
 	if mode != "wal" {
 		t.Errorf("encrypted journal_mode = %q", mode)
 	}
-	d.Close()
+	_ = d.Close()
 
 	// No plaintext on disk, in the DB or its WAL.
 	for _, f := range []string{st.Path, ca.Path, st.Path + "-wal", ca.Path + "-wal"} {
-		b, err := os.ReadFile(f)
+		b, err := os.ReadFile(f) // #nosec G304 -- database files under t.TempDir()
 		if err != nil {
 			continue
 		}
@@ -193,7 +201,7 @@ func TestEncryptedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules, _ := d.Rules.List()
-	d.Close()
+	_ = d.Close()
 	if len(rules) != 1 {
 		t.Fatalf("rules after reopen = %d", len(rules))
 	}
@@ -214,7 +222,7 @@ func TestKeyOnPlaintextFileFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.Close()
+	_ = d.Close()
 	_, err = OpenState(Options{Path: p, Key: "k"})
 	if err == nil || !strings.Contains(err.Error(), "not encrypted") {
 		t.Fatalf("err = %v", err)
@@ -227,7 +235,7 @@ func TestDSNDoesNotBreakOnSpecialPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.Close()
+	_ = d.Close()
 	if _, err := os.Stat(filepath.Join(dir, "imap.db")); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +250,7 @@ func TestFilesArePrivate(t *testing.T) {
 	}
 	mustExec(t, d.SQL(), `INSERT INTO sync_state(account, folder) VALUES('a','b')`)
 	mustExec(t, d.StateSQL(), `INSERT INTO inbound_nonces(account, nonce) VALUES('a','n')`)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	for _, f := range []string{st.Path, st.Path + "-wal", st.Path + "-shm", ca.Path, ca.Path + "-wal", ca.Path + "-shm"} {
 		fi, err := os.Stat(f)
 		if err != nil {

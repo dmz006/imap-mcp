@@ -56,7 +56,7 @@ func (sc *Scanner) prepareDetector(ctx context.Context, accounts []string) (*det
 			d.corrList = append(d.corrList, dom)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	for dom := range sc.ownDomains {
 		d.corrDomains[dom] = true
 	}
@@ -245,12 +245,12 @@ func (sc *Scanner) periodic(ctx context.Context, d *detector) (map[string][]int6
 		for rows.Next() {
 			var q quiet
 			if err := rows.Scan(&q.id, &q.addr, &q.received, &q.first, &q.lastIn); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return out, err
 			}
 			qs = append(qs, q)
 		}
-		rows.Close()
+		_ = rows.Close()
 		for _, q := range qs {
 			gap := (q.lastIn - q.first) / max(q.received-1, 1)
 			threshold := max(int64(cfg.silenceMinDays)*day, 3*gap)
@@ -292,12 +292,12 @@ func (sc *Scanner) periodic(ctx context.Context, d *detector) (map[string][]int6
 		for rows.Next() {
 			var b burst
 			if err := rows.Scan(&b.addr, &b.n, &b.total, &b.fst); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return out, err
 			}
 			bs = append(bs, b)
 		}
-		rows.Close()
+		_ = rows.Close()
 		for _, b := range bs {
 			days := max((now-b.fst)/day, 1)
 			avg := float64(b.total-b.n) / float64(days)

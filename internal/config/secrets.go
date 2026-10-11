@@ -178,7 +178,7 @@ func (r *secretResolver) fetch(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("secret %q: datawatch unreachable at %s: %w", name, r.apiURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	switch resp.StatusCode {

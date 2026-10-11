@@ -25,14 +25,14 @@ func plaintextPair(t *testing.T) (st, ca Options, backup string) {
 		}
 	}
 	mustExec(t, d.SQL(), `INSERT INTO messages(account, folder, uid, subject, body_text, from_addr, date) VALUES('a','INBOX',1,'needle-subject','needle body','x@example.com',1)`)
-	d.Close()
+	_ = d.Close()
 
 	backup = st.Path + ".bak-20261009-000000-pre-0.6.0"
 	b, err := os.ReadFile(st.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(backup, b, 0o600); err != nil {
+	if err := os.WriteFile(backup, b, 0o600); err != nil { // #nosec G703 -- backup is under t.TempDir()
 		t.Fatal(err)
 	}
 	return st, ca, backup
@@ -61,7 +61,7 @@ func TestEncryptConvertsInPlace(t *testing.T) {
 
 	// No plaintext left in the files or any sidecar; no temp file left over.
 	for _, f := range []string{st.Path, ca.Path, st.Path + "-wal", ca.Path + "-wal"} {
-		b, err := os.ReadFile(f)
+		b, err := os.ReadFile(f) // #nosec G304 -- database files under t.TempDir()
 		if err != nil {
 			continue
 		}
@@ -83,13 +83,15 @@ func TestEncryptConvertsInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	rules, _ := d.Rules.List()
 	if len(rules) != 3 || rules[0].Conditions.From != "secret-rule-a@example.com" {
 		t.Errorf("rules after encrypt = %+v", rules)
 	}
 	var hits int
-	d.SQL().QueryRow(`SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'needle'`).Scan(&hits)
+	if err := d.SQL().QueryRow(`SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'needle'`).Scan(&hits); err != nil {
+		t.Fatal(err)
+	}
 	if hits != 1 {
 		t.Errorf("FTS hits after encrypt = %d", hits)
 	}
@@ -106,7 +108,7 @@ func TestEncryptRefusesWhileInUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if _, err := d.Rules.List(); err != nil {
 		t.Fatal(err)
 	}

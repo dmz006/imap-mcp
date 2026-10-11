@@ -113,12 +113,12 @@ func (sc *Scanner) recomputeRoles(ctx context.Context) (int, error) {
 		for rows.Next() {
 			var s senderStats
 			if err := rows.Scan(&s.ID, &s.Address, &s.Domain, &s.Role, &s.RoleSource, &s.Received, &s.Sent, &s.List, &s.Bulk, &s.Auto); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return total, err
 			}
 			batch = append(batch, s)
 		}
-		rows.Close()
+		_ = rows.Close()
 		if len(batch) == 0 {
 			return total, rows.Err()
 		}
@@ -130,7 +130,7 @@ func (sc *Scanner) recomputeRoles(ctx context.Context) (int, error) {
 		for _, s := range batch {
 			if s.RoleSource == "identity" { // the owner's own address (D50)
 				if _, err := tx.ExecContext(ctx, `UPDATE senders SET dirty=0 WHERE id=?`, s.ID); err != nil {
-					tx.Rollback() //nolint:errcheck
+					_ = tx.Rollback()
 					return total, err
 				}
 				continue
@@ -146,7 +146,7 @@ func (sc *Scanner) recomputeRoles(ctx context.Context) (int, error) {
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE senders SET role=?, role_source=NULLIF(?,''), dirty=0, updated_at=unixepoch() WHERE id=?`,
 				role, source, s.ID); err != nil {
-				tx.Rollback() //nolint:errcheck
+				_ = tx.Rollback()
 				return total, err
 			}
 		}
@@ -169,6 +169,7 @@ func (sc *Scanner) majorityHalls(ctx context.Context, batch []senderStats) map[s
 	for i, s := range batch {
 		args[i], marks[i] = s.Address, "?"
 	}
+	// #nosec G202 -- only a list of ? placeholders (one per address) is concatenated; addresses are arguments
 	rows, err := sc.cache.QueryContext(ctx, `SELECT lower(from_addr), hall, count(*) AS n FROM messages
 		WHERE lower(from_addr) IN (`+strings.Join(marks, ",")+`) AND hall IS NOT NULL AND hall NOT IN ('', 'unclassified')
 		GROUP BY 1, 2 ORDER BY 1, n DESC`, args...)
@@ -176,7 +177,7 @@ func (sc *Scanner) majorityHalls(ctx context.Context, batch []senderStats) map[s
 		sc.log.Warn("intel: read cached classifications", "err", err)
 		return out
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var addr, hall string
 		var n int
@@ -221,7 +222,7 @@ func (sc *Scanner) modelRoles(ctx context.Context, perTick int) (int, error) {
 			cached = append(cached, a)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	type cand struct {
 		id         int64
 		addr, name string
@@ -281,7 +282,7 @@ func (sc *Scanner) recentSubjects(ctx context.Context, addr string, n int) []str
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var s string

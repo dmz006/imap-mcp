@@ -69,7 +69,7 @@ func (w *Writer) Write(name, content string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0750); err != nil {
 		return "", fmt.Errorf("output: mkdir for %s: %w", name, err)
 	}
-	if err := os.WriteFile(abs, []byte(content), 0640); err != nil {
+	if err := os.WriteFile(abs, []byte(content), 0o600); err != nil {
 		return "", fmt.Errorf("output: write %s: %w", name, err)
 	}
 	return abs, nil
@@ -81,7 +81,7 @@ func (w *Writer) Read(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(abs)
+	data, err := os.ReadFile(abs) // #nosec G304 -- Resolve confines abs to working_dir
 	if err != nil {
 		return "", fmt.Errorf("output: read %s: %w", name, err)
 	}

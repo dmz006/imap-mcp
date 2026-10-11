@@ -51,12 +51,12 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 	for rows.Next() {
 		var a string
 		if err := rows.Scan(&a); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		accounts = append(accounts, a)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if s.cfg.Intel.On() { // any account may have conversations waiting
 		for _, a := range s.cfg.Accounts {
 			if !slices.Contains(accounts, a.Name) {
@@ -129,13 +129,13 @@ func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding)
 		var h heldRow
 		var ref string
 		if err := rows.Scan(&h.sender, &h.subject, &h.reasons, &h.folder, &h.heldAt, &ref); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return false, err
 		}
 		h.link = s.messageLink(account, ref, h.folder, 0)
 		held = append(held, h)
 	}
-	rows.Close()
+	_ = rows.Close()
 	var waiting ReplyList
 	if s.cfg.Intel.On() {
 		if waiting, err = s.replyList(context.Background(), ReplyParams{Account: account,
@@ -433,7 +433,7 @@ func (s *Service) digestLearned(account string) (digestLearning, error) {
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var c struct {
 			target string

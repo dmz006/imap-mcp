@@ -62,7 +62,7 @@ func newLaneHarness(t *testing.T, cfg config.EnrichmentConfig, gate *staticGate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	emb := &fakeEmbed{}
 	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	cfg.Enabled = true
@@ -140,7 +140,9 @@ func TestBackoffRetryAndMaxAttempts(t *testing.T) {
 	ctx := context.Background()
 	emb.err = &ProviderError{Provider: "fake", Status: 503, Transient: true, Err: errors.New("busy")}
 
-	p.runOnce(ctx, 0)
+	if _, err := p.runOnce(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
 	st, _ := p.Stats(ctx)
 	if st.Pending["new"] != 1 || st.BackoffSeconds != 5 || st.ConsecutiveFailures != 1 {
 		t.Fatalf("after first failure: %+v", st)
@@ -149,13 +151,17 @@ func TestBackoffRetryAndMaxAttempts(t *testing.T) {
 		t.Fatal("must not call providers during backoff")
 	}
 	*now = now.Add(6 * time.Second)
-	p.runOnce(ctx, 0)
+	if _, err := p.runOnce(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
 	st, _ = p.Stats(ctx)
 	if st.Errors != 1 || st.Pending["new"] != 0 || st.BackoffSeconds != 10 {
 		t.Fatalf("after max attempts: %+v", st)
 	}
 	var status string
-	d.SQL().QueryRow(`SELECT enrichment_status FROM messages WHERE uid=1`).Scan(&status)
+	if err := d.SQL().QueryRow(`SELECT enrichment_status FROM messages WHERE uid=1`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
 	if status != "error" {
 		t.Errorf("message status = %s", status)
 	}
@@ -190,7 +196,9 @@ func TestConcurrencyCap(t *testing.T) {
 func TestStartupRequeuesProcessing(t *testing.T) {
 	p, _, d, _ := newLaneHarness(t, config.EnrichmentConfig{BatchSize: 5}, &staticGate{ok: true})
 	queue(t, d, 1, "m", false)
-	d.SQL().Exec(`UPDATE enrichment_queue SET status='processing'`)
+	if _, err := d.SQL().Exec(`UPDATE enrichment_queue SET status='processing'`); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()

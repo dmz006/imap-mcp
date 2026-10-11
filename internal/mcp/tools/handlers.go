@@ -4,6 +4,7 @@ package tools
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 
 	"github.com/dmz006/imap-mcp/internal/config"
 	"github.com/dmz006/imap-mcp/internal/db"
@@ -69,4 +70,16 @@ func NewHandlers(cfg *config.Config, pool *imap.Pool, database *db.DB, syncer *s
 		out:    out,
 		svc:    service.New(cfg, pool, database, syncer, nil),
 	}
+}
+
+// clampUint32 converts n to an IMAP sequence number or count, clamping it
+// into [0, MaxUint32] instead of wrapping.
+func clampUint32(n int) uint32 {
+	if n <= 0 {
+		return 0
+	}
+	if n >= math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(n)
 }

@@ -100,7 +100,9 @@ func TestVerdictTick(t *testing.T) {
 		t.Fatalf("verdict = %+v, %v", v, ok)
 	}
 	var n int
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM anomalies WHERE anomaly_type = 'payment_request' AND message_ref = 'pay@x'`).Scan(&n) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM anomalies WHERE anomaly_type = 'payment_request' AND message_ref = 'pay@x'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 1 {
 		t.Errorf("payment_request anomalies = %d", n)
 	}
@@ -108,7 +110,9 @@ func TestVerdictTick(t *testing.T) {
 	if err := f.s.VerdictTick(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.d.StateSQL().QueryRow(`SELECT count(*) FROM message_verdicts`).Scan(&n) //nolint:errcheck
+	if err := f.d.StateSQL().QueryRow(`SELECT count(*) FROM message_verdicts`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 1 {
 		t.Errorf("verdicts = %d after a second tick", n)
 	}

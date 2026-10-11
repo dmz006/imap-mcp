@@ -17,7 +17,7 @@ func TestEncryptFilesReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.Close()
+	_ = d.Close()
 
 	var out bytes.Buffer
 	targets := []encryptTarget{
@@ -50,7 +50,7 @@ func TestEncryptFilesReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer busy.Close()
+	defer func() { _ = busy.Close() }()
 	out.Reset()
 	err = encryptFiles(&out, []encryptTarget{{"cache", "db.cache.encryption_key", ca, "k", true}})
 	if err == nil || !strings.Contains(out.String(), "FAILED") || !strings.Contains(out.String(), "in use") {

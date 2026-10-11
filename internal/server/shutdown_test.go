@@ -25,7 +25,7 @@ func TestShutdownWithOpenEventStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 
 	cfg := &config.Config{Server: config.ServerConfig{Host: e2eHost, Port: port}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -55,7 +55,7 @@ func TestShutdownWithOpenEventStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
 	}

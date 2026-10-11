@@ -1,0 +1,41 @@
+# Accepted security findings for imap-mcp (AGENT.md D65).
+#
+# Policy: a vulnerable dependency is upgraded when a fix exists. When none
+# does, the finding is traced against imap-mcp's own code and, only if it
+# cannot be fixed now, recorded here with the analysis. CI fails on any
+# reachable govulncheck finding that is not listed here, validates this
+# file's schema (scripts/check_accepted_risks.py), and a daily workflow
+# re-validates every entry: past or near expiry, the module version moved,
+# or a fix is now published.
+#
+# Schema (same fields and rules as the datawatch acceptance standard):
+#   id            osv/<GO-YYYY-NNNN> (or cve/, dependabot/, code-scanning/)
+#   kind          go-module | go-stdlib
+#   package       module path (or "stdlib")
+#   version       version accepted (go.mod / toolchain at acceptance)
+#   severity      low | medium | moderate | high | critical
+#   impact.traced     true when traced against imap-mcp's code
+#   impact.reachable  yes | no | unknown
+#   impact.analysis   why it is (not) a risk here
+#   impact.method     how it was traced (required when traced)
+#   first_added   first acceptance (never changes)
+#   added         latest acceptance or renewal
+#   expires       at most added + 90 days when traced, + 30 days otherwise
+#   validated_by  who traced it
+#   reason        why it is accepted rather than fixed
+entries:
+  - id: osv/GO-2026-5932
+    kind: go-module
+    package: "golang.org/x/crypto"
+    version: "v0.58.0"
+    severity: moderate
+    impact:
+      traced: true
+      reachable: "no"
+      analysis: "Advisory covers only golang.org/x/crypto/openpgp and its subpackages (unmaintained, unsafe by design). imap-mcp imports none of them; it uses x/crypto for argon2, blake2b, ed25519 and poly1305 only."
+      method: "go list -deps ./... lists no golang.org/x/crypto/openpgp* package; govulncheck -show verbose reports the module as required but the vulnerable packages not imported."
+    first_added: "2026-10-11"
+    added: "2026-10-11"
+    expires: "2027-01-09"
+    validated_by: "claude-session"
+    reason: "No fixed version exists (the package is deprecated, not patched). Re-check each release and when x/crypto changes."

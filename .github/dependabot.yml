@@ -1,0 +1,26 @@
+# Dependabot version updates (AGENT.md D71): daily, grouped. Go minor and
+# patch updates arrive in one PR, GitHub Actions updates (which keep the
+# SHA pins current) in another; major versions get their own PRs. Security
+# updates are separate and come as soon as an advisory is published.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: daily
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps"
+    labels: [dependencies]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+    labels: [dependencies]

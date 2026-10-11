@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -52,7 +53,7 @@ var LastMigration *MigrationReport
 // one IMMEDIATE transaction, and verifies the fingerprints are unchanged
 // before committing. It is a no-op for new files, already-split files and
 // encrypted files (which can only have been created by 0.6.0+).
-func migrateLegacy(o Options) error {
+func migrateLegacy(o Options) (err error) {
 	kind, err := detect(o.Path)
 	if err != nil || kind != filePlain {
 		return err
@@ -61,7 +62,8 @@ func migrateLegacy(o Options) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	// The split writes; a failed close is reported with the result.
+	defer func() { err = errors.Join(err, conn.Close()) }()
 	conn.SetMaxOpenConns(1)
 
 	legacy, err := hasTable(conn, "messages")
@@ -132,6 +134,7 @@ func fingerprint(conn *sql.DB) (*tableFingerprint, error) {
 		if !ok {
 			continue
 		}
+		// #nosec G202 -- t ranges over the constant stateTables list
 		rows, err := conn.Query(`SELECT * FROM ` + t + ` ORDER BY 1, 2`)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t, err)
@@ -146,20 +149,20 @@ func fingerprint(conn *sql.DB) (*tableFingerprint, error) {
 		}
 		for rows.Next() {
 			if err := rows.Scan(ptrs...); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			for _, v := range vals {
-				fmt.Fprintf(h, "%T:%v\x1f", v, v)
+				_, _ = fmt.Fprintf(h, "%T:%v\x1f", v, v)
 			}
 			h.Write([]byte{0x1e})
 			n++
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
-		rows.Close()
+		_ = rows.Close()
 		fp.counts[t] = n
 		fp.digests[t] = hex.EncodeToString(h.Sum(nil))
 	}
@@ -183,7 +186,7 @@ func verifyBackup(path string, want *tableFingerprint) error {
 	if err != nil {
 		return fmt.Errorf("open backup: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // read-only
 	got, err := fingerprint(conn)
 	if err != nil {
 		return fmt.Errorf("fingerprint backup: %w", err)

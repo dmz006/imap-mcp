@@ -30,7 +30,7 @@ func newSvc(t *testing.T, caps ...imaplib.Cap) (*Service, *imaptest.Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	return New(cfg, pool, d, nil, nil), srv
 }
 
@@ -41,7 +41,7 @@ func inspect(t *testing.T, srv *imaptest.Server, folder string) *imapclient.Clie
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { _ = c.Close() })
 	if err := c.Login(imaptest.Username, imaptest.Password).Wait(); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,9 @@ func TestWriteOperations(t *testing.T) {
 					t.Fatalf("nothing may be expunged: %v", got)
 				}
 				// Clear the foreign \Deleted, then the fallback EXPUNGE is safe.
-				c.Store(imaplib.UIDSetNum(3), &imaplib.StoreFlags{Op: imaplib.StoreFlagsDel, Flags: []imaplib.Flag{imaplib.FlagDeleted}}, nil).Close()
+				if err := c.Store(imaplib.UIDSetNum(3), &imaplib.StoreFlags{Op: imaplib.StoreFlagsDel, Flags: []imaplib.Flag{imaplib.FlagDeleted}}, nil).Close(); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := s.DeleteMessage(ctx, "", "INBOX", 1, true); err != nil {
 					t.Fatal(err)
 				}

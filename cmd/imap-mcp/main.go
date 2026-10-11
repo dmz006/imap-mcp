@@ -132,7 +132,7 @@ func runRules(args []string) error {
 			return fmt.Errorf("open db: %w", err)
 		}
 	}
-	defer database.Close()
+	defer closeDB(log, database)
 	logMigration(log)
 
 	// rule.fired and hold.digest go into the webhook outbox; serve delivers
@@ -193,7 +193,7 @@ func runVerdictEval(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer database.Close()
+	defer closeDB(log, database)
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 	defer cancel()
 	pool := imap.NewPool(cfg, bus.New(), log)
@@ -270,28 +270,28 @@ func encryptFiles(w io.Writer, targets []encryptTarget) error {
 			continue
 		}
 		if t.key == "" {
-			fmt.Fprintf(w, "%s: %s not set; leaving %s as is\n", t.name, t.keyField, t.path)
+			_, _ = fmt.Fprintf(w, "%s: %s not set; leaving %s as is\n", t.name, t.keyField, t.path)
 			continue
 		}
 		rep, err := db.Encrypt(t.path, t.key)
 		switch {
 		case errors.Is(err, db.ErrAlreadyEncrypted):
-			fmt.Fprintf(w, "%s: %s is already encrypted\n", t.name, t.path)
+			_, _ = fmt.Fprintf(w, "%s: %s is already encrypted\n", t.name, t.path)
 			continue
 		case errors.Is(err, db.ErrNoDatabase):
-			fmt.Fprintf(w, "%s: %s does not exist yet; it will be created encrypted\n", t.name, t.path)
+			_, _ = fmt.Fprintf(w, "%s: %s does not exist yet; it will be created encrypted\n", t.name, t.path)
 			continue
 		case err != nil:
-			fmt.Fprintf(w, "%s: FAILED: %v\n", t.name, err)
+			_, _ = fmt.Fprintf(w, "%s: FAILED: %v\n", t.name, err)
 			failed = append(failed, t.name)
 			continue
 		}
-		fmt.Fprintf(w, "%s: encrypted %s (%d tables, %d rows verified); plaintext original removed\n",
+		_, _ = fmt.Fprintf(w, "%s: encrypted %s (%d tables, %d rows verified); plaintext original removed\n",
 			t.name, rep.Path, rep.Tables, rep.Rows)
 		if len(rep.PlaintextCopies) > 0 {
-			fmt.Fprintf(w, "%s: these plaintext copies still exist; delete them once you no longer need them:\n", t.name)
+			_, _ = fmt.Fprintf(w, "%s: these plaintext copies still exist; delete them once you no longer need them:\n", t.name)
 			for _, p := range rep.PlaintextCopies {
-				fmt.Fprintf(w, "  %s\n", p)
+				_, _ = fmt.Fprintf(w, "  %s\n", p)
 			}
 		}
 	}
@@ -341,6 +341,14 @@ func runServe(args []string) error {
 }
 
 // logMigration reports a legacy single-file split performed by db.OpenState.
+// closeDB closes database, logging rather than returning a failure: by then
+// the command's work is done and committed.
+func closeDB(log *slog.Logger, database *db.DB) {
+	if err := database.Close(); err != nil {
+		log.Warn("close db", "err", err)
+	}
+}
+
 func logMigration(log *slog.Logger) {
 	if m := db.LastMigration; m != nil {
 		log.Info("migrated legacy imap.db: cache tables moved to cache.db (rebuilt from IMAP); state verified unchanged",
@@ -436,14 +444,14 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 
 	pool := imap.NewPool(cfg, b, log)
 	if err := pool.Connect(ctx); err != nil {
-		database.Close()
+		_ = database.Close()
 		return nil, nil, fmt.Errorf("connect accounts: %w", err)
 	}
 
 	out, err := output.New(cfg.WorkingDir)
 	if err != nil {
 		pool.Close()
-		database.Close()
+		_ = database.Close()
 		return nil, nil, fmt.Errorf("output dir: %w", err)
 	}
 	log.Info("working directory", "path", out.Root())
@@ -454,7 +462,7 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 		dwTransport, err := cfg.Datawatch.Transport() // validated at config load
 		if err != nil {
 			pool.Close()
-			database.Close()
+			_ = database.Close()
 			return nil, nil, err
 		}
 		popts = append(popts, enrichment.WithDatawatch(cfg.Datawatch.APIURL, cfg.Datawatch.Token, dwTransport))
@@ -498,7 +506,7 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 
 	cleanup := func() {
 		pool.Close()
-		database.Close()
+		closeDB(log, database)
 	}
 
 	return &deps{

@@ -35,7 +35,7 @@ func TestWatcherLeavesOrdinaryMailUnread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.Login(imaptest.Username, imaptest.Password).Wait(); err != nil {
 		t.Fatal(err)
 	}

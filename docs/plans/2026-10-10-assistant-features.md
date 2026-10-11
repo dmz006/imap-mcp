@@ -400,7 +400,7 @@ not from the owner) is rejected and logged.
 | Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
 | V3 | 0.22.0 | Done (D59, D60) | Yes | Yes (all 37 gmail reply items carry a Gmail link; dmzs set to thunderbird, no open items) |
 | Q5 | 1.0.0 | Done (D42, D43, D61, D62, D63) | Yes | Yes (201 held senders listed; 2 domain blocks previewed then applied, 4 messages trashed, rules active per D61; no addresses in the service log; email modes off, unit-tested) |
-| S1 | after 1.0.0 | Planned (operator request 2026-10-11) | | |
+| S1 | 1.0.1 | Built (D64–D73) | Yes | Pending |
 
 When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).
@@ -425,10 +425,40 @@ below were made without DIP. Reviewed with the operator one at a time
 
 ## S1 — repository and CI security hardening (after 1.0.0)
 
-Operator request (2026-10-11): once 1.0.0 is out, review how the datawatch
-repository sets up security (secret scanning, code scanning, Dependabot,
-builds, releases, all CI and repository management; read only, no code
-copied), then harden this repository, harden CI, and enable every security
-feature and workflow. Scope and choices go through the decision process
-when S1 starts.
+Operator request (2026-10-11): review how the datawatch repository sets up
+security (read only, no code copied), then harden this repository, harden
+CI, and enable every security feature and workflow.
 
+**Review findings (2026-10-11).**
+- imap-mcp has one workflow (`release.yml`: tag-only, tag-pinned actions,
+  `contents: write` for the whole job, no scans). No CI on push or PRs, no
+  rulesets, no CodeQL, no Dependabot updates, vulnerability alerts and
+  private vulnerability reporting off, no SECURITY.md or CODEOWNERS.
+- datawatch: CI (test, golangci-lint, build), security-scan (govulncheck
+  blocking + an advisory run on the latest Go, gosec with a committed
+  baseline, an accepted-risks registry check), gitleaks on full history
+  (PRs, push, weekly), dependency-review on PRs (fail on high, deny
+  GPL-3.0/AGPL-3.0), release gated on test + scans with SHA-pinned actions,
+  `go mod tidy` check, goreleaser with checksums; rulesets for main
+  (no deletion or force push, PR, required checks; admin bypass) and v*
+  tags (no deletion, update or creation except bypass); CODEOWNERS on
+  sensitive paths; SECURITY.md; a daily re-validation of accepted risks.
+  datawatch lacks Dependabot, release signing, SBOM and provenance.
+- **Urgent (fixed by D64):** Go 1.25.10 left 18 reachable standard-library
+  vulnerabilities; Go 1.27.2 leaves none. x/crypto and x/text upgraded; the
+  one unfixable advisory (GO-2026-5932, openpgp, not imported) is the first
+  accepted-risk entry (D65).
+
+**Items** (each decided before it is built):
+
+| # | Item |
+|---|---|
+| S1.1 | Go 1.27.2 + dependency upgrades + accepted-risks registry (D64, D65) |
+| S1.2 | GitHub security features: Dependabot alerts and security updates, private vulnerability reporting, CodeQL, secret-scanning extras |
+| S1.3 | Dependabot version updates (`gomod`, `github-actions`) |
+| S1.4 | CI workflow: test (race, coverage), lint, build, `go mod tidy`, version check |
+| S1.5 | Security-scan workflow: govulncheck against the registry, gosec with a baseline, registry schema check; gitleaks; dependency-review |
+| S1.6 | Daily re-validation of accepted risks |
+| S1.7 | Release hardening: least-privilege permissions, SHA-pinned actions, gated on CI and scans, exact-semver tags, checksums signed, SBOM, build provenance |
+| S1.8 | Rulesets for main and v* tags; merge and Actions settings |
+| S1.9 | SECURITY.md, CODEOWNERS, PR and issue templates |

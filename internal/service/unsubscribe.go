@@ -314,13 +314,13 @@ func (s *Service) ListUnsubscribes(ctx context.Context, account string, withDryR
 		var r UnsubscribeRecord
 		var at int64
 		if err := rows.Scan(&r.ID, &r.Account, &r.Sender, &r.Method, &r.Host, &r.Status, &r.StatusCode, &r.Error, &r.Archived, &at); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return out, err
 		}
 		r.At = time.Unix(at, 0).UTC().Format(time.RFC3339)
 		out.Items = append(out.Items, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	out.Count = len(out.Items)
 	ign, err := s.ignoredUnsubscribes(ctx, account, false)
 	if err != nil {
@@ -364,7 +364,7 @@ func (s *Service) ignoredUnsubscribes(ctx context.Context, account string, onlyN
 		var r IgnoredUnsub
 		var t, rep int64
 		if err := rows.Scan(&r.ID, &r.Account, &r.Sender, &t, &rep); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return out, err
 		}
 		r.reported = rep == 1
@@ -372,7 +372,7 @@ func (s *Service) ignoredUnsubscribes(ctx context.Context, account string, onlyN
 		cands = append(cands, r)
 		at = append(at, t)
 	}
-	rows.Close()
+	_ = rows.Close()
 	for i, r := range cands {
 		if onlyNew && r.reported {
 			continue

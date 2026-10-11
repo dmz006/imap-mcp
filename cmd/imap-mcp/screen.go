@@ -48,7 +48,7 @@ func runScreen(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer database.Close()
+	defer closeDB(log, database)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	b := bus.New()

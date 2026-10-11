@@ -107,7 +107,7 @@ func (p *Pool) connect(ctx context.Context, a config.AccountConfig) (*Conn, erro
 	}
 
 	if err := authenticator.Authenticate(ctx, client); err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, err
 	}
 
@@ -258,7 +258,7 @@ func (p *Pool) reconnectOnce(ctx context.Context, name string) {
 	p.mu.Lock()
 	if old := p.conns[name]; old != nil {
 		old.mu.Lock()
-		old.client.Close() //nolint:errcheck
+		_ = old.client.Close()
 		old.mu.Unlock()
 	}
 	p.conns[name] = conn
@@ -273,7 +273,7 @@ func (p *Pool) Close() {
 	defer p.mu.Unlock()
 	for name, conn := range p.conns {
 		conn.mu.Lock()
-		conn.client.Logout().Wait() //nolint:errcheck
+		_ = conn.client.Logout().Wait()
 		conn.mu.Unlock()
 		p.log.Info("account disconnected", "account", name)
 	}

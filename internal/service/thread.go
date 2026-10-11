@@ -114,7 +114,7 @@ func (s *Service) cachedThread(ctx context.Context, p ThreadParams) ([]ThreadMes
 	if err != nil {
 		return out, false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	root := false
 	for rows.Next() {
 		var m ThreadMessage

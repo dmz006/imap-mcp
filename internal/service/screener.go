@@ -62,7 +62,7 @@ func (s *Service) HeldSenders(ctx context.Context, account string) (HeldList, er
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	idx := map[string]int{}
 	for rows.Next() {
 		var a, sender, folder, reasons, subject string
@@ -264,7 +264,7 @@ func (s *Service) heldOf(ctx context.Context, account, sender string) ([]heldRef
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []heldRef
 	for rows.Next() {
 		var h heldRef
