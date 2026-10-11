@@ -371,9 +371,9 @@ not from the owner) is rejected and logged.
 | D37 | Q3 | What the model may decide | Decided: tie-breaker + may hold score-0 scams; never releases |
 | D38 | Q3 | Body access for verdicts | Decided: cache, else read-only fetch |
 | D55 | Q3 | Verdict model and threshold | Decided: gemma4:26b at 0.9 (from evaluation) |
-| D39 | Q4 | Unsubscribe permission model | Open |
-| D40 | Q4 | mailto-only senders | Open |
-| D41 | Q4 | DKIM verification | Open |
+| D39 | Q4 | Unsubscribe permission model | Decided: new `unsubscribe` scope + confirm after dry run |
+| D40 | Q4 | mailto-only senders | Decided: report; send on confirm with `unsubscribe` + `send` scopes |
+| D41 | Q4 | DKIM verification | Decided: verify in imap-mcp; must cover both headers |
 | D42 | Q5 | Trusting digest replies | Open |
 | D43 | Q5 | Block scope | Open |
 

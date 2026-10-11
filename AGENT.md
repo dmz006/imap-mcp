@@ -431,6 +431,17 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D39 (unsubscribe permission, Q4):** a new `unsubscribe`
+  token scope; the tool is hidden from tokens without it, and every real
+  unsubscribe needs `confirm: true` after a dry run.
+- **2026-10-11 — D40 (mailto-only senders, Q4):** reported (the dry run shows
+  the address and the exact message), and sent after approval: the real call
+  needs `confirm: true` from a token holding both the `unsubscribe` and `send`
+  scopes, sent from the account that received the mail.
+- **2026-10-11 — D41 (DKIM for unsubscribe, Q4):** imap-mcp verifies the DKIM
+  signature itself (go-msgauth, MIT) and requires it to cover
+  `List-Unsubscribe` and `List-Unsubscribe-Post`; Authentication-Results is
+  not trusted for this.
 - **2026-10-11 — D55 (Q3 model choice):** `gemma4:26b` at confidence 0.9,
   chosen from the evaluation of 9 models on the owner's mail (50 held spam,
   50 correspondent messages): 43 of 50 spam caught, 0 false positives, 7 of
