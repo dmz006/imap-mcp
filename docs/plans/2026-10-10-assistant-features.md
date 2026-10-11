@@ -391,7 +391,7 @@ not from the owner) is rejected and logged.
 | V1 | 0.18.x | Done (validation follow-ups: D50, D51) | Yes | Yes (gmail needs_reply 46 → 23; 26 identities confirmed) |
 | V2 | 0.19.x | Done (D52) | Yes | Yes (setup_check: 5 findings on production; packs listed) |
 | Q3 | 0.20.0 | Done, shadow mode (gemma4:26b @ 0.9, D55) | Yes | Yes (108 shadow verdicts in the first 90 min; activation is the operator's call) |
-| Q4 | 0.21.0 | Built (D39–D41, D56–D58) | Yes | Pending |
+| Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
 | Q5 | 0.22.0 → 1.0.0 | Planned | | |
 
 When Q5 is done and validated, the release is the official **1.0.0**
