@@ -136,7 +136,7 @@ See [docs/known-limitations.md](docs/known-limitations.md) for the full list.
 
 ### 1. Build
 
-Requires Go 1.25 or newer.
+Requires Go 1.27.2 or newer.
 
 ```bash
 git clone https://github.com/dmz006/imap-mcp

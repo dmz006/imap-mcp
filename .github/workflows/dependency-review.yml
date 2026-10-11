@@ -1,0 +1,32 @@
+# Dependency review on pull requests (AGENT.md S1.5): fail on new
+# dependencies with high or critical advisories, or GPL-3.0/AGPL-3.0
+# licenses. Also runnable by hand for a branch (the daily re-validation's
+# PRs are opened with the workflow token, which starts no pull_request run).
+name: dependency-review
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      head:
+        description: "Branch to review against main"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later
+          base-ref: ${{ github.event.pull_request.base.sha || 'main' }}
+          head-ref: ${{ github.event.pull_request.head.sha || github.event.inputs.head }}

@@ -1,0 +1,60 @@
+# GoReleaser (AGENT.md D69). The release workflow runs it on an exact
+# vX.Y.Z tag after the tests and scans pass. Release notes come from
+# CHANGELOG.md (scripts/release-notes.sh), passed with --release-notes.
+version: 2
+
+project_name: imap-mcp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/imap-mcp
+    binary: imap-mcp
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+# Keyless signing (Sigstore): the bundle holds the signature, the
+# certificate for this workflow's identity and the transparency-log entry.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--bundle=${signature}", "${artifact}", "--yes"]
+
+# One SPDX SBOM per archive (syft).
+sboms:
+  - artifacts: archive
+
+changelog:
+  disable: true
+
+release:
+  name_template: "{{ .Tag }}"
+  mode: replace

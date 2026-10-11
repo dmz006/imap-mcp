@@ -8,6 +8,7 @@ config.yaml
 !config.example.yaml
 # Built-in rule packs are public templates, never config (D52).
 !internal/rulepacks/packs/*.yaml
+!.goreleaser.yaml
 
 # Environment
 .env

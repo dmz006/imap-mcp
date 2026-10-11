@@ -431,6 +431,10 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D73 (lint gate, S1.4):** fix all golangci-lint findings
+  (234: errcheck, staticcheck, unused) rather than exclude or baseline them;
+  `.golangci.yml` keeps the standard linters and adds gosec. Errors that can
+  matter are returned or logged; the rest are discarded explicitly.
 - **2026-10-11 — D66 (S1 rollout):** 1.0.1 (Go 1.27.2 and the dependency
   upgrades) ships together with the registry validator and the CI and
   security workflows, not before. Every GitHub security feature is enabled

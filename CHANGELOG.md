@@ -6,6 +6,40 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-11
+
+### Security
+- **Go 1.27.2** (from 1.25.10, which no longer gets fixes): 18 reachable
+  standard-library vulnerabilities fixed (net/http, crypto/tls, crypto/x509,
+  net/textproto, mime, net/url, encoding/asn1). `golang.org/x/crypto`
+  v0.58.0 and `golang.org/x/text` v0.43.0. govulncheck: 0 reachable.
+- **Accepted-risks registry** (`security/accepted-risks.yml`, D65): the one
+  advisory with no fix (GO-2026-5932, `x/crypto/openpgp`, not imported) is
+  traced and recorded; CI rejects any reachable finding not listed, and a
+  daily workflow re-validates every entry and opens a PR when a fix lands.
+- **gosec clean** (D70), run inside golangci-lint because the standalone
+  binary cannot read Go 1.27 export data. The chi `RealIP` middleware is
+  removed (deprecated as spoofable): auth logs record the TCP peer.
+  Sandbox files are written 0600.
+
+### Fixed
+- `list_messages` with an offset of 2^32 or more returned an early page
+  instead of nothing; `top_senders` with a huge `scan` scanned almost
+  nothing. Both are range-checked now.
+- Errors from closing databases after migration or encryption, and from
+  enrichment status updates, are returned or logged instead of dropped.
+- The event stream stops writing once the client is gone.
+
+### Added
+- CI on every push and pull request (tests with the race detector and
+  coverage, golangci-lint with gosec, builds for every release target),
+  security scans (govulncheck against the registry, gosec, gitleaks over the
+  full history, dependency review), Dependabot (daily, grouped).
+- Signed releases: GoReleaser builds linux/darwin (amd64, arm64) and
+  windows/amd64; `SHA256SUMS` is signed keylessly with cosign, each archive
+  has an SBOM, and GitHub records build provenance. See SECURITY.md.
+- SECURITY.md, CODEOWNERS, pull request and issue templates.
+
 ## [1.0.0] - 2026-10-11
 
 The first official release: every planned assistant feature is in and
