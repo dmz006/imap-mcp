@@ -381,8 +381,8 @@ not from the owner) is rejected and logged.
 | Phase | Version | Status | Tested | Validated |
 |---|---|---|---|---|
 | Q0 | 0.15.5 | Done | Yes | Yes |
-| Q1 | 0.16.0 | Built | Yes | Pending (production rescan) |
-| Q2 | 0.17.0 | Built | Yes | Pending (production rescan) |
+| Q1 | 0.16.x | Done | Yes | Yes (rescan complete; needs_reply refined by D48–D51) |
+| Q2 | 0.17.x | Done | Yes | Yes (suggestions on one account; Gmail @domain match not yet exercised) |
 | V1 | 0.18.x | Done (validation follow-ups: D50, D51) | Yes | Yes (gmail needs_reply 46 → 23; 26 identities confirmed) |
 | V2 | 0.19.0 | Planned (D52) | | |
 | Q3 | 0.20.0 | Planned | | |
