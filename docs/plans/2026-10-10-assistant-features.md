@@ -292,7 +292,8 @@ Design:
 - Dry run shows the method that would be used, or why it can't
   (no header, mailto only, DKIM fails).
 - After a 2xx: optional archive of that sender's mail (existing `move_bulk`
-  path) and an inactive "watch" rule that reports if mail keeps arriving.
+  path; needs `write` too, D57). Mail still arriving after the grace period
+  is reported in the digest and `setup_check`, with a rule offered (D56).
 - Audit: every attempt recorded in `imap.db` (sender, method, status code,
   time) and an `unsubscribe.done` event with counts/status only.
 
@@ -374,6 +375,8 @@ not from the owner) is rejected and logged.
 | D39 | Q4 | Unsubscribe permission model | Decided: new `unsubscribe` scope + confirm after dry run |
 | D40 | Q4 | mailto-only senders | Decided: report; send on confirm with `unsubscribe` + `send` scopes |
 | D41 | Q4 | DKIM verification | Decided: verify in imap-mcp; must cover both headers |
+| D56 | Q4 | Senders who ignore an unsubscribe | Decided: track; digest + setup_check after 3 days (configurable); offer a rule |
+| D57 | Q4 | Scope for archive_to | Decided: also needs `write` |
 | D42 | Q5 | Trusting digest replies | Open |
 | D43 | Q5 | Block scope | Open |
 

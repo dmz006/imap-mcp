@@ -431,6 +431,13 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D56 (senders who ignore an unsubscribe, Q4):** every
+  unsubscribe is recorded; mail from that sender arriving more than
+  `unsubscribe.grace_days` (default 3) later is listed in the daily digest
+  and `setup_check`, with an inactive trash rule offered. Replaces the
+  plan's "watch rule" (rules cannot report).
+- **2026-10-11 — D57 (archive after unsubscribe, Q4):** `archive_to` also
+  needs the `write` scope, like every other move.
 - **2026-10-11 — D39 (unsubscribe permission, Q4):** a new `unsubscribe`
   token scope; the tool is hidden from tokens without it, and every real
   unsubscribe needs `confirm: true` after a dry run.
