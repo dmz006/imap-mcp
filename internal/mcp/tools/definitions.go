@@ -424,6 +424,27 @@ func DismissReplyTool() mcp.Tool {
 	)
 }
 
+func HeldSendersTool() mcp.Tool {
+	return mcp.NewTool("held_senders",
+		mcp.WithDescription("List senders whose mail the new-sender hold is holding and nobody has decided yet, numbered as in the daily digest, with message counts, reasons and up to 3 subjects"),
+		mcp.WithString("account", mcp.Description("Account name (omit for all)")),
+	)
+}
+
+func ScreenSendersTool() mcp.Tool {
+	return mcp.NewTool("screen_senders",
+		mcp.WithDescription("Decide held senders (the screener). approve trusts the sender and moves its held mail to inbox, feed or receipts (feed/receipts also get a routing rule); block trashes its held mail and adds a trash rule for its domain (only the address for webmail or a domain you correspond with). A dry run unless confirm: true; the preview's `run` is the exact live call. New rules are inactive unless rules.screener.rules_active"),
+		mcp.WithString("account", mcp.Description("Account name (omit for the default)")),
+		mcp.WithArray("decisions", mcp.Required(), mcp.Description("[{sender, action: approve|block, dest: inbox|feed|receipts}]"),
+			mcp.Items(map[string]any{"type": "object", "properties": map[string]any{
+				"sender": map[string]any{"type": "string"},
+				"action": map[string]any{"type": "string", "enum": []string{"approve", "block"}},
+				"dest":   map[string]any{"type": "string", "enum": []string{"inbox", "feed", "receipts"}},
+			}, "required": []string{"sender", "action"}})),
+		mcp.WithBoolean("confirm", mcp.Description("true to apply (default false: preview)")),
+	)
+}
+
 func UnsubscribeTool() mcp.Tool {
 	return mcp.NewTool("unsubscribe",
 		mcp.WithDescription("Unsubscribe from a sender the safe way: RFC 8058 one-click (an https List-Unsubscribe whose headers a verified DKIM signature covers), or the sender's mailto address. Never follows links in the body. Without confirm it is a dry run that shows the method or why it isn't possible; a confirmed call needs a dry run for the same sender in the last hour. mailto also needs the send scope; archive_to also needs write"),

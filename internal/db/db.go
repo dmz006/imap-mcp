@@ -320,6 +320,7 @@ var stateColumns = []struct{ table, column, decl string }{
 	{"intel_scan", "rescan_until", "INTEGER"},
 	{"intel_messages", "folder", "TEXT"},
 	{"webhooks", "payload", "TEXT DEFAULT 'metadata'"},
+	{"held_messages", "decision", "TEXT"}, // Q5: approve:<dest> | block
 }
 
 // migrateState brings an existing imap.db up to the current schema: missing

@@ -220,3 +220,19 @@ func (s *Server) handleListUnsubscribes(w http.ResponseWriter, r *http.Request) 
 	q := r.URL.Query()
 	respond(w)(s.svc.ListUnsubscribes(r.Context(), q.Get("account"), q.Get("dry_runs") == "true", queryInt(r, "limit", 100)))
 }
+
+// GET /api/held?account=
+func (s *Server) handleHeldSenders(w http.ResponseWriter, r *http.Request) {
+	respond(w)(s.svc.HeldSenders(r.Context(), r.URL.Query().Get("account")))
+}
+
+// POST /api/held/{account}/decide (write; a preview unless confirm, D62)
+// Body: {"decisions": [{sender, action, dest}], "confirm"}
+func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
+	var req service.ScreenParams
+	if !decode(w, r, &req) {
+		return
+	}
+	req.Account = chi.URLParam(r, "account")
+	respond(w)(s.svc.ScreenVia(r.Context(), req, "rest"))
+}

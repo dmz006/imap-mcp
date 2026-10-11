@@ -43,6 +43,7 @@ var toolScopes = map[string]httpauth.Scope{
 	"read_file":            httpauth.ScopeRead,
 	"list_files":           httpauth.ScopeRead,
 	"list_unsubscribes":    httpauth.ScopeRead,
+	"held_senders":         httpauth.ScopeRead,
 
 	// write — mailbox changes, rules changes, sandbox writes
 	"create_folder":      httpauth.ScopeWrite,
@@ -67,6 +68,7 @@ var toolScopes = map[string]httpauth.Scope{
 	"import_rule_pack":   httpauth.ScopeWrite,
 	"resolve_anomaly":    httpauth.ScopeWrite,
 	"dismiss_reply":      httpauth.ScopeWrite,
+	"screen_senders":     httpauth.ScopeWrite,
 	"export_message":     httpauth.ScopeWrite,
 	"write_file":         httpauth.ScopeWrite,
 	"delete_file":        httpauth.ScopeWrite,

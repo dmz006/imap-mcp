@@ -58,6 +58,8 @@ func run() error {
 		return runDB(os.Args[2:])
 	case "verdict-eval":
 		return runVerdictEval(os.Args[2:])
+	case "screen":
+		return runScreen(os.Args[2:])
 	case "version":
 		fmt.Println(Version)
 		return nil
@@ -480,13 +482,18 @@ func buildDeps(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 	scanner.SetBus(b) // anomaly.detected (D22)
 	// The verdict model's job runs after each tick (D37, D53); it does nothing
 	// until intelligence.verdict.model is set.
-	scanner.SetAfterTick(service.New(cfg, pool, database, syncer, pipeline).VerdictTick)
+	bg := service.New(cfg, pool, database, syncer, pipeline)
+	scanner.SetAfterTick(bg.VerdictTick)
+	// The screener's email commands (D42): digest replies in token mode, the
+	// inbound command channel in hmac mode. Both do nothing when off.
+	b.Subscribe(bus.EventInboundCommand, bg.HandleInboundScreen)
 
 	// Start background workers
 	go syncer.Run(ctx)
 	go pipeline.Run(ctx)
 	go scanner.Run(ctx)
 	go watcher.Run(ctx)
+	go bg.RunScreenReplies(ctx)
 	go pool.StartKeepalive(ctx, 4*time.Minute) // keep IMAP connections warm + self-heal
 
 	cleanup := func() {
@@ -563,6 +570,7 @@ Usage:
                                   Run OAuth2 browser flow for an account
   imap-mcp run-rules [--dry-run] [--config PATH]
   imap-mcp verdict-eval --models a,b [--url URL] [--per-class N] [--config PATH]
+  imap-mcp screen [--account A] [--approve SENDER[:feed|receipts]]... [--block SENDER]... [--confirm] [--json] [--config PATH]
                                   Score verdict models on your own labeled mail
                                   Apply active rules once and exit
   imap-mcp db encrypt [--only state|cache] [--config PATH]

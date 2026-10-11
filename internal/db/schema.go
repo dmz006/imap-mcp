@@ -371,6 +371,45 @@ CREATE TABLE IF NOT EXISTS message_verdicts (
     PRIMARY KEY (account, msg_hash)
 ) WITHOUT ROWID;
 
+-- screen_digests: each digest's numbered held senders and its single-use
+-- reply token (Q5, D42). numbering is a JSON array of sender addresses
+-- (number = index + 1). A newer digest supersedes older ones.
+CREATE TABLE IF NOT EXISTS screen_digests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    account     TEXT NOT NULL,
+    message_ref TEXT NOT NULL,   -- the digest's Message-ID
+    token       TEXT NOT NULL,
+    numbering   TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    used_at     INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_screen_digests_account ON screen_digests(account, id);
+
+-- screen_decisions: what the screener decided (Q5): approve to a
+-- destination, or block. via: mcp | rest | cli | email-token | email-hmac.
+CREATE TABLE IF NOT EXISTS screen_decisions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    account    TEXT NOT NULL,
+    sender     TEXT NOT NULL,
+    action     TEXT NOT NULL,   -- approve | block
+    dest       TEXT,            -- inbox | feed | receipts (approve)
+    target     TEXT,            -- what the rule matches (block: domain or address)
+    rule_id    INTEGER,
+    moved      INTEGER NOT NULL DEFAULT 0,
+    via        TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- screen_replies: digest replies already handled or rejected (token mode).
+CREATE TABLE IF NOT EXISTS screen_replies (
+    account    TEXT NOT NULL,
+    uid        INTEGER NOT NULL,
+    status     TEXT NOT NULL,   -- ok | error | why it was rejected
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (account, uid)
+);
+
 -- unsubscribes: every unsubscribe attempt and dry run (Q4, D39-D41, D56).
 -- The one-click URL can identify the recipient, so only its host is kept.
 -- status: dry_run | done | failed | sent (mailto). ignored_reported marks a
@@ -430,6 +469,7 @@ CREATE TABLE IF NOT EXISTS held_messages (
     held_at      INTEGER NOT NULL,
     released_at  INTEGER,           -- found back in the inbox: the sender is trusted
     digested_at  INTEGER,
+    decision     TEXT,              -- the screener's decision (Q5): approve:<dest> | block
     PRIMARY KEY (account, msg_hash)
 );
 

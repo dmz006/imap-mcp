@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base32"
+	"encoding/json"
 	"fmt"
 	"mime"
 	"slices"
@@ -11,6 +14,7 @@ import (
 	imaplib "github.com/emersion/go-imap/v2"
 
 	"github.com/dmz006/imap-mcp/internal/bus"
+	"github.com/dmz006/imap-mcp/internal/config"
 )
 
 // heldRetention is how long held_messages rows are kept.
@@ -39,7 +43,7 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 	if _, err := st.Exec(`DELETE FROM held_messages WHERE held_at < ?`, now.Add(-heldRetention).Unix()); err != nil {
 		return err
 	}
-	rows, err := st.Query(`SELECT DISTINCT account FROM held_messages WHERE digested_at IS NULL AND released_at IS NULL`)
+	rows, err := st.Query(`SELECT DISTINCT account FROM held_messages WHERE digested_at IS NULL AND released_at IS NULL AND decision IS NULL`)
 	if err != nil {
 		return err
 	}
@@ -116,7 +120,7 @@ func (s *Service) sendHoldDigests(now time.Time) error {
 func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding) (sent bool, err error) {
 	st := s.db.StateSQL()
 	rows, err := st.Query(`SELECT COALESCE(sender,''), COALESCE(subject,''), COALESCE(reasons,''), COALESCE(folder,''), held_at, COALESCE(message_ref,'')
-		FROM held_messages WHERE account = ? AND digested_at IS NULL AND released_at IS NULL ORDER BY held_at`, account)
+		FROM held_messages WHERE account = ? AND digested_at IS NULL AND released_at IS NULL AND decision IS NULL ORDER BY held_at`, account)
 	if err != nil {
 		return false, err
 	}
@@ -167,6 +171,13 @@ func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding)
 			owner = bareAddr(a.Auth.Username)
 		}
 	}
+	if len(held) > 0 {
+		hl, err := s.HeldSenders(context.Background(), account)
+		if err != nil {
+			return false, err
+		}
+		learned.screen = digestScreen{mode: s.cfg.Rules.Screener.EmailMode(), token: newScreenToken(), account: account, senders: hl.Senders}
+	}
 	raw := digestMessage(owner, account, held, waiting, learned, now)
 	conn.Lock()
 	cmd := conn.Client().Append("INBOX", int64(len(raw)), &imaplib.AppendOptions{Time: now})
@@ -182,6 +193,17 @@ func (s *Service) sendHoldDigest(account string, now time.Time, setup []Finding)
 	if _, err := st.Exec(`UPDATE held_messages SET digested_at = ? WHERE account = ? AND digested_at IS NULL AND released_at IS NULL`,
 		now.Unix(), account); err != nil {
 		return false, err
+	}
+	if len(learned.screen.senders) > 0 {
+		var nums []string
+		for _, h := range learned.screen.senders {
+			nums = append(nums, h.Sender)
+		}
+		b, _ := json.Marshal(nums)
+		if _, err := st.Exec(`INSERT INTO screen_digests(account, message_ref, token, numbering, created_at) VALUES(?,?,?,?,?)`,
+			account, digestMessageID(account, now), learned.screen.token, string(b), now.Unix()); err != nil {
+			return false, err
+		}
 	}
 	if err := s.markIgnoredReported(context.Background(), learned.ignored); err != nil {
 		return false, err
@@ -206,8 +228,16 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 	if len(held) > 0 {
 		fmt.Fprintf(&body, "imap-mcp held %d message(s) from first-time senders that looked like bulk mail or scams.\r\n", len(held))
 		body.WriteString("Nothing was deleted. Move a message back to your inbox and that sender is never held again.\r\n\r\n")
+		num := map[string]int{}
+		for _, h := range learned.screen.senders {
+			num[h.Sender] = h.Number
+		}
 		for _, h := range held {
-			fmt.Fprintf(&body, "- %s  %s\r\n  \"%s\"\r\n  why: %s -> %s\r\n",
+			tag := "-"
+			if n := num[strings.ToLower(h.sender)]; n > 0 {
+				tag = fmt.Sprintf("[%d]", n)
+			}
+			fmt.Fprintf(&body, "%s %s  %s\r\n  \"%s\"\r\n  why: %s -> %s\r\n", tag,
 				time.Unix(h.heldAt, 0).In(now.Location()).Format("Jan 2 15:04"), h.sender,
 				oneLine.Replace(h.subject), h.reasons, h.folder)
 			if h.link != "" {
@@ -215,6 +245,7 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 			}
 			body.WriteString("\r\n")
 		}
+		body.WriteString(learned.screen.instructions(held))
 	}
 	if waiting.Count > 0 {
 		fmt.Fprintf(&body, "Waiting on you: %d conversation(s) where someone wrote to you %d or more days ago and you have not replied.\r\n",
@@ -308,8 +339,8 @@ func digestMessage(owner, account string, held []heldRow, waiting ReplyList, lea
 	} else {
 		msg.WriteString("From: imap-mcp\r\n")
 	}
-	fmt.Fprintf(&msg, "Subject: %s\r\nDate: %s\r\nMessage-ID: <hold-digest-%s-%d@imap-mcp.invalid>\r\n",
-		mime.QEncoding.Encode("utf-8", subject), now.Format(time.RFC1123Z), account, now.Unix())
+	fmt.Fprintf(&msg, "Subject: %s\r\nDate: %s\r\nMessage-ID: %s\r\n",
+		mime.QEncoding.Encode("utf-8", subject), now.Format(time.RFC1123Z), digestMessageID(account, now))
 	msg.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
 	msg.WriteString(body.String())
 	return []byte(msg.String())
@@ -325,6 +356,60 @@ type digestLearning struct {
 	identities []Identity     // addresses that may be the owner's (D50)
 	setup      []Finding      // new setup-check findings (D52)
 	ignored    []IgnoredUnsub // senders still mailing after an unsubscribe (D56)
+	screen     digestScreen   // numbered held senders and how to decide (Q5)
+}
+
+// digestScreen is the digest's screener part (Q5, D42).
+type digestScreen struct {
+	mode, token, account string
+	senders              []HeldSender // all undecided held senders, numbered
+}
+
+// instructions tells the owner how to decide held senders, per the
+// email-command mode (D42), and lists older undecided senders.
+func (d digestScreen) instructions(held []heldRow) string {
+	if len(d.senders) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	shown := map[string]bool{}
+	for _, h := range held {
+		shown[strings.ToLower(h.sender)] = true
+	}
+	var older []string
+	for _, h := range d.senders {
+		if !shown[h.Sender] {
+			older = append(older, fmt.Sprintf("[%d] %s (%d)", h.Number, h.Sender, h.Messages))
+		}
+	}
+	if len(older) > 0 {
+		fmt.Fprintf(&b, "Still held from earlier: %s\r\n\r\n", strings.Join(older, ", "))
+	}
+	b.WriteString("Decide a sender: approve sends its mail to your inbox (or feed / receipts) and trusts it; block trashes it and\r\n")
+	b.WriteString("adds a trash rule for its domain (only the address for webmail or a domain you correspond with).\r\n")
+	switch d.mode {
+	case config.ScreenEmailToken:
+		b.WriteString("Reply to this message with lines like:\r\n  approve 3\r\n  approve 3 feed\r\n  approve 5 receipts\r\n  block 7\r\n  release all\r\n")
+		fmt.Fprintf(&b, "Keep this line in your reply (it works once, until the next digest): token %s\r\n\r\n", d.token)
+	case config.ScreenEmailHMAC:
+		fmt.Fprintf(&b, "Send a signed command envelope, verb screen, args {\"account\":%q,\"commands\":\"approve 3 feed; block 7\"}.\r\n\r\n", d.account)
+	default:
+		fmt.Fprintf(&b, "Ask your agent, or use screen_senders (MCP), POST /api/held/%s/decide, or imap-mcp screen. Each previews first.\r\n\r\n", d.account)
+	}
+	return b.String()
+}
+
+// digestMessageID is the Message-ID of the digest sent at now.
+func digestMessageID(account string, now time.Time) string {
+	return fmt.Sprintf("<hold-digest-%s-%d@imap-mcp.invalid>", account, now.Unix())
+}
+
+// newScreenToken returns a random single-use reply token.
+func newScreenToken() string {
+	b := make([]byte, 10)
+	_, _ = rand.Read(b)
+	t := strings.ToUpper(base32.StdEncoding.EncodeToString(b))
+	return "SCR-" + t[:4] + "-" + t[4:8] + "-" + t[8:12]
 }
 
 func (s *Service) digestLearned(account string) (digestLearning, error) {
@@ -380,8 +465,8 @@ func (s *Service) HoldStatus() (HoldStatus, error) {
 	}
 	var last int64
 	err := s.db.StateSQL().QueryRow(`SELECT
-			count(*) FILTER (WHERE released_at IS NULL),
-			count(*) FILTER (WHERE released_at IS NULL AND digested_at IS NULL),
+			count(*) FILTER (WHERE released_at IS NULL AND decision IS NULL),
+			count(*) FILTER (WHERE released_at IS NULL AND decision IS NULL AND digested_at IS NULL),
 			COALESCE(max(digested_at), 0)
 		FROM held_messages`).Scan(&st.Held, &st.AwaitingDigest, &last)
 	if err != nil {

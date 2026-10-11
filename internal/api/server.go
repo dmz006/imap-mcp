@@ -178,6 +178,8 @@ func (s *Server) Router() http.Handler {
 		r.With(read).Get("/api/verdicts/eval", s.handleVerdictEval)
 		r.With(read).Get("/api/rule-packs", s.handleListRulePacks)
 		r.With(unsub).Post("/api/unsubscribe", s.handleUnsubscribe)
+		r.With(read).Get("/api/held", s.handleHeldSenders)
+		r.With(write).Post("/api/held/{account}/decide", s.handleScreen)
 		r.With(read).Get("/api/unsubscribes", s.handleListUnsubscribes)
 		r.With(write).Post("/api/rule-packs/{name}/import", s.handleImportRulePack)
 		r.With(write).Post("/api/identities/confirm", s.handleConfirmIdentity)

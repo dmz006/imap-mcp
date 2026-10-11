@@ -50,6 +50,7 @@ var Events = []string{
 	string(bus.EventHoldDigest),
 	string(bus.EventRuleSuggested),
 	string(bus.EventUnsubscribeDone),
+	string(bus.EventScreenerDecided),
 	string(bus.EventAccountConnected),
 	string(bus.EventAccountError),
 	string(bus.EventAccountDisconnect),
@@ -141,6 +142,7 @@ var metadataKeys = []string{
 	"anomaly_id", "kind", "new", "cached", "removed", "flags_updated", "rebuilt",
 	"type", "severity", // anomaly.detected (D22): the finding's type and severity, never the sender
 	"suggested", "created", // rule.suggested (D46): counts in the metadata form
+	"approved", "blocked", "moved", "via", // screener.decided (Q5): counts and channel, never senders
 	"method", "status", "status_code", "archived", // unsubscribe.done (Q4): never the sender or URL
 	"held", "waiting", // hold.digest (D31): how many held / waiting on the owner, never who or what (the account is on the event)
 }

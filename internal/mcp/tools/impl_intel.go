@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/dmz006/imap-mcp/internal/httpauth"
 	"strings"
 
@@ -157,4 +158,23 @@ func (h *Handlers) Unsubscribe(ctx context.Context, req mcp.CallToolRequest) (*m
 // ListUnsubscribes lists the unsubscribe log and senders still mailing.
 func (h *Handlers) ListUnsubscribes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return result(h.svc.ListUnsubscribes(ctx, req.GetString("account", ""), req.GetBool("dry_runs", false), int(req.GetFloat("limit", 100))))
+}
+
+// HeldSenders lists undecided held senders, numbered.
+func (h *Handlers) HeldSenders(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return result(h.svc.HeldSenders(ctx, req.GetString("account", "")))
+}
+
+// ScreenSenders decides held senders (Q5); a preview unless confirm (D62).
+func (h *Handlers) ScreenSenders(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	var decisions []service.ScreenDecision
+	if raw, ok := req.GetArguments()["decisions"]; ok {
+		b, _ := json.Marshal(raw)
+		if err := json.Unmarshal(b, &decisions); err != nil {
+			return mcp.NewToolResultError("decisions must be [{sender, action, dest}]"), nil
+		}
+	}
+	return result(h.svc.Screen(ctx, service.ScreenParams{
+		Account: req.GetString("account", ""), Decisions: decisions, Confirm: req.GetBool("confirm", false),
+	}))
 }

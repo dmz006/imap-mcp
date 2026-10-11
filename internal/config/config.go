@@ -405,6 +405,62 @@ type RulesConfig struct {
 	HoldDigestHour int `yaml:"hold_digest_hour"`
 	// Learn turns the owner's own moves into rule suggestions (AGENT.md D34–D36, D47).
 	Learn LearnConfig `yaml:"learn"`
+	// Screener decides held senders: approve to inbox, feed or receipts, or
+	// block (AGENT.md Q5, D42, D43, D61, D62).
+	Screener ScreenerConfig `yaml:"screener"`
+}
+
+// Screener email-command modes (D42).
+const (
+	ScreenEmailOff   = "off"   // MCP, REST, CLI or an agent only (default)
+	ScreenEmailToken = "token" // a digest reply from the owner's address, DKIM/DMARC pass, quoting the token
+	ScreenEmailHMAC  = "hmac"  // the inbound command envelope with HMAC
+)
+
+// ScreenerConfig tunes the screener.
+type ScreenerConfig struct {
+	// EmailCommands: off (default), token or hmac (D42).
+	EmailCommands string `yaml:"email_commands"`
+	// FeedFolder and ReceiptsFolder are where approved senders are routed.
+	// Defaults Feed and Receipts; created when first used.
+	FeedFolder     string `yaml:"feed_folder"`
+	ReceiptsFolder string `yaml:"receipts_folder"`
+	// RulesActive: routing and block rules start active (default false, D61).
+	RulesActive bool `yaml:"rules_active"`
+	// PollMinutes: how often serve looks for digest replies (token mode). Default 5.
+	PollMinutes int `yaml:"poll_minutes"`
+}
+
+// EmailMode returns the email-command mode (default off).
+func (s ScreenerConfig) EmailMode() string {
+	if m := strings.ToLower(strings.TrimSpace(s.EmailCommands)); m != "" {
+		return m
+	}
+	return ScreenEmailOff
+}
+
+// Feed returns the feed folder (default Feed).
+func (s ScreenerConfig) Feed() string {
+	if s.FeedFolder != "" {
+		return s.FeedFolder
+	}
+	return "Feed"
+}
+
+// Receipts returns the receipts folder (default Receipts).
+func (s ScreenerConfig) Receipts() string {
+	if s.ReceiptsFolder != "" {
+		return s.ReceiptsFolder
+	}
+	return "Receipts"
+}
+
+// Poll returns the token-mode poll interval (default 5 minutes).
+func (s ScreenerConfig) Poll() time.Duration {
+	if s.PollMinutes <= 0 {
+		return 5 * time.Minute
+	}
+	return time.Duration(s.PollMinutes) * time.Minute
 }
 
 // LearnConfig tunes learning from moves. Zero values mean the defaults.
@@ -827,6 +883,23 @@ func applyEnvOverrides(cfg *Config) {
 			}
 		}
 	}
+	if v := os.Getenv("IMAP_MCP_RULES_SCREENER_EMAIL_COMMANDS"); v != "" {
+		cfg.Rules.Screener.EmailCommands = v
+	}
+	if v := os.Getenv("IMAP_MCP_RULES_SCREENER_RULES_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Rules.Screener.RulesActive = b
+		}
+	}
+	for key, dst := range map[string]*string{
+		"IMAP_MCP_RULES_SCREENER_FEED_FOLDER":     &cfg.Rules.Screener.FeedFolder,
+		"IMAP_MCP_RULES_SCREENER_RECEIPTS_FOLDER": &cfg.Rules.Screener.ReceiptsFolder,
+	} {
+		if v := os.Getenv(key); v != "" {
+			*dst = v
+		}
+	}
+	envInt("IMAP_MCP_RULES_SCREENER_POLL_MINUTES", &cfg.Rules.Screener.PollMinutes)
 	if v := os.Getenv("IMAP_MCP_ENRICHMENT_BACKFILL_WINDOW"); v != "" {
 		cfg.Enrichment.BackfillWindow = v
 	}
@@ -897,6 +970,19 @@ func validate(cfg *Config) error {
 		if a = strings.TrimSpace(a); !strings.Contains(a, "@") || strings.ContainsAny(a, " <>") {
 			return fmt.Errorf("identity.also_me: %q must be an address or @domain", a)
 		}
+	}
+	switch cfg.Rules.Screener.EmailMode() {
+	case ScreenEmailOff, ScreenEmailToken:
+	case ScreenEmailHMAC:
+		ok := false
+		for _, a := range cfg.Accounts {
+			ok = ok || (a.Inbound != nil && a.Inbound.Enabled && a.Inbound.Gates.HMACSecret != "")
+		}
+		if !ok {
+			return fmt.Errorf("rules.screener.email_commands: hmac needs an account with inbound enabled and gates.hmac_secret set")
+		}
+	default:
+		return fmt.Errorf("rules.screener.email_commands must be off, token or hmac")
 	}
 	switch l := cfg.Rules.Learn; {
 	case l.Mode != "" && l.Mode != LearnSuggest && l.Mode != LearnInactive && l.Mode != LearnActive:
