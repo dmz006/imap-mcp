@@ -18,9 +18,10 @@
 | Q1 | Reply tracking: mail you owe a reply, replies you are waiting for | 1 | 0.16.0 |
 | Q2 | Learn from moves: rule suggestions, trust from un-junking | 1 | 0.17.0 |
 | V1 | Validation follow-ups: your other addresses, needs_reply noise (D50, D51) | — | 0.18.0 |
-| Q3 | Second opinion for borderline mail + payment/credential-request alerts | 2 | 0.19.0 |
-| Q4 | Safe one-click unsubscribe (RFC 8058) | 3 | 0.20.0 |
-| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.21.0 |
+| V2 | Sharing tuning lessons: playbook, setup check, starter rule packs, lessons log (D52) | — | 0.19.0 |
+| Q3 | Second opinion for borderline mail + payment/credential-request alerts | 2 | 0.20.0 |
+| Q4 | Safe one-click unsubscribe (RFC 8058) | 3 | 0.21.0 |
+| Q5 | Screener: approve held senders from the digest, routed to inbox/feed/receipts | 3 | 0.22.0 |
 
 Each phase is a minor release, live-validated before the next one starts
 (D12). Q4 and Q5 are independent of each other; Q2 and Q3 both feed the
@@ -218,7 +219,7 @@ match counts on production; accept one and confirm the preview matches.
 
 ---
 
-## Q3 — second opinion for borderline mail, and payment-request alerts (0.19.0)
+## Q3 — second opinion for borderline mail, and payment-request alerts (0.20.0)
 
 Today a new sender's message with exactly one bulk/scam signal defers to the
 general classification hall. Replace that with a dedicated model check, and
@@ -269,7 +270,7 @@ operator has seen the preview.
 
 ---
 
-## Q4 — safe one-click unsubscribe (0.20.0)
+## Q4 — safe one-click unsubscribe (0.21.0)
 
 Unsubscribe from bulk senders the RFC 8058 way, then archive their mail.
 
@@ -316,7 +317,7 @@ confirm no further mail after a few days.
 
 ---
 
-## Q5 — screener (0.21.0)
+## Q5 — screener (0.22.0)
 
 Approve or block held senders from the daily digest, without opening any
 folder, and route approved senders the HEY way: inbox, feed (newsletters) or
@@ -382,10 +383,11 @@ not from the owner) is rejected and logged.
 | Q0 | 0.15.5 | Done | Yes | Yes |
 | Q1 | 0.16.0 | Built | Yes | Pending (production rescan) |
 | Q2 | 0.17.0 | Built | Yes | Pending (production rescan) |
-| V1 | 0.18.0 | Built (validation follow-ups: D50, D51) | Yes | Pending |
-| Q3 | 0.19.0 | Planned | | |
-| Q4 | 0.20.0 | Planned | | |
-| Q5 | 0.21.0 → 1.0.0 | Planned | | |
+| V1 | 0.18.x | Done (validation follow-ups: D50, D51) | Yes | Yes (gmail needs_reply 46 → 23; 26 identities confirmed) |
+| V2 | 0.19.0 | Planned (D52) | | |
+| Q3 | 0.20.0 | Planned | | |
+| Q4 | 0.21.0 | Planned | | |
+| Q5 | 0.22.0 → 1.0.0 | Planned | | |
 
 When Q5 is done and validated, the release is the official **1.0.0**
 (D44, operator, 2026-10-10).
