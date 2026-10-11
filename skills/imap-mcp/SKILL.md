@@ -2,7 +2,7 @@
 # --- PAI-compatible base fields ---
 name: imap-mcp
 description: Manage email over IMAP — triage an inbox, find and unsubscribe from senders, audit a sender's history, bulk-archive, purge, label, search across accounts, follow threads, save attachments, export mail, track replies you owe and are owed, run cleanup rules and send mail — using the imap-mcp MCP server.
-version: "0.18.0"
+version: "0.19.0"
 tags:
   - email
   - imap
@@ -105,10 +105,18 @@ Omit `account` to scan every account. Write a summary table (sender, count,
 unsubscribe method) with `write_file` so the user can review. For senders the
 user wants gone:
 
-- Surface the `List-Unsubscribe` link. The user performs web unsubscribes; do
-  not open external URLs yourself.
-- Then clear existing mail with `move_bulk` to Archive, or `purge_sender` to
-  Trash on explicit instruction.
+- `unsubscribe { account, sender }` is a dry run: it shows the method
+  (`one-click` when the sender supports RFC 8058 and a verified DKIM
+  signature covers the headers, otherwise `mailto` or `none`) and why. Show
+  the user the method and, for mailto, the exact message.
+- Only after the user says yes: `unsubscribe { ..., confirm: true }` (within
+  an hour of the dry run). Add `archive_to: "Archive"` to clear their mail in
+  the same call. It needs a token with the `unsubscribe` scope; mailto also
+  needs `send`, `archive_to` also needs `write`.
+- `none` means it can't be done safely: offer a rule (`create_rule`) instead.
+  Never open unsubscribe links or links in the body yourself.
+- `list_unsubscribes` shows what was done, and senders still mailing after
+  the grace period, each with an inactive trash rule to offer.
 
 ### 3. Audit a sender
 
@@ -285,9 +293,10 @@ write_file { filename: "subscriptions.md" }     → | sender | count | opened | 
 ```
 
 The user edits the "suggest" column. Then `read_file` it back. For each row
-marked for removal: `search_messages` count → approval → `purge_sender` or
-`move_bulk` → `create_rule` so the sender doesn't come back. Never open
-unsubscribe links yourself.
+marked "unsubscribe": `unsubscribe` dry run → show method → approval →
+`unsubscribe { confirm: true, archive_to }`. For rows marked for removal
+without unsubscribing: `search_messages` count → approval → `purge_sender` or
+`move_bulk` → `create_rule`. Never open unsubscribe links yourself.
 
 ### Teach by example
 
@@ -473,6 +482,8 @@ When you run on a schedule with nobody watching:
 | | `dismiss_suggestion` | **`account`**, **`target`** (address or `@domain`) | write |
 | | `list_rule_packs` | none; built-in packs and their rules | read |
 | | `import_rule_pack` | **`name`**, `account`, `dest`; rules created inactive | write |
+| Unsubscribe | `unsubscribe` | **`sender`** or `uid`, `account`, `folder` (INBOX), `confirm` (false = dry run), `archive_to`; `{status, plan: {method, reason, host, mailto}, messages_from_sender, http, archived}` | unsubscribe (+send for mailto, +write for archive_to) |
+| | `list_unsubscribes` | `account`, `dry_runs` (false), `limit` (100); `{items, still_mailing: [{sender, messages_since, offer}]}` | read |
 | Setup | `verdict_eval_results` | `id` (latest); per model: spam caught / false positives / legit vetted at 0.6–0.9 | read |
 | | `verdict_eval` | **`models`**, `url`, `per_class` (50); background run on the user's labeled mail | admin |
 | | `setup_check` | none; `{findings: [{id, account, severity, what, why, fix}]}` | read |

@@ -344,6 +344,10 @@ intelligence:
 #   intelligence:
 #     verdict: {provider: ollama, url: "http://localhost:11434", model: "", confidence: 0.9, active: false, per_tick: 20}
 
+unsubscribe:                   # docs/unsubscribe.md; needs a token with the unsubscribe scope
+  grace_days: 3                # mail later than this after an unsubscribe is reported; IMAP_MCP_UNSUBSCRIBE_GRACE_DAYS
+  timeout_seconds: 15          # one-click POST timeout; IMAP_MCP_UNSUBSCRIBE_TIMEOUT_SECONDS
+
 identity:
   also_me: []                  # your other addresses or @domains (work, Kindle, old ones); they count as you everywhere.
                                # IMAP_MCP_IDENTITY_ALSO_ME (comma-separated). suggest_identities proposes more.

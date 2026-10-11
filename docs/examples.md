@@ -432,11 +432,15 @@ look at everything and change nothing.
 ```
 
 4. You edit the "Suggest" column and say "do it". The agent re-reads the file
-   with `read_file`, then for each row runs `purge_sender` (after a
-   `search_messages` count) and `create_rule` so the sender doesn't come back.
+   with `read_file`. For "unsubscribe" rows it runs `unsubscribe` as a dry
+   run, shows you the method, and on your yes runs it with `confirm: true`
+   and `archive_to: "Archive"` (§18). For "purge" rows it runs
+   `purge_sender` (after a `search_messages` count) and `create_rule` so the
+   sender doesn't come back.
 
-imap-mcp never follows unsubscribe links on its own. The agent gives you the
-link, and you decide whether to open it.
+imap-mcp never follows links in a message. `unsubscribe` uses only the
+sender's own `List-Unsubscribe` header, and only the RFC 8058 one-click form
+or a mailto address.
 
 ### 10.3 Teach by example
 
@@ -995,3 +999,20 @@ curl -sS -X POST "$IMAP_MCP/api/rule-packs/dmarc-reports/import" -H "Authorizati
 ```
 
 New setup findings also appear once in the daily digest, under "Setup".
+
+## 18. Unsubscribe without opening a link
+
+> "Get me off the deals newsletter and clear what it already sent."
+
+```
+unsubscribe { account: "work", sender: "news@deals.example.com" }
+→ dry run: method one-click (DKIM from deals.example.com covers the headers), 88 messages
+unsubscribe { account: "work", sender: "news@deals.example.com", confirm: true, archive_to: "Archive" }
+→ done: HTTP 200, 88 archived
+```
+
+The token needs the `unsubscribe` scope (plus `write` for `archive_to`). A
+sender with only a `mailto:` address gets the exact email shown in the dry
+run; sending it needs `send` too. If the sender keeps mailing more than
+three days later, the daily digest says so and offers a trash rule. See
+[unsubscribe.md](unsubscribe.md).

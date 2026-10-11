@@ -33,6 +33,8 @@ shown; `tools/list` only shows tools the caller's token can use.
 | | `get_attachments` (download into `working_dir`), `export_message` (`.eml` / `.mbox` into `working_dir`) | write |
 | Writing | `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender` | write |
 | Sending | `send_message` | send |
+| Unsubscribing | `list_unsubscribes` | read |
+| | `unsubscribe` (mailto also needs send; `archive_to` also needs write) | unsubscribe |
 | Search | `search_messages`, `semantic_search`, `cross_account_search` | read |
 | Analytics | `summarize_folder`, `detect_subscriptions`, `top_senders`, `get_sender_history` | read |
 | Intelligence | `get_sender_profile`, `kg_query`, `get_anomalies`, `enrichment_status` | read |
@@ -82,6 +84,12 @@ Notes:
   contacts for `needs_reply`. Choose the model on your own mail with
   `verdict_eval` (or `imap-mcp verdict-eval`); it records only until you turn
   it on. See [docs/intelligence.md](docs/intelligence.md#second-opinion-the-verdict-model).
+- `unsubscribe` takes you off a list without opening a link: RFC 8058
+  one-click when a DKIM signature verified by imap-mcp covers the sender's
+  `List-Unsubscribe` headers, otherwise the sender's mailto address. Dry run
+  first, then `confirm: true`; it needs the new `unsubscribe` token scope.
+  Senders still mailing after 3 days are reported. See
+  [docs/unsubscribe.md](docs/unsubscribe.md).
 - `setup_check` reports the setup gaps tuning on real mailboxes found, each
   with the fix; start with [docs/tuning.md](docs/tuning.md).
   `list_rule_packs` / `import_rule_pack` add generic starter rules

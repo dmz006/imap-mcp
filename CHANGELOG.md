@@ -6,6 +6,38 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-11
+
+### Added
+- **Safe unsubscribe (Q4; AGENT.md D39–D41, D56, D57).** `unsubscribe`
+  (MCP) and `POST /api/unsubscribe` use only the sender's own
+  `List-Unsubscribe` header: RFC 8058 one-click when the message has an
+  `https:` URI, `List-Unsubscribe-Post: List-Unsubscribe=One-Click` and a
+  DKIM signature, verified by imap-mcp (go-msgauth), that covers both
+  headers; otherwise the sender's `mailto:` address. Links in the body are
+  never followed.
+  - The one-click POST has no cookies or credentials, follows redirects
+    only within the same host, refuses private and loopback addresses, and
+    times out after `unsubscribe.timeout_seconds` (15).
+  - Without `confirm: true` every call is a dry run (method, reason, host or
+    the exact mailto message, message count); a confirmed call needs a dry
+    run for the same sender in the last hour.
+  - `archive_to` moves the sender's mail after success.
+  - Every attempt is recorded (no URL; the host only) and published as
+    `unsubscribe.done` (method and status; the sender in the full payload).
+- **New `unsubscribe` token scope (D39).** No existing token gets it.
+  A mailto unsubscribe also needs `send` (D40); `archive_to` also needs
+  `write` (D57).
+- **Senders who ignore an unsubscribe (D56).** Mail more than
+  `unsubscribe.grace_days` (3) after an unsubscribe is reported once in the
+  daily digest and in `setup_check` (`unsubscribe_ignored`), and listed by
+  `list_unsubscribes` / `GET /api/unsubscribes`, with an inactive trash rule
+  to create.
+- `docs/unsubscribe.md`.
+
+### Dependencies
+- `github.com/emersion/go-msgauth` v0.7.0 (MIT) for DKIM verification.
+
 ## [0.20.0] - 2026-10-11
 
 ### Added

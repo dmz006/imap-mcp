@@ -32,7 +32,7 @@ A Go binary that connects to one or more IMAP accounts and exposes them through:
 | Module | `github.com/dmz006/imap-mcp` |
 | License | MIT |
 | Go version | 1.25.10 |
-| Current version | 0.20.0 |
+| Current version | 0.21.0 |
 | Location | the repo root |
 | Status | 45 MCP tools registered (no stubs); sender profiles, knowledge graph and anomaly detection built by a header scanner; all REST routes implemented; scoped bearer-token auth; two-file storage with optional encryption; windowed sync cache; laned enrichment; rules engine with a new-sender hold and daily held-mail digest; durable webhooks; query DSL; trust-gated inbound commands |
 
@@ -73,7 +73,7 @@ deployed service runs that binary. Use `go build ./...` and `go test ./...`.
 | Multi-account | All accounts connected at once, one default | Cross-account tooling |
 | IMAP auth | `plain`, `xoauth2` (Google or Microsoft), `xoauth2_service_account` (Google Workspace) | Gmail, Workspace, Microsoft 365 |
 | Service layer | `internal/service` shared by MCP and REST (D13) | No operation implemented twice |
-| HTTP auth | Named bearer tokens with scopes `read`, `write`, `send`, `admin`; fails closed (D13a) | Local processes and browsers are untrusted |
+| HTTP auth | Named bearer tokens with scopes `read`, `write`, `send`, `admin`, `unsubscribe` (D39); fails closed (D13a) | Local processes and browsers are untrusted |
 | Storage | `imap.db` (state) + `cache.db` (disposable cache), ncruces pure-Go SQLite, optional adiantum encryption per file (D1, D1b) | Cache can be dropped; state cannot |
 | Sync | Windowed, read-only (EXAMINE), UID diff, CONDSTORE flags, UIDVALIDITY rebuild (D8-D10) | One code path for Dovecot and Gmail |
 | Enrichment | Embeddings via direct Ollama; classify via Ollama or datawatch LLM proxy; new-mail lane before backfill (D11a, D11b) | Never starve new mail; yield the GPU |
@@ -224,7 +224,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 
 ## MCP Tools Status
 
-45 tools registered in `internal/mcp/server.go`. Scopes from
+60 tools registered in `internal/mcp/server.go`. Scopes from
 `internal/mcp/scopes.go` (enforced over HTTP only; stdio has no auth).
 
 | Group | Tools | Scope |
@@ -235,6 +235,7 @@ The PGP inbound gate is declared but fails closed until implemented.
 | Read | `list_messages`, `get_message`, `get_headers` | read |
 | Write | `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender` | write |
 | Send | `send_message` | send |
+| Unsubscribe | `unsubscribe` (dry run unless `confirm`; one-click needs DKIM covering List-Unsubscribe + -Post; mailto needs send too; `archive_to` needs write too); `list_unsubscribes` | unsubscribe; read |
 | Analytics | `top_senders`, `summarize_folder`, `detect_subscriptions`, `get_sender_history` | read |
 | Rules | `list_rules`, `suggest_rules`; `create_rule` (incl. `new_sender`, `new_sender_days`), `delete_rule` (a learned rule's deletion = never again), `run_rules` (dry runs of `new_sender` rules return a `preview`), `dismiss_suggestion` | read; write |
 | Search | `search_messages`, `semantic_search` | read |
@@ -343,6 +344,7 @@ intel_locscan      -- location-only pass progress over Trash/Junk folders the no
 rule_moves         -- messages a rule moved/trashed (account, msg hash, rule id, dest); pruned after a year (D34)
 message_verdicts   -- verdict model per message (D37): verdict, asks, confidence, reasons, model; no content
 verdict_evals      -- verdict-model evaluation runs: params, results (counts), status
+unsubscribes       -- every unsubscribe and dry run (Q4): sender, method, host (never the URL), status, HTTP status, archived, ignored_reported (D56)
 setup_findings     -- setup-check findings already shown in a digest (D52)
 identities         -- the owner's other addresses (D50): candidate | confirmed | rejected | config, evidence, applied_at (history rewritten)
 owner_names        -- display names the owner sends under (normalised), for identity detection
@@ -472,7 +474,7 @@ Unsafe `/api` methods must send `Content-Type: application/json`
 | Item | Notes |
 |------|-------|
 | Intelligence | Content cleaning before models (`Cleaner`) |
-| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2, done in 0.17.0), model second opinion + payment/credential-request anomaly (Q3), one-click unsubscribe (Q4), screener (Q5) |
+| Assistant features | Planned in `docs/plans/2026-10-10-assistant-features.md`: reply tracking (Q1, done in 0.16.0), learning from moves (Q2, done in 0.17.0), model second opinion + payment/credential-request anomaly (Q3, done in 0.20.0), one-click unsubscribe (Q4, done in 0.21.0), screener (Q5) |
 | `search_messages` | Honour `hall`/`wing`/`room`; FTS hybrid over `messages_fts` |
 | SMTP OAuth | SMTP send supports PLAIN auth only, so accounts without an SMTP password cannot send |
 | PGP inbound gate | Declared, fails closed |

@@ -29,7 +29,7 @@ with your receiver; you need it to verify signatures.
 - Deliverable events: `message.synced`, `message.updated`, `message.deleted`,
   `folder.synced`, `sync.complete`, `sync.error`, `cache.cleaned`,
   `enrichment.done`, `enrichment.error`, `anomaly.detected`, `rule.fired`,
-  `hold.digest`, `rule.suggested`, `account.connected`, `account.error`, `account.disconnected`.
+  `hold.digest`, `rule.suggested`, `unsubscribe.done`, `account.connected`, `account.error`, `account.disconnected`.
   `webhook.*` and `inbound.*` are never delivered.
 - You can subscribe to all of these, but `account.disconnected` is never
   published today (defined but not emitted). `anomaly.detected` carries
@@ -39,7 +39,9 @@ with your receiver; you need it to verify signatures.
   [rules.md](rules.md#the-daily-digest). `rule.suggested` carries
   `{mode, suggested, created, suggestions: [...]}`: each suggestion's target
   address or domain, action, counts, ratio, INBOX match count and rule; see
-  [rules.md](rules.md#learning-from-your-moves).
+  [rules.md](rules.md#learning-from-your-moves). `unsubscribe.done` carries
+  `{method, status, status_code, archived}`; the full payload adds the
+  sender (never the URL); see [unsubscribe.md](unsubscribe.md).
 
 Other routes:
 

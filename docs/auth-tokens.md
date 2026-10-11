@@ -69,7 +69,7 @@ server:
 |-------|-------|
 | `tokens[].name` | Required. Must match `[A-Za-z0-9._-]{1,64}`. Unique. Logged on every rejected or scope-denied request; use a name that identifies the client. |
 | `tokens[].token` | The bearer value after resolution. At least **32 characters**. Values must be unique across tokens. Write it as a `${secret:name}` or `${ENV}` reference. A literal value is accepted but then sits in the config file. |
-| `tokens[].scopes` | At least one of `read`, `write`, `send`, `admin`. An unknown scope stops startup. |
+| `tokens[].scopes` | At least one of `read`, `write`, `send`, `admin`, `unsubscribe`. An unknown scope stops startup. |
 | `disabled` | `true` turns auth off. Env override: `IMAP_MCP_SERVER_AUTH_DISABLED`. |
 
 Startup rules (`serve` checks these before it connects to anything):
@@ -101,6 +101,7 @@ compares it in constant time against every configured token. The
 | `write` | Mailbox changes (move, copy, delete, flags, labels, folders, purge, empty trash, append), rule changes and runs, writing to the output sandbox. |
 | `send` | Outbound mail over SMTP. |
 | `admin` | Webhooks, the `/api/query` DSL, sync and enrichment triggers, cache sweeps. |
+| `unsubscribe` | Unsubscribing from a sender: an outbound request to the sender on your behalf (AGENT.md D39). A mailto unsubscribe also needs `send`; `archive_to` also needs `write`. No token has it unless you add it. |
 
 Scopes do not imply each other: a token with `write` but not `read` cannot list
 messages. Give each client only what it needs, for example:
@@ -150,6 +151,8 @@ unknown ones, needs a valid token.
 | GET | `/api/setup-check` | read |
 | GET | `/api/rule-packs` | read |
 | POST | `/api/rule-packs/{name}/import` | write |
+| POST | `/api/unsubscribe` | unsubscribe (+ write with `archive_to`, + send for a mailto unsubscribe) |
+| GET | `/api/unsubscribes` | read |
 | GET | `/api/identities` | read |
 | POST | `/api/identities/confirm` | write |
 | POST | `/api/identities/reject` | write |
@@ -183,10 +186,11 @@ See [rest-api.md](rest-api.md) for parameters and responses.
 
 | Scope | Tools |
 |-------|-------|
-| read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments` (listing), `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `needs_reply`, `awaiting_reply`, `enrichment_status`, `top_senders`, `list_rules`, `suggest_rules`, `suggest_identities`, `setup_check`, `list_rule_packs`, `verdict_eval_results`, `read_file`, `list_files` |
+| read | `list_accounts`, `list_folders`, `list_messages`, `get_message`, `get_thread`, `get_headers`, `get_attachments` (listing), `search_messages`, `cross_account_search`, `semantic_search`, `summarize_folder`, `detect_subscriptions`, `get_sender_history`, `get_sender_profile`, `kg_query`, `get_anomalies`, `needs_reply`, `awaiting_reply`, `enrichment_status`, `top_senders`, `list_rules`, `suggest_rules`, `suggest_identities`, `setup_check`, `list_rule_packs`, `verdict_eval_results`, `list_unsubscribes`, `read_file`, `list_files` |
 | write | `create_folder`, `delete_folder`, `label_message`, `label_bulk`, `empty_trash`, `move_message`, `copy_message`, `delete_message`, `set_flags`, `append_message`, `move_bulk`, `flag_bulk`, `purge_sender`, `create_rule`, `delete_rule`, `run_rules`, `resolve_anomaly`, `dismiss_reply`, `dismiss_suggestion`, `confirm_identity`, `reject_identity`, `import_rule_pack`, `export_message`, `get_attachments` with `part` (download), `write_file`, `delete_file` |
 | send | `send_message` |
 | admin | `sync_account`, `trigger_enrichment`, `cache_sweep`, `verdict_eval` |
+| unsubscribe | `unsubscribe` (+ write with `archive_to`; + send when the method is mailto) |
 
 Over HTTP with auth on, `tools/list` shows only the tools the token can call. A
 tool missing from the scope table is denied. Some tools are still stubs; see
