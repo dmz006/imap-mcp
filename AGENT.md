@@ -431,6 +431,14 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-10 — D54 (Q3 verdict details):** a first-time sender enters
+  `needs_reply` when header score is 0 (D48 checks), the verdict model says
+  legitimate above the threshold, and no anomaly other than `new_sender` is
+  open; the classify label is no longer required. The confidence threshold
+  is chosen with the model from the evaluation (results at 0.6, 0.7, 0.8,
+  0.9; default 0.9 until then). The evaluation runs as a background job
+  (`verdict_eval` admin tool / REST) with a results tool, plus a
+  `verdict-eval` CLI.
 - **2026-10-10 — D37 (what the model may decide, Q3):** the verdict model
   breaks ties for score-1 messages, confirms payment/credential anomalies,
   vets first contacts for `needs_reply`, and may also hold a score-0 first
