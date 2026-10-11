@@ -381,8 +381,10 @@ not from the owner) is rejected and logged.
 | D58 | Q4 | Expired DKIM signatures | Decided: accepted if otherwise valid; shown in the dry run |
 | D59 | V3 | Links to open a message | Decided: per-account `link`: gmail (default for Gmail), thunderbird, URL template, none |
 | D60 | — | Version plan | Decided: V3 = 0.22.0; Q5 → 0.23.0, then 1.0.0 |
-| D42 | Q5 | Trusting digest replies | Open |
-| D43 | Q5 | Block scope | Open |
+| D42 | Q5 | Trusting digest replies | Decided: off (default) / token / hmac, configurable |
+| D43 | Q5 | Block scope | Decided: domain unless freemail or a correspondent's domain; preview count |
+| D61 | Q5 | Screener rules active? | Decided: inactive by default; operator's install active |
+| D62 | Q5 | Screener preview | Decided: dry run unless confirm; preview carries the live call |
 
 ## Phases
 

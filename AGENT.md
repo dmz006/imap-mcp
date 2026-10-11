@@ -431,6 +431,22 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D42 (screener: trusting an email reply, Q5):** all three
+  modes, chosen by `rules.screener.email_commands`: `off` (default; decide
+  only over MCP, REST, the CLI or an agent), `token` (a reply to the digest
+  from the account's own address that passes DKIM/DMARC per
+  Authentication-Results and quotes the digest's single-use token), `hmac`
+  (the inbound command envelope with HMAC).
+- **2026-10-11 — D43 (screener: block scope, Q5):** a block trashes the
+  sender's domain, but only the address for freemail domains, and never a
+  domain where the owner has a correspondent; the preview shows the match
+  count.
+- **2026-10-11 — D61 (screener rules, Q5):** routing (feed/receipts) and
+  block rules start inactive by default (`rules.screener.rules_active:
+  false`); the operator's install sets it true.
+- **2026-10-11 — D62 (screener preview, Q5):** every MCP/REST/CLI decision
+  is a dry run unless `confirm: true`; the preview returns the exact call
+  to run it live (no separate dry-run step is enforced).
 - **2026-10-11 — D59 (links to open a message, V3):** each account has a
   `link` setting: `gmail` (a Gmail search link on the Message-ID with
   `authuser`; the default for Gmail servers), `thunderbird` (`mid:` link), a
