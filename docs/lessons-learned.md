@@ -7,6 +7,7 @@ measured. [tuning.md](tuning.md) turns these into a setup guide.
 
 | Release | Symptom | Cause | Fix |
 |---|---|---|---|
+| 0.20.0 | The system Ollama could not be upgraded for the chosen model | Upgrading needs root, which the operator's automation does not have | Run a current Ollama in Docker with the GPU on a separate local port and point `intelligence.verdict.url` at it; results matched the GPU server (at 0.9: 44 vs 43 of 50 spam, 1 vs 0 false positives) at about 1 s a message |
 | 0.20.0 | gpt-oss answered nothing in a verdict evaluation (100 of 100 unparsed) | In Ollama's JSON mode gpt-oss returns an empty answer; it answers fine as plain text with low thinking | The verdict client falls back: JSON mode with thinking off, then plain text with low thinking, then no thinking switch |
 | 0.20.0 | Every model looked like it flagged a lot of legitimate mail | The "legitimate" sample counted anyone ever written to, store notices included, and a "bulk" verdict on those is right; the hold only holds a score-0 message on "scam" | The evaluation applies the automated-sender filter to the legitimate sample and reports scam-only false positives separately |
 | 0.20.0 | Newer candidate models would not download on one GPU host | That host's Ollama was too old for the models' format | Evaluate on a host with a current Ollama (the evaluation takes any Ollama URL), and upgrade the other |

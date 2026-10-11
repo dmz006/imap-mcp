@@ -357,6 +357,18 @@ intelligence:
 
 Mail bodies are sent only to the Ollama server you name.
 
+If the host's Ollama is too old for the model and you can't upgrade it, a
+current Ollama in Docker on another port works the same (needs the NVIDIA
+container runtime for a GPU):
+
+```bash
+docker run -d --name ollama-verdict --restart unless-stopped --gpus all \
+  -p 127.0.0.1:11435:11434 -v ollama-verdict:/root/.ollama ollama/ollama:0.33.2
+docker exec ollama-verdict ollama pull gemma4:26b
+```
+
+and set `url: http://127.0.0.1:11435`.
+
 ## Your other addresses
 
 Your account logins are "you". So are the addresses in `identity.also_me`

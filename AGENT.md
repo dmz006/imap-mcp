@@ -431,6 +431,14 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D55 (Q3 model choice):** `gemma4:26b` at confidence 0.9,
+  chosen from the evaluation of 9 models on the owner's mail (50 held spam,
+  50 correspondent messages): 43 of 50 spam caught, 0 false positives, 7 of
+  50 legitimate first contacts vetted, 1.9 s per message. The safest
+  option: holds are almost never wrong and few first contacts reach
+  `needs_reply`, close to D49. Runners-up: gemma4:26b at 0.8 (47 caught, 7
+  false positives), gpt-oss:120b at 0.9 (41 caught, 2 false positives, 5x
+  slower). Shadow mode stays until the operator sets `active`.
 - **2026-10-10 — D54 (Q3 verdict details):** a first-time sender enters
   `needs_reply` when header score is 0 (D48 checks), the verdict model says
   legitimate above the threshold, and no anomaly other than `new_sender` is
