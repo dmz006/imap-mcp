@@ -431,7 +431,15 @@ they can be replaced or extended without touching call sites.
   (2) a built-in setup check (read tool and REST route) that flags the gaps
   found on production; (3) starter rule packs: generic, importable rule
   templates; (4) a lessons log (`docs/lessons-learned.md`: symptom, cause,
-  fix, version), kept up as we go.
+  fix, version), kept up as we go. Ships next, as 0.19.0 (Q3–Q5 move to
+  0.20–0.22). The setup check is a `setup_check` read tool and
+  `GET /api/setup-check` (each finding: what, why it matters, the fix;
+  counts and settings only), and the daily digest gets a short "Setup"
+  section only when a finding is new. Rule packs are YAML compiled into the
+  binary; `list_rule_packs` (read) shows them and `import_rule_pack`
+  (write) creates a pack's rules inactive for an account, skipping
+  duplicates. First packs: dmarc-reports, bounces, calendar-replies,
+  dev-notifications.
 - **2026-10-10 — D50 (the owner's other addresses):** the owner's other
   addresses (work, Kindle, old ones) are "you" everywhere: reply tracking,
   profiles, the new-sender hold and learning. Two sources: a config list,
