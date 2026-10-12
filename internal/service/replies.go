@@ -212,8 +212,18 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 		return nil, err
 	}
 	me := s.me(ctx)
-	var items []ReplyItem
+	// Candidates go through the live check in batches until limit items
+	// survive it: the check drops answered threads, invites and forwards, so
+	// stopping at limit candidates would return fewer items than qualify.
+	var items, batch []ReplyItem
 	firstContact := map[int64]bool{} // thread hash → needs the live header check
+	flush := func() {
+		if !outgoing {
+			batch = s.liveCheck(ctx, account, batch, firstContact)
+		}
+		items = append(items, batch...)
+		batch = nil
+	}
 	for _, r := range all {
 		it := r.it
 		if me.has(it.Counterpart) { // the owner's other address (D50)
@@ -241,13 +251,17 @@ func (s *Service) replyItems(ctx context.Context, account string, outgoing bool,
 		it.Account, it.UID = account, uint32(r.uid)
 		it.LastDate = time.Unix(r.last, 0).UTC().Format(time.RFC3339)
 		it.DaysWaiting = int(now.Sub(time.Unix(r.last, 0)) / (24 * time.Hour))
-		items = append(items, it)
-		if len(items) >= limit {
-			break
+		batch = append(batch, it)
+		if len(items)+len(batch) >= limit {
+			flush()
+			if len(items) >= limit {
+				break
+			}
 		}
 	}
-	if !outgoing {
-		items = s.liveCheck(ctx, account, items, firstContact)
+	flush()
+	if len(items) > limit {
+		items = items[:limit]
 	}
 	return items, nil
 }

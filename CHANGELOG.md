@@ -6,6 +6,26 @@ All notable changes to imap-mcp are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-11
+
+### Changed
+- **mcp-go 1.2.1** (from 0.54.1; AGENT.md D75). Supports the 2026-07-28 MCP
+  specification. Security-relevant changes it brings: tools hidden from a
+  token by its scopes can no longer be called at all (the call is refused as
+  "tool not found" before imap-mcp's own scope check, which still guards
+  argument-dependent scopes); requests that arrive over loopback must carry
+  a loopback `Host` header (DNS-rebinding protection); unsupported
+  `MCP-Protocol-Version` headers are rejected.
+- Dependencies: chi 5.3.2, go-sqlite3 0.35.6, x/oauth2 0.37.0.
+
+### Fixed
+- `needs_reply` and `awaiting_reply` returned fewer items than `limit` when
+  some candidates were dropped by the live check (answered threads, invites,
+  forwards): a limit of 20 returned 11 of 24, so the digest's "Waiting on
+  you" list was short too. The limit now counts surviving items (D77).
+- `flag_bulk` reported "updated flags" even when the server rejected the
+  change; it now returns the error (D76).
+
 ## [1.0.1] - 2026-10-11
 
 ### Security
