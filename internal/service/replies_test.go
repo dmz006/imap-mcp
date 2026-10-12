@@ -260,7 +260,7 @@ func TestReplyLimitAfterLiveCheck(t *testing.T) {
 	me := imaptest.Username
 	now := time.Now()
 	f.srv.Append(t, "INBOX", raw("a1@x", "Friend <friend@example.org>", me, "Answered"), now, imaplib.FlagAnswered) // UID 1
-	f.srv.Append(t, "INBOX", raw("b1@x", "Friend <friend@example.org>", me, "Open"), now)                         // UID 2
+	f.srv.Append(t, "INBOX", raw("b1@x", "Friend <friend@example.org>", me, "Open"), now)                           // UID 2
 	st := f.d.StateSQL()
 	for _, q := range []string{
 		`INSERT INTO senders(address, name, domain, role, sent_count) VALUES('friend@example.org','Friend','example.org','personal',2)`,
