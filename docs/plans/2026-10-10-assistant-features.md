@@ -396,7 +396,7 @@ not from the owner) is rejected and logged.
 | Q2 | 0.17.x | Done | Yes | Yes (suggestions on one account; Gmail @domain match not yet exercised) |
 | V1 | 0.18.x | Done (validation follow-ups: D50, D51) | Yes | Yes (gmail needs_reply 46 → 23; 26 identities confirmed) |
 | V2 | 0.19.x | Done (D52) | Yes | Yes (setup_check: 5 findings on production; packs listed) |
-| Q3 | 0.20.0 | Done, shadow mode (gemma4:26b @ 0.9, D55) | Yes | Yes (108 shadow verdicts in the first 90 min; activation is the operator's call) |
+| Q3 | 0.20.0 | Done, shadow mode (gemma4:26b @ 0.9, D55; operator review of shadow results 2026-10-19) | Yes | Yes (108 shadow verdicts in the first 90 min; activation is the operator's call) |
 | Q4 | 0.21.0 | Done (D39–D41, D56–D58) | Yes | Yes (30 dry runs on two accounts; one real one-click unsubscribe, HTTP 200; log has no sender or URL) |
 | V3 | 0.22.0 | Done (D59, D60) | Yes | Yes (all 37 gmail reply items carry a Gmail link; dmzs set to thunderbird, no open items) |
 | Q5 | 1.0.0 | Done (D42, D43, D61, D62, D63) | Yes | Yes (201 held senders listed; 2 domain blocks previewed then applied, 4 messages trashed, rules active per D61; no addresses in the service log; email modes off, unit-tested) |
