@@ -175,13 +175,18 @@ func (h *Handlers) FlagBulk(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	}
 
 	uidSet := imaplib.UIDSetNum(uids...)
+	// A rejected STORE is an error, not "updated flags" (D76).
 	if addFlags != "" {
 		opts := &imaplib.StoreFlags{Op: imaplib.StoreFlagsAdd, Flags: service.ParseFlags(addFlags)}
-		_ = conn.Client().Store(uidSet, opts, nil).Close()
+		if err := conn.Client().Store(uidSet, opts, nil).Close(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("add flags: %v", err)), nil
+		}
 	}
 	if removeFlags != "" {
 		opts := &imaplib.StoreFlags{Op: imaplib.StoreFlagsDel, Flags: service.ParseFlags(removeFlags)}
-		_ = conn.Client().Store(uidSet, opts, nil).Close()
+		if err := conn.Client().Store(uidSet, opts, nil).Close(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("remove flags: %v", err)), nil
+		}
 	}
 	return mcp.NewToolResultText(fmt.Sprintf("updated flags on %d messages in %s", len(uids), folder)), nil
 }

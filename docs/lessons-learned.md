@@ -7,6 +7,7 @@ measured. [tuning.md](tuning.md) turns these into a setup guide.
 
 | Release | Symptom | Cause | Fix |
 |---|---|---|---|
+| 1.1.0 | `needs_reply` with limit 20 returned 11 of the 24 waiting items; limit 1 returned none | The limit capped candidates before the live check dropped answered threads, invites and forwards (the D51 filters, 0.18) | The live check runs in batches until limit items survive (D77); validation compares counts across limits |
 | 1.0.1 | govulncheck found 18 standard-library vulnerabilities reachable from imap-mcp's code | go.mod pinned Go 1.25.10, a line that no longer gets fixes, and nothing scanned for vulnerabilities | Go 1.27.2; govulncheck in CI against an accepted-risks registry, re-validated daily (D64, D65) |
 | 1.0.1 | Standalone gosec reported 0 issues; inside golangci-lint it found 33 | gosec's binary could not read Go 1.27 export data and silently analysed less (381 "could not import" errors) | Run gosec as a golangci-lint linter built with the project's Go; read a tool's error output before trusting a clean result |
 | 1.0.1 | `.goreleaser.yaml` was about to be left out of the commit | `.gitignore` ignores `*.yaml` (the 0.19.1 lesson again) | Except `.goreleaser.yaml`; check `git ls-files` for every new config file |

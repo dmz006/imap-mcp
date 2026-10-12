@@ -431,6 +431,15 @@ they can be replaced or extended without touching call sites.
   senders, the owner's own addresses and domains; a domain rule is skipped
   when any such sender is at the domain. Settings: `rules.learn: {mode, ratio,
   min_discards, domain_min_addresses, discard_folders}` with env overrides.
+- **2026-10-11 — D77 (reply-list limit, 1.1.0):** `needs_reply` /
+  `awaiting_reply` limits count items that survive the live check; found in
+  1.1.0 validation (limit 20 returned 11 of 24, limit 1 returned 0).
+- **2026-10-11 — D75 (mcp-go 1.x, 1.1.0):** port imap-mcp to mcp-go 1.x
+  (Dependabot PR #3) on a branch: review its breaking and security-relevant
+  changes, fix the build and tests, validate every tool live on production
+  (counts only), and release it as 1.1.0 with the merged minor updates.
+- **2026-10-11 — D76 (flag errors, 1.1.0):** `flag_bulk` reports an IMAP
+  STORE failure as an error instead of claiming success.
 - **2026-10-11 — D74 (CodeQL triage, S1):** alerts assessed as not
   exploitable are dismissed in GitHub as false positives with the reason,
   and recorded as traced `code-scanning/<n>` entries (kind `code`) in

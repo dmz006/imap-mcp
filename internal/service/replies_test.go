@@ -250,3 +250,35 @@ func TestReplyNoise(t *testing.T) {
 		t.Errorf("identities = %+v, %v", list, err)
 	}
 }
+
+// TestReplyLimitAfterLiveCheck: the limit counts items that survive the live
+// check, not candidates (an \Answered thread found live used to use up the
+// only slot of limit 1).
+func TestReplyLimitAfterLiveCheck(t *testing.T) {
+	f := newHoldFixture(t)
+	ctx := context.Background()
+	me := imaptest.Username
+	now := time.Now()
+	f.srv.Append(t, "INBOX", raw("a1@x", "Friend <friend@example.org>", me, "Answered"), now, imaplib.FlagAnswered) // UID 1
+	f.srv.Append(t, "INBOX", raw("b1@x", "Friend <friend@example.org>", me, "Open"), now)                           // UID 2
+	st := f.d.StateSQL()
+	for _, q := range []string{
+		`INSERT INTO senders(address, name, domain, role, sent_count) VALUES('friend@example.org','Friend','example.org','personal',2)`,
+		`INSERT INTO intel_scan(account, folder, last_uid, completed_at) VALUES('test','INBOX',10,1)`,
+	} {
+		if _, err := st.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, id := range []string{"a1@x", "b1@x"} {
+		if _, err := st.Exec(`INSERT INTO reply_threads(account, thread_hash, thread_id, last_hash, last_date, outgoing, direct, counterpart, subject, message_ref, folder, uid)
+			VALUES('test',?,?,?,?,0,1,'friend@example.org','s',?,'INBOX',?)`, intel.MsgHash(id), id, intel.MsgHash(id),
+			now.Add(-time.Duration(6-i)*24*time.Hour).Unix(), id, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := f.s.NeedsReply(ctx, ReplyParams{OlderThanDays: 2, Limit: 1})
+	if err != nil || n.Count != 1 || n.Items[0].MessageRef != "b1@x" {
+		t.Fatalf("needs_reply limit 1 = %+v, %v; want the open thread b1@x", n, err)
+	}
+}

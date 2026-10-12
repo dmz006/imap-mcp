@@ -175,9 +175,40 @@ func TestMCPScopesEndToEnd(t *testing.T) {
 		t.Errorf("unexpected tool lists: datawatch=%v", dw)
 	}
 
+	// A tool hidden from the token cannot be called. mcp-go 1.x applies the
+	// list filter to calls too ("tool not found"); before that the scope
+	// middleware answered "requires scope". Either way it never runs.
 	res := mcpCall(t, ts, e2eDW, "tools/call", map[string]any{"name": "delete_message", "arguments": map[string]any{}})
-	r := res["result"].(map[string]any)
-	if r["isError"] != true || !strings.Contains(r["content"].([]any)[0].(map[string]any)["text"].(string), "requires scope") {
-		t.Fatalf("delete_message with datawatch token should be forbidden: %v", res)
+	if !forbidden(res, "requires scope") && !rpcError(res, "not found") {
+		t.Fatalf("delete_message with datawatch token should be refused: %v", res)
 	}
+	// A visible tool whose arguments need more scope still goes through the
+	// scope middleware: downloading an attachment writes (D24).
+	res = mcpCall(t, ts, e2eDW, "tools/call", map[string]any{"name": "get_attachments",
+		"arguments": map[string]any{"folder": "INBOX", "uid": 1, "part": "2"}})
+	if !forbidden(res, "requires scope") {
+		t.Fatalf("get_attachments with part and a read token should be forbidden: %v", res)
+	}
+}
+
+func forbidden(res map[string]any, want string) bool {
+	r, ok := res["result"].(map[string]any)
+	if !ok || r["isError"] != true {
+		return false
+	}
+	c, _ := r["content"].([]any)
+	if len(c) == 0 {
+		return false
+	}
+	text, _ := c[0].(map[string]any)["text"].(string)
+	return strings.Contains(text, want)
+}
+
+func rpcError(res map[string]any, want string) bool {
+	e, ok := res["error"].(map[string]any)
+	if !ok {
+		return false
+	}
+	msg, _ := e["message"].(string)
+	return strings.Contains(msg, want)
 }
