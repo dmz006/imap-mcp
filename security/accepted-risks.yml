@@ -24,22 +24,6 @@
 #   validated_by  who traced it
 #   reason        why it is accepted rather than fixed
 entries:
-  - id: osv/GO-2026-5932
-    kind: go-module
-    package: "golang.org/x/crypto"
-    version: "v0.58.0"
-    severity: moderate
-    impact:
-      traced: true
-      reachable: "no"
-      analysis: "Advisory covers only golang.org/x/crypto/openpgp and its subpackages (unmaintained, unsafe by design). imap-mcp imports none of them; it uses x/crypto for argon2, blake2b, ed25519 and poly1305 only."
-      method: "go list -deps ./... lists no golang.org/x/crypto/openpgp* package; govulncheck -show verbose reports the module as required but the vulnerable packages not imported."
-    first_added: "2026-10-11"
-    added: "2026-10-11"
-    expires: "2027-01-09"
-    validated_by: "claude-session"
-    reason: "No fixed version exists (the package is deprecated, not patched). Re-check each release and when x/crypto changes."
-
   - id: code-scanning/5
     kind: code
     package: "go/email-injection"
